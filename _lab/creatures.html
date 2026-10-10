@@ -20,7 +20,7 @@ html,body{margin:0;height:100%;background:#0b0e1c;overflow:hidden;font-family:"P
 <div id="wrap">
   <div id="info"></div>
   <div id="ui">
-    <button data-m="gallery">图鉴</button><button data-m="zoo">转台</button><button data-m="phases">动作</button><button data-m="flock">鸟群</button><button data-m="portrait">小图</button>
+    <button data-m="gallery">图鉴</button><button data-m="zoo">转台</button><button data-m="phases">动作</button><button data-m="flock">鸟群</button><button data-m="game">实景</button><button data-m="portrait">小图</button>
     <button data-b="sky">天空</button><button data-b="sea">水下</button>
   </div>
   <div id="err"></div>
@@ -64,6 +64,8 @@ scene.fog = new THREE.Fog(SKY.mid.clone(), 180, 900);
 
 const cr = createCreatures({ THREE, scene, camera, renderer, GRAD, outlineMat, toonMat });
 window.cr = cr;
+cr.prewarm();
+cr.cullMedium = Q.has('cull');          // 试验页的生物摆在水线上下，默认不按海面剔除
 
 let BG = Q.get('bg') || 'sky';
 function setBg(b) {
@@ -84,7 +86,7 @@ const VARS = [{}, { gold: true }, { roast: 2, cooked: 1 }, { stun: 2, cooked: 1 
 let movers = [];
 
 function build(mode, page) {
-  MODE = mode; S.creatures = []; movers = []; nid = 1;
+  MODE = mode; S.creatures = []; movers = []; nid = 1; camera.fov = 40;
   const list = page === '0' ? SPECIES_IDS.slice(0, 6) : page === '1' ? SPECIES_IDS.slice(6) : SPECIES_IDS;
   if (mode === 'gallery') {             // 每行一种：普通 / 金色 / 烤熟 / 撞晕
     const W = 2.25, H = 2.5, rows = list.length;
@@ -103,7 +105,22 @@ function build(mode, page) {
     for (let g = 0; g < 4; g++) { const cx = (g - 1.5) * 18, cz = -30 - g * 55, cy = -6 - g * 2; for (let k = 0; k < 30; k++) movers.push(mk('sardine', { cx, cy, cz, r: 2 + (k % 5) * .6, w: 1.2 + (k % 7) * .04, o: k * .41, h: (k % 6 - 2.5) * .5 })); }
     S.creatures = movers;
     camera.position.set(0, 4, 18); camera.lookAt(0, 2, -60);
+  } else if (mode === 'game') {         // 实际大小、实际距离，像游戏镜头那样看（fov 62，往 +Z 看）
+    camera.fov = 62;
+    const grp = (sp, n, cx, cy, cz, r, w = 1.4, extra = {}) => { for (let k = 0; k < n; k++) movers.push(mk(sp, { cx, cy, cz, r: r * (.6 + (k % 4) * .15), w: w * (1 + (k % 3) * .06), o: k * 2.39, h: (k % 5 - 2) * .6, ...extra })); };
+    if (BG === 'sea') {
+      grp('sardine', 30, -4, -3, 22, 2.2, 1.6); grp('jelly', 4, 8, 3, 30, 3, .3); grp('squid', 3, -9, -6, 34, 3, .8);
+      grp('turtle', 1, 6, -9, 40, 6, .4); grp('shark', 1, -6, 2, 55, 9, .5); grp('manta', 1, 10, -2, 48, 8, .4); grp('flyfish', 4, 0, 7, 28, 3, 1.4);
+      grp('sardine', 1, 0, 0, 18, 0, 0, { gold: true });
+    } else {
+      grp('sparrow', 10, -3, 3, 26, 2.5, 1.8); grp('gull', 6, 9, -6, 40, 5, .9); grp('lavafinch', 5, -10, 6, 45, 4, 2);
+      grp('cloudjelly', 3, 6, 14, 70, 6, .2); grp('roc', 1, -14, 12, 85, 10, .5); grp('flyfish', 3, 4, -9, 30, 3, 1.4);
+      grp('sparrow', 1, 2, 0, 18, 0, 0, { roast: 2 });
+    }
+    S.creatures = movers;
+    camera.position.set(0, 0, 0); camera.lookAt(0, -.8, 10);
   }
+  camera.updateProjectionMatrix();
   sim(0);
 }
 function sim(dt) {

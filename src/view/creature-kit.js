@@ -235,8 +235,9 @@ export function builder(seed = 1) {
       }
       return best < Infinity ? O.addScaledVector(D, best).toArray() : o;
     },
-    // 收尾：缩放到「ext 那段长度 = 1」（默认按 norm 轴的包围盒长度），算每部件的平滑法线（描边用），输出非索引 BufferGeometry
-    finish(norm = 'z', ext = 0) {
+    // 收尾：先把 off 点移到原点，再缩放到「ext 那段长度 = 1」（默认按 norm 轴的包围盒长度），
+    // 算每部件的平滑法线（描边用），输出非索引 BufferGeometry
+    finish(norm = 'z', ext = 0, off = [0, 0, 0]) {
       const box = new THREE.Box3(); for (const t of tris) for (const p of t.p) box.expandByPoint(p);
       const s = 1 / (ext || (norm === 'y' ? box.max.y - box.min.y : box.max.z - box.min.z));
       const n = tris.length * 3, pos = new Float32Array(n * 3), nor = new Float32Array(n * 3), colA = new Float32Array(n * 3), ap = new Float32Array(n * 4);
@@ -249,7 +250,7 @@ export function builder(seed = 1) {
       tris.forEach((t, i) => {
         for (let j = 0; j < 3; j++) {
           const v = t.p[j], m = i * 3 + j;
-          pos.set([v.x * s, v.y * s, v.z * s], m * 3);
+          pos.set([(v.x - off[0]) * s, (v.y - off[1]) * s, (v.z - off[2]) * s], m * 3);
           const nn = acc.get(key(t.part, v)).clone().normalize(); nor.set([nn.x, nn.y, nn.z], m * 3);
           colA.set([t.c.r, t.c.g, t.c.b], m * 3);
           ap.set(t.a[j], m * 4);

@@ -16,7 +16,8 @@
   "headBone": "head",
   "neckBones": [
     "neck1",
-    "neck2"
+    "neck2",
+    "head"
   ],
   "tailBones": [
     "tail1",
@@ -45,5 +46,21 @@
   },
   "tris": 6382,
   "bones": 38,
-  "bytes": 825248
+  "bytes": 825248,
+  "extents": {
+    "x": [
+      -0.499,
+      0.499
+    ],
+    "y": [
+      -0.499,
+      0.499
+    ],
+    "z": [
+      -0.22,
+      0.22
+    ],
+    "wingspan": 0.998
+  },
+  "notes": "Blender rest coords (head +X, up +Z, +Y = dragon's left). Rest pose = standing on 4 straight legs, wings spread (leading-finger tip elevation 19.4 deg; adult 28.2). Wingspan 0.998 = nose-to-tail length 0.998 (adult 0.998 vs 0.936), so at the same SCALE formula the teen reads about as wide as the adult relative to its length. Keys start at frame 0: clips are exactly Fly 3.0 s (72 f, 3 flaps + one 3 s finger-breath), Glide 2.0 s (48 f), Idle 3.0 s (72 f); first key == last key; every clip keys all 38 bones (rotation only). Same 38-bone names/topology as fire_adult_anim (GLTFLoader strips the dot: wing1.L -> wing1L). No jaw bone. Head bone (0.40,0,0.066)->(0.497,0,0.066); mouth = snout tip in rest pose. Fly/Glide limb angles were SOLVED to the approved adult pose and verified with pose_report.py: elbow 70, wrist 27-33, fingers 67-83 (3 s breathing), knee 90, ankle 55, toes 37, tail 8-20 deg up (172..160). Neck kept in its rest shape with the adult's small offsets (chest 13 -> neck1 34 -> neck2 30-35 -> head -5..0; adult 17/39/34-38/-4..0). Wing flap baseline shifted by +0.153 rad (Fly up = -0.197 + 0.8 sin, Glide -0.367) so absolute wing-tip elevations match the adult within 2 deg (-51..+67 in Fly, +4 in Glide); flap amplitude 0.8 rad as the adult, so the runtime dive-tuck overlay on wing1/wing2/fing1 works unchanged. neckBones includes 'head' like the adult's built-in default (dragon.js); drop it to make the teen turn its head less. Hind leg is digitigrade on this mesh: hfoot = metatarsus (hock->ball), htoe = sole+toes. Mesh = raw Tripo P1 output (face-limit 6500), geometry unedited: 0 inverted shells; only open seams are two ~0.035-radius rings where the elbow armour spikes meet the front legs at (0.281,+-0.05,-0.135) plus pin-holes at eyes/nostrils; the game toon + back-face outline test shows no black patches. Only the base-colour texture is kept (1024 WEBP q85, EXT_texture_webp); metallic 0 / roughness 0.8, no ORM/normal map, so a MeshStandardMaterial fallback looks flatter than the adult's. Region thresholds (rig_fire_teen.py): head x>0.39 & z>0 & |y|<0.08; wing |y|>0.075 & z>-0.03 (+chest/spine where |y|<0.10); wing1 also on torso where |y|>0.058 & z>-0.03; legs z<-0.07 and (|y|>0.02 front / 0.015 hind, or z<-0.148 below the chest keel), front x>0.20, hind -0.01<x<=0.20. The chest has a keel that hangs to z -0.14 between the front legs; it is weighted to the chest only."
 }

@@ -66,7 +66,8 @@ bpy.ops.object.mode_set(mode='OBJECT')
 W = cfg['weights']
 CORE = [n for n, *_ in SPINE]; CORE_SET = set(CORE)
 FRONT_LEG = ['farm1', 'farm2', 'fpaw', 'ftoe']; HIND_LEG = ['hleg1', 'hleg2', 'hfoot', 'htoe']
-LEG_PARENT = {'front': cfg['side'][0][3], 'hind': cfg['side'][4][3]}
+_par = {n: p for n, h, t, p in cfg['side']}
+LEG_PARENT = {'front': _par['farm1'], 'hind': _par['hleg1']}
 segs = {n: (Vector(h), Vector(t)) for n, h, t, p in BONES}
 zsc = W.get('core_z_scale', 1.0)
 def dist(p, n):
@@ -169,6 +170,7 @@ def wave(t, A, k, pw):
     o = fk(rots, phi, ty)
     neck = cfg['front_chain'][-2]
     rots['head'] = rots.get('head', 0.0) - (1 - cfg.get('head_follow', 0.3)) * o[neck][1]   # 头只跟一点点
+    rots['head'] -= cfg.get('head_counter', 0.0) * phi      # 头和腰反着微微转（腰往左摆时头稍往右），看着更活
     spec = {n: [('Z', a)] for n, a in rots.items()}
     spec[ROOT_BONE] = spec.get(ROOT_BONE, []) + [('Z', phi)]
     return spec, (0.0, ty, 0.0)
@@ -238,10 +240,13 @@ if not NO_EXPORT:
         'file': f'models/{NAME}_anim.glb', 'kind': cfg['kind'], 'stage': cfg['stage'],
         'length': round(max(xs) - min(xs), 4), 'pivot': M['pivot'], 'mouth': M['mouth'], 'headBone': 'head',
         'neckBones': [n for n, *_ in SPINE if n.startswith('neck')],
-        'tailBones': [n for n, *_ in SPINE if n.startswith('tail')] + (['fan'] if 'fan' in CORE_SET else []),
+        'tailBones': [n for n, *_ in SPINE if n.startswith('tail')],
+        'fanBone': 'fan' if 'fan' in CORE_SET else None,
+        'legBones': {'front': {sd: [b + '.' + sd for b in FRONT_LEG] for sd in 'LR'}, 'hind': {sd: [b + '.' + sd for b in HIND_LEG] for sd in 'LR'}},
         'spineBones': [n for n, *_ in SPINE if n == 'hips' or n.startswith('spine') or n == 'chest'],
         'actions': {name: round(frames / sc.render.fps, 4) for name, act, frames in actions},
         'tris': tris, 'bones': len(BONES), 'bytes': os.path.getsize(OUT_GLB),
+        'rotZImportDeg': cfg.get('import_rot_z_deg', 0),
         'notes': M.get('notes', ''),
     }
     json.dump(man, open(OUT_JSON, 'w', encoding='utf-8'), indent=2, ensure_ascii=False)
@@ -323,10 +328,12 @@ if not NO_CHECK:
     parts = os.path.join(CHECK, 'parts'); os.makedirs(parts, exist_ok=True)
     jobs = []
     # 先把要画的骨头位置全部读出来（渲染之前）
-    solo(None); sc.frame_set(0); REST_B = read_bones(); ACT_B = {}
+    # （先读动作再读静止姿势：手动清零姿势以后，换帧求值会对不上）
+    ACT_B = {}
     for name, frames in ACTS:
         solo(name); goto(0); ACT_B[name] = read_bones()
         print('OVERLAY', name, [(round(h[0], 3), round(h[1], 3), round(t[0], 3), round(t[1], 3)) for h, t, n in ACT_B[name] if n == 'fan'])
+    solo(None); sc.frame_set(0); REST_B = read_bones()
     # 1) 静止姿势 + 骨骼（侧/俯/正）
     solo(None); goto(0)
     for v in ('side', 'top'):

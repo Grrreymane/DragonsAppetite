@@ -1,7 +1,7 @@
 // 两条龙 × 三个阶段的数值（GDD §6.3 / §7.2）。成年火龙 = 原型手感，一个数都不改。
 export const STAGE_NAMES = ['幼龙', '少年龙', '成龙'];
-export const STAGE_PTS = [0, 40, 200];          // 进入该阶段时的累计成长点
-export const ADULT_GOAL_PTS = 200;
+export const STAGE_PTS = [0, 40, 160];          // 进入该阶段时的累计成长点
+export const ADULT_GOAL_PTS = 160;
 
 // model：主角模型的清单（models/<name>.json）。没做好之前用成龙模型 + 骨骼缩放顶替（temp=true，画面角上标「临时」）
 export const DRAGONS = {
@@ -9,9 +9,9 @@ export const DRAGONS = {
     zh: '火龙', action: '喷火',
     stages: [
       { model: 'fire_baby', fallback: { model: 'fire_adult', bones: { head: 1.4, neck1: 1.05, 'wing1.L': .62, 'wing1.R': .62, tail1: .8 } },
-        len: 4.3, level: 18, dive: 34, climb: 13, turn: 1.4, pitchK: .70, fireRange: 10, waterTime: 2.0, plungeDepth: 8, mouthR: 1.6, eatTier: 1, cookTier: 2 },
+        len: 4.3, level: 18, dive: 34, climb: 13, turn: 1.4, pitchK: .70, fireRange: 12, waterTime: 2.0, plungeDepth: 8, mouthR: 1.6, eatTier: 1, cookTier: 2 },
       { model: 'fire_teen', fallback: { model: 'fire_adult', bones: { head: 1.15, 'wing1.L': .82, 'wing1.R': .82 } },
-        len: 7.1, level: 22, dive: 40, climb: 16, turn: 1.2, pitchK: .66, fireRange: 16, waterTime: 2.5, plungeDepth: 12, mouthR: 2.2, eatTier: 2, cookTier: 3 },
+        len: 7.1, level: 22, dive: 40, climb: 16, turn: 1.2, pitchK: .66, fireRange: 17, waterTime: 2.5, plungeDepth: 12, mouthR: 2.2, eatTier: 2, cookTier: 3 },
       { model: 'fire_adult',
         len: 10.3, level: 27, dive: 48, climb: 19, turn: 1.05, pitchK: .62, fireRange: 22, waterTime: 3.0, plungeDepth: 16, mouthR: 3.0, eatTier: 3, cookTier: 3 },
     ],

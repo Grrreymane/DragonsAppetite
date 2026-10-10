@@ -4,10 +4,11 @@ import { waveH } from './world.js';
 import { SPECIES, SPECIES_IDS } from '../config/species.js';
 import { DRAGONS, STAGE_PTS, GOALS, GOAL_REWARD } from '../config/dragons.js';
 import { makeHero, stepFire, stepSea, heroMouth } from './hero.js';
-import { stepCreatures, spawnInitial, manageSpawns, rescueSpawn } from './creatures.js';
+import { stepCreatures, spawnInitial, manageSpawns, rescueSpawn, makeGroup } from './creatures.js';
+import { seabedY, groundAt } from './world.js';
 
 export const DT = 1 / 60;
-const TIER_PTS = [0, 1, 3, 8];
+const TIER_PTS = [0, 1, 4, 10];
 
 export function createSim({ kind = 'fire', seed = 1, stage = 0, pts, goalIdx = 0, codex = {}, x = 0, z = 0, yaw = 0 } = {}) {
   const cfg = DRAGONS[kind].stages[stage];
@@ -44,8 +45,10 @@ function setGoal(S) {
     S.goal = { ...g, have: 0, done: false, icon: g.sp || g.type };
   } else {
     // 本阶段的小目标做完了：推荐还没吃过、现在就能吃的图鉴
-    const can = SPECIES_IDS.filter(id => SPECIES[id].who.includes(S.kind) && SPECIES[id].tier <= S.cfg.eatTier);
-    const miss = can.find(id => !S.codex[id].n) || can.find(id => !S.codex[id].gold);
+    // 只推荐自己地盘里（火龙：天上和海面；海龙：水里和海面）现在就能吃的，保证「写什么就做得到」
+    const home = S.kind === 'fire' ? ['air', 'surface'] : ['water', 'surface'];
+    const can = SPECIES_IDS.filter(id => SPECIES[id].who.includes(S.kind) && SPECIES[id].tier <= S.cfg.eatTier && home.includes(SPECIES[id].hab));
+    const miss = can.find(id => !S.codex[id].n);
     S.goal = miss ? { type: 'eat', sp: miss, n: 1, have: 0, done: false, icon: miss, extra: true }
       : { type: 'grow', n: 1, have: 0, done: false, icon: 'grow', extra: true };
   }
@@ -72,7 +75,7 @@ export function goalTarget(S) {
     if (c.dying) continue;
     let ok = false;
     if (g.type === 'eat') ok = c.sp === g.sp && (c.edible || c.edibleCooked);
-    else if (g.type === 'cooked') ok = !c.edible && c.edibleCooked;
+    else if (g.type === 'cooked') ok = !c.edible && c.edibleCooked && cookableNow(S, c);
     else if (g.type === 'cross') ok = S.kind === 'fire' ? SPECIES[c.sp].hab !== 'air' && c.edible && c.y > -10 : (c.sp === 'gull' || c.sp === 'flyfish') && c.edible;
     else ok = c.edible;
     if (!ok) continue;
@@ -80,6 +83,11 @@ export function goalTarget(S) {
     if (d < bd) { bd = d; best = c; }
   }
   return best;
+}
+// 火龙只能在空中喷火烤熟（水下的不算）；海龙只能在水里冲刺撞晕
+export function cookableNow(S, c) {
+  const hab = SPECIES[c.sp].hab;
+  return S.kind === 'fire' ? c.y > 1.5 && hab !== 'water' : c.y < -1 && hab !== 'air';
 }
 export function nearestEdible(S, maxD = 400) {
   const h = S.hero; let best = null, bd = maxD;
@@ -94,7 +102,7 @@ export function nearestEdible(S, maxD = 400) {
 function eat(S, c, cross) {
   const d = SPECIES[c.sp], h = S.hero;
   const myTier = S.stage + 1, diff = Math.max(0, myTier - d.tier);
-  let k = diff === 0 ? 1 : diff === 1 ? .5 : .25;
+  let k = diff === 0 ? 1 : diff === 1 ? .75 : .5;
   const cooked = c.cooked >= 1;
   let mult = 1; if (cooked) mult *= 2; if (cross) mult *= 2; mult = Math.min(mult, 4);
   if (c.gold) mult *= 3;
@@ -117,7 +125,7 @@ function interact(S, dt) {
   const fire = S.kind === 'fire';
   const mR = S.cfg.mouthR * h.sizeK;
   const crossNow = fire ? h.medium === 'water' : h.medium === 'air';
-  const coneCos = Math.cos(12 * Math.PI / 180), range = S.cfg.fireRange * h.sizeK;
+  const coneCos = Math.cos(15 * Math.PI / 180), range = S.cfg.fireRange * h.sizeK;
   let autoAim = false;
   for (let i = S.creatures.length - 1; i >= 0; i--) {
     const c = S.creatures[i]; if (c.dying || c.size < .05) continue;
@@ -126,7 +134,8 @@ function interact(S, dt) {
     const eatR = mR + c.size * .5;
     if (canEat) {
       const ahead = (dx * f.x + dy * f.y + dz * f.z) / (d || 1);
-      const magR = eatR * (h.medium === 'air' && !fire ? 2.8 : 2.2);
+      const school = fire && (c.sp === 'sardine' || c.sp === 'sparrow');   // 火龙抓鸟群 / 扎水抓鱼球：吸附范围大一点
+      const magR = eatR * (h.medium === 'air' && !fire ? 2.8 : 2.2) * (school ? 1.35 : 1);
       if (d < eatR) { eat(S, c, crossNow); continue; }
       if (d < magR && ahead > .76) {                       // 吸附：0.12 秒内吸进嘴里
         const k = Math.min(1, dt / .12);
@@ -236,6 +245,19 @@ export function step(S, inp) {
         : g.type === 'cross' ? (S.kind === 'fire' ? 'sardine' : 'gull') : null);
       if (sp && !(g.type === 'cross' && S.spots.length)) rescueSpawn(S, sp);
       S.rescueT = far ? 20 : 8;
+    }
+    // 幼龙阶段：大约每 70 秒安排一只天敌从侧后方接近（GDD：40~60 秒第一次被追；能躲开，被咬也只掉光点）
+    S.encT = (S.encT ?? 40) - .5;
+    if (S.stage === 0 && S.encT <= 0) {
+      const sp = S.kind === 'fire' ? 'roc' : 'shark', h = S.hero, home = S.kind === 'fire' ? 'air' : 'water';
+      const near = S.creatures.some(c => c.sp === sp && Math.hypot(c.x - h.x, c.z - h.z) < 160);
+      if (!near && h.medium === home) {
+        const a = h.yaw + Math.PI * (S.rng() < .5 ? .55 : -.55), d = 105;
+        const x = h.x + Math.sin(a) * d, z = h.z + Math.cos(a) * d;
+        const y = S.kind === 'fire' ? Math.min(170, Math.max(groundAt(x, z) + 25, h.y + 8)) : Math.max(seabedY(x, z) + 3, Math.min(-6, h.y - 3));
+        if (S.kind === 'sea' || groundAt(x, z) < y - 15) { const g = makeGroup(S, sp, x, y, z, 1); g.encounter = true; for (const c of S.creatures) if (c.g === g) c.stT = 0; }
+      }
+      S.encT = 70;
     }
     if (S.noEat > 12 && (S.rescueT || 0) <= 0) {
       const sp = pickRescue(S); if (sp) rescueSpawn(S, sp); S.rescueT = 8; S.noEat = 6;

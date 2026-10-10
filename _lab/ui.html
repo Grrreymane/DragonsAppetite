@@ -28,7 +28,11 @@ import { DRAGONS, GOALS, STAGE_NAMES } from '../src/config/dragons.js';
 
 const wrap = document.getElementById('wrap'), cv = document.getElementById('cv'), cx = cv.getContext('2d');
 const qs = new URLSearchParams(location.search);
-const log = t => { const l = document.getElementById('log'); l.textContent = t; };
+const LOG = [];
+const log = t => { LOG.push(t); const l = document.getElementById('log'); l.textContent = t; };
+// 假装是主程序的摇杆：按钮没拦住的话这里会记一笔 JOY
+wrap.addEventListener('pointerdown', () => log('JOY'));
+wrap.addEventListener('touchstart', () => log('JOYT'), { passive: true });
 
 // ---------- 假的生物小图（真游戏里由 view/creatures.js 现场渲染） ----------
 const pcache = {};
@@ -206,11 +210,12 @@ function loop(now) {
   if (S && !paused) { tick(dt); ui.update(S, dt, events); events = []; }
   draw(); requestAnimationFrame(loop);
 }
-window.LAB = { ui, go, run, get S() { return S; }, save, drawCard: () => ui._result.drawCard() };
+window.LAB = { ui, go, run, LOG, get S() { return S; }, save, drawCard: () => ui._result.drawCard() };
 const names = ['load', 'title', 'title-new', 'hud', 'hud-cross', 'hud-sea', 'hud-adult', 'hud-left', 'pause', 'codex', 'result', 'result-sea', 'toast', 'live'];
 if (qs.has('bar')) { const b = document.getElementById('bar'); b.style.display = 'flex'; document.getElementById('log').style.display = 'block'; for (const n of names) { const e = document.createElement('button'); e.textContent = n; e.onclick = () => go(n); b.appendChild(e); } }
 go(qs.get('s') || 'live');
 requestAnimationFrame(loop);
+try { await Promise.all([document.fonts.load('12px "Fusion Pixel"', '菜单'), document.fonts.load('24px "ZCOOL QingKe HuangYou"', '龙')]); } catch (_) { /* 字体没好也照样跑 */ }
 window.__labReady = true;
 </script>
 </body>

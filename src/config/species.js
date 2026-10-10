@@ -8,7 +8,7 @@
 export const SPECIES = {
   sparrow:   { zh: '小雀',   tier: 1, who: ['fire'],        hab: 'air',     beh: 'flock',  len: 1.1, speed: 13, alt: [40, 150],  group: [6, 12], max: 60, pts: 1, colors: { body: 0x8a5a3a, belly: 0xf0e2c8, accent: 0x5a3a24 } },
   gull:      { zh: '海鸥',   tier: 1, who: ['fire', 'sea'], hab: 'air',     beh: 'circle', len: 1.4, speed: 11, alt: [6, 26],    group: [5, 8],  max: 30, pts: 1, colors: { body: 0xf4f4f0, belly: 0xffffff, accent: 0x8a96a4 } },
-  lavafinch: { zh: '熔岩雀', tier: 2, who: ['fire'],        hab: 'air',     beh: 'orbit',  len: 1.4, speed: 22, alt: [30, 120],  group: [4, 7],  max: 15, pts: 3, near: 'volcano', colors: { body: 0x2a2224, belly: 0xff7a22, accent: 0xffc040 } },
+  lavafinch: { zh: '熔岩雀', tier: 2, who: ['fire'],        hab: 'air',     beh: 'orbit',  len: 1.4, speed: 14, alt: [30, 120],  group: [4, 7],  max: 15, pts: 3, near: 'volcano', colors: { body: 0x2a2224, belly: 0xff7a22, accent: 0xffc040 } },
   cloudjelly:{ zh: '云水母', tier: 2, who: ['fire'],        hab: 'air',     beh: 'drift',  len: 2.6, speed: 2,  alt: [150, 230], group: [3, 5],  max: 12, pts: 3, colors: { body: 0xffc8e0, belly: 0xfff0f6, accent: 0xff9ac8 } },
   roc:       { zh: '大鹏',   tier: 3, who: ['fire'],        hab: 'air',     beh: 'patrol', len: 4.5, span: 9, speed: 24, alt: [80, 180], group: [1, 1], max: 3, pts: 8, predator: 'fire', colors: { body: 0x5a3e2a, belly: 0xf2ece0, accent: 0xd8a030 } },
   flyfish:   { zh: '飞鱼',   tier: 1, who: ['fire', 'sea'], hab: 'surface', beh: 'leap',   len: 1.0, speed: 16, depth: [-3, 8],   group: [4, 7],  max: 20, pts: 1, colors: { body: 0x4a7ab8, belly: 0xdfeaf4, accent: 0x9cc8f0 } },

@@ -5,6 +5,7 @@ window.__pause = true;
 const C = window.__cr;
 const only = new URLSearchParams(location.search).get('only') || '';
 const want = k => !only || only.split(',').includes(k);
+{ let tot = 0; const rows = []; for (const sp in C.cr.species) { const b = C.cr.species[sp]; rows.push(sp + ' ' + b.m.tris + '/' + b.cap); tot += b.m.tris * 2 * b.cfg.max; } __log('TRIS ' + rows.join(', ') + ' | worst-case all max (body+outline) ' + tot); }
 if (want('gallery')) for (const bg of ['sky', 'sea']) for (const page of ['0', '1']) {
   C.set('gallery', bg, page); C.step(8, 1 / 30); await __shot(`gallery_${bg}_${page}`);
 }
@@ -22,5 +23,6 @@ if (want('flock')) {
   __log('FLOCK creatures-only render: calls ' + i.calls + ' tris ' + i.tris + ' | cr.stats ' + JSON.stringify(i.cr) + ' | update ' + i.updMs.toFixed(3) + 'ms');
   const t0 = performance.now(); for (let k = 0; k < 200; k++) C.cr.update(C.S, 1, 1 / 60, k / 60); __log('update x200 avg ' + ((performance.now() - t0) / 200).toFixed(3) + 'ms');
 }
+if (want('game')) for (const bg of ['sky', 'sea']) { C.set('game', bg); C.step(20, 1 / 30); await __shot('game_' + bg); C.step(25, 1 / 30); await __shot('game_' + bg + '_2'); }
 __log('done ok');
 await __done();

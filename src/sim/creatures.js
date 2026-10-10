@@ -101,11 +101,12 @@ function wants(S) {
   if (fire) {
     w.push(['sparrow', zn === 'open' ? 3 : 5, 120, 340, 'air']);
     w.push(['cloudjelly', 2, 140, 340, 'air']);
+    if (S.stage >= 1) w.push(['lavafinch', 1, 120, 300, 'air']);
     w.push(['roc', 1, 220, 380, 'air']);
     w.push(['manta', zn === 'open' ? 2 : 1, 90, 260, 'water']);
     w.push(['jelly', 1, 40, 120, 'water']);
   } else {
-    w.push(['sardine', 4, 45, 120, 'water']);
+    w.push(['sardine', 3, 50, 130, 'water']);
     w.push(['jelly', 2, 40, 120, 'water']);
     w.push(['squid', 2, 50, 130, 'water']);
     w.push(['turtle', S.stage >= 1 ? 2 : 1, 50, 140, 'water']);
@@ -194,8 +195,9 @@ export function stepCreatures(S, dt) {
     const d = SPECIES[g.sp];
     if (g.home && g.spot) { g.x = lerp(g.x, g.home.x, damp(.5, dt)); g.z = lerp(g.z, g.home.z, damp(.5, dt)); continue; }
     if (g.beh === 'orbit' && g.home) continue;
-    // 慢慢转向的游荡
-    g.yaw += Math.sin(g.t * .23 + g.id) * .25 * dt;
+    // 慢慢转向的游荡（安排来的天敌：锚点朝玩家飘过来，30 秒后恢复游荡）
+    if (g.encounter && g.t < 30) g.yaw = Math.atan2(h.x - g.x, h.z - g.z);
+    else g.yaw += Math.sin(g.t * .23 + g.id) * .25 * dt;
     const v = d.speed * (g.beh === 'drift' ? 1 : .8);
     g.x += Math.sin(g.yaw) * v * dt; g.z += Math.cos(g.yaw) * v * dt;
     if (d.hab === 'air') {
@@ -249,7 +251,7 @@ export function stepCreatures(S, dt) {
           const a = c.off.a + g.scatter * 2, sx = (g.sx || 0) + Math.cos(a) * .9, sz = (g.sz || 0) + Math.sin(a) * .9;
           steer(c, c.x + sx * 20, c.y + c.off.h * 5, c.z + sz * 20, d.speed * 1.1, 4, dt);
         } else {
-          const a = c.off.a + g.t * .5, rr = 3 + c.off.r * 5;
+          const a = c.off.a + g.t * .5, rr = 2 + c.off.r * 3.5;
           steer(c, g.x + Math.cos(a) * rr, g.y + c.off.h * 2.5, g.z + Math.sin(a) * rr, d.speed * 1.4, 2.5, dt);
         }
         move(c, dt); keepAir(c, d.alt[0] - 10); face(c, dt);
@@ -286,11 +288,12 @@ export function stepCreatures(S, dt) {
         break;
       }
       case 'school': {         // 沙丁鱼：鱼球打转；受惊炸开 1 秒后聚拢
-        if (threat && g.scatter <= 0 && g.scd <= 0) { g.scatter = 1; g.scd = 3; }
+        // 只躲海龙（火龙扎下来那一下鱼球被吓呆了，躲不开 —— 保证「扎水抓鱼」写了就做得到）
+        if (threat && S.kind === 'sea' && hd < 6 + h.len * .5 && g.scatter <= 0 && g.scd <= 0) { g.scatter = .8; g.scd = 3; }
         const a = c.off.a + t * (1.2 + c.off.s * .6), rr = 2.2 + c.off.r * 2.8;
         let tx = g.x + Math.cos(a) * rr, ty = g.y + c.off.h * 1.6, tz = g.z + Math.sin(a) * rr;
         if (g.scatter > 0) { c.flee = true; tx = c.x + (hx / (hd || 1)) * 8 + Math.cos(c.off.a) * 4; ty = c.y + c.off.h * 2; tz = c.z + (hz / (hd || 1)) * 8 + Math.sin(c.off.a) * 4; }
-        steer(c, tx, ty, tz, d.speed * (g.scatter > 0 ? 1.6 : 1.2), 3.5, dt);
+        steer(c, tx, ty, tz, d.speed * (g.scatter > 0 ? 1.3 : 1.2), 3.5, dt);
         move(c, dt); keepWater(c, t, -.6); face(c, dt, .3);
         c.flap = .8; c.phase += dt * 14;
         break;
@@ -377,7 +380,13 @@ function stepPredator(S, c, g, d, hx, hy, hz, hd, dt) {
   let tx, ty, tz, v = d.speed * .7;
   if (c.st === 'chase') { tx = h.x + Math.sin(h.yaw) * 4; ty = h.y; tz = h.z + Math.cos(h.yaw) * 4; v = chaseV; }
   else if (c.st === 'alert') { tx = c.x - hx * .1; ty = c.y; tz = c.z - hz * .1; v = d.speed * .3; }
-  else if (c.st === 'retreat' || c.st === 'flee') { tx = c.x + hx / (hd || 1) * 30; ty = c.y + (d.hab === 'air' ? 4 : -3); tz = c.z + hz / (hd || 1) * 30; v = c.st === 'flee' ? d.speed * 1.05 : d.speed; c.flee = c.st === 'flee'; }
+  else if (c.st === 'retreat' || c.st === 'flee') {
+    // 逃：速度比玩家平飞慢一截，高度不超出自己的活动范围（不然成龙追不上，「吃掉大鹏」就做不到）
+    const lv = S.cfg.level || S.cfg.cruise;
+    tx = c.x + hx / (hd || 1) * 30; tz = c.z + hz / (hd || 1) * 30;
+    ty = d.hab === 'air' ? Math.min(d.alt[1], c.y + 3) : Math.max(d.depth[1], c.y - 3);
+    v = c.st === 'flee' ? Math.min(d.speed, lv * .82) : d.speed; c.flee = c.st === 'flee';
+  }
   else { const a = c.off.a + t * (d.speed * .7 / 35); tx = g.x + Math.cos(a) * 35; ty = g.y + Math.sin(t * .2) * 6; tz = g.z + Math.sin(a) * 35; }
   steer(c, tx, ty, tz, v, c.st === 'chase' ? 2.2 : 1.2, dt);
   move(c, dt);
@@ -386,7 +395,7 @@ function stepPredator(S, c, g, d, hx, hy, hz, hd, dt) {
   c.flap = d.hab === 'air' ? (c.st === 'chase' ? 1 : .5) : (c.st === 'chase' ? 1 : .55);
   c.phase += dt * (d.hab === 'air' ? 4 + 4 * c.flap : 3 + 4 * c.flap);
   // 咬
-  if (c.st === 'chase' && hd < h.len * .45 + c.size * .45 && h.invuln <= 0) {
+  if (c.st === 'chase' && hd < h.len * .5 + c.size * .55 && h.invuln <= 0) {
     S.bite(c);
     c.st = 'retreat'; c.stT = 6;
   }

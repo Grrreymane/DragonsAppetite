@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>封面</title>
+<style>html,body{margin:0;background:#9cc4e4;overflow:hidden}canvas{display:block;width:100vw;height:100vh}
+#t{position:absolute;left:0;right:0;top:7%;text-align:center;color:#fff;font:120px/1 "ZCOOL QingKe HuangYou","PingFang SC",sans-serif;letter-spacing:12px;text-shadow:0 6px 0 #1c3a66,0 0 30px rgba(255,255,255,.5)}
+#s{position:absolute;left:0;right:0;top:calc(7% + 140px);text-align:center;color:#fff;font:36px/1 "ZCOOL QingKe HuangYou","PingFang SC",sans-serif;text-shadow:0 3px 0 #1c3a66}</style>
+<style>@font-face { font-family: "ZCOOL QingKe HuangYou"; src: url("../fonts/qingke.woff2") format("woff2"); }</style>
+<script type="importmap">{ "imports": { "three": "../lib/three.module.min.js" } }</script>
+</head>
+<body>
+<div id="t">龙游天海</div><div id="s">火龙翱翔天空 · 海龙遨游大海</div>
+<script type="module">
+// 封面（1920×1080）：天空 + 海 + 岛 + 两条成龙。python tools/rec3d.py --page _lab/cover.html --director tools/scenarios/cover.js --size 1920x1080 --out .cache/cover
+import * as THREE from 'three';
+import { GRAD, outlineMat, toonMat } from '../src/view/toon.js';
+import { createSky } from '../src/view/sky.js';
+import { createIslands } from '../src/view/islands.js';
+import { createDragonView, loadModel } from '../src/view/dragon.js';
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+renderer.setPixelRatio(1); renderer.setSize(innerWidth, innerHeight); renderer.toneMapping = THREE.ACESFilmicToneMapping;
+document.body.prepend(renderer.domElement);
+const scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, .3, 3000);
+const ctx = { THREE, scene, camera, renderer, GRAD, outlineMat, toonMat };
+const sky = createSky(ctx); ctx.sky = sky.sky;
+const isl = createIslands(ctx);
+let sea = null;
+try { const m = await import('../src/view/sea.js'); sea = m.createSea(ctx); } catch (e) { }
+camera.position.set(-8, 46, -48); camera.lookAt(10, 40, 40);
+const fire = createDragonView({ scene }), seaD = createDragonView({ scene });
+fire.build(await loadModel('fire_adult'), 14, null);
+try { seaD.build(await loadModel('sea_adult'), 16, null); } catch (e) { }
+const pose = (D, act, t) => { for (const k in D.act) D.act[k].setEffectiveWeight(0); const a = D.act[act] || Object.values(D.act)[0]; if (a) { a.setEffectiveWeight(1); a.time = t * a.getClip().duration; } D.mixer.update(0); };
+pose(fire, 'Fly', .3); pose(seaD, 'Glide', .4);
+fire.root.position.set(-9, 50, 8); fire.root.rotation.set(-.12, Math.PI - .6, .22, 'YXZ');
+seaD.root.position.set(13, 37, 16); seaD.root.rotation.set(-.55, Math.PI + .75, -.1, 'YXZ'); seaD.glow.value = .8;
+const fake = { creatures: [], spots: [], orbs: [], hero: { x: 0, y: 40, z: 0, len: 10, yaw: 0, medium: 'air' }, t: 3, kind: 'fire' };
+for (let i = 0; i < 3; i++) { sea && sea.update(fake, 1, 1 / 30, 3, camera); isl.update(camera, 3, 1 / 30); sky.update(camera); }
+renderer.render(scene, camera);
+window.__coverReady = true; window.__render = () => renderer.render(scene, camera);
+</script>
+</body>
+</html>

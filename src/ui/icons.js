@@ -58,13 +58,14 @@ export const DRAGON_ART = {
   <path fill="none" stroke="#6e2216" stroke-width="2.5" d="M104 98 Q114 66 128 36 M128 36 Q150 48 168 64 M128 36 Q140 56 146 78 M128 36 Q130 64 131 90"/>
   <circle fill="#ffd34d" stroke-width="2" cx="54" cy="62" r="3.6"/>`),
   sea: art('#0b1f33', `
-  <path fill="#2a8f9f" d="M60 104 L70 84 L76 106z M84 112 L96 90 L100 114z M108 120 L122 98 L124 122z M132 120 L148 102 L148 124z M154 112 L170 98 L168 118z"/>
-  <path fill="#173d5c" d="M58 116 l-10 22 l12 -2 l6 -18z M84 122 l-6 24 l12 -2 l2 -20z M128 128 l-2 22 l12 0 l0 -20z M150 124 l4 22 l11 -3 l-5 -19z"/>
-  <path fill="#2a8f9f" d="M168 104 L196 76 Q188 102 199 132z"/>
-  <path fill="#1d4a6e" d="M30 84 C40 74 56 92 72 108 C92 128 118 136 140 126 C156 118 162 104 176 100 L180 112 C164 116 158 132 140 140 C114 152 86 142 66 122 C52 108 42 96 32 96z"/>
-  <path fill="none" stroke="#e9e4cf" stroke-width="5" d="M40 94 C56 106 66 122 84 132 C104 142 124 142 142 134"/>
-  <path fill="#1d4a6e" d="M14 76 C20 64 36 60 48 66 L58 74 C54 84 44 88 34 88 L20 86 C12 84 11 80 14 76z"/>
-  <path fill="#2a8f9f" d="M40 66 L50 48 L54 66z M48 66 L64 54 L58 72z"/>
-  <circle fill="#7ff6ff" stroke-width="2" cx="38" cy="73" r="3.2"/>
-  <g fill="#7ff6ff" stroke="none"><circle cx="80" cy="118" r="2.6"/><circle cx="96" cy="126" r="2.4"/><circle cx="114" cy="129" r="2.6"/><circle cx="132" cy="125" r="2.2"/><circle cx="150" cy="117" r="2"/><circle cx="66" cy="106" r="2.2"/></g>`),
+  <path fill="#2a8f9f" d="M58 84 L62 66 L72 90z M78 102 L86 82 L94 108z M100 114 L110 94 L116 118z M122 116 L134 96 L138 116z M144 106 L156 86 L158 104z"/>
+  <path fill="#173d5c" d="M70 120 l-14 18 l15 1 l8 -14z M86 127 l-5 20 l14 -1 l2 -17z M120 131 l-3 20 l14 0 l1 -18z M138 124 l7 19 l12 -5 l-7 -16z"/>
+  <path fill="#2a8f9f" d="M164 88 L186 48 Q190 72 198 82 Q190 96 196 122 L172 100z"/>
+  <path fill="#1d4a6e" d="M42 70 C56 80 64 96 80 108 C98 120 118 122 136 114 C150 108 158 96 168 82 L180 90 C170 106 158 122 140 131 C118 142 92 141 72 127 C56 115 46 99 34 86z"/>
+  <path fill="none" stroke="#e9e4cf" stroke-width="5" d="M40 86 C52 101 62 114 76 122 C94 133 118 135 138 126"/>
+  <path fill="#2a8f9f" d="M40 54 L54 30 L58 56z M48 58 L72 42 L62 66z"/>
+  <path fill="#1d4a6e" d="M12 68 C16 57 30 51 44 54 L58 62 C59 73 51 81 41 83 L22 81 C13 79 9 74 12 68z"/>
+  <path fill="none" stroke-width="2" d="M16 74 L36 76"/>
+  <circle fill="#7ff6ff" stroke-width="2" cx="36" cy="64" r="3.4"/>
+  <g fill="#7ff6ff" stroke="none"><circle cx="58" cy="92" r="2.4"/><circle cx="74" cy="106" r="2.6"/><circle cx="92" cy="116" r="2.8"/><circle cx="112" cy="120" r="2.6"/><circle cx="130" cy="117" r="2.4"/><circle cx="148" cy="108" r="2.2"/><circle cx="162" cy="96" r="2"/></g>`),
 };

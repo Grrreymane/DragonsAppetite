@@ -57,7 +57,7 @@ scene.add(new THREE.HemisphereLight(0xdcecff, 0x6b5a4a, .9));
 const sunL = new THREE.DirectionalLight(0xfff0d8, 2.6); sunL.position.copy(SUN).multiplyScalar(100); scene.add(sunL);
 
 // ---- 岛（只为看海和岛的交界，按 world.js 的剖面车出来）----
-const islMat = toonMat({ vertexColors: true, flatShading: true });
+const islMat = toonMat({ vertexColors: true }); islMat.flatShading = true;
 for (const is of islands) {
   const pts = is.prof.map(([r, h]) => new THREE.Vector2(r, h));
   const g = new THREE.LatheGeometry(pts, 20);
@@ -72,7 +72,7 @@ for (const is of islands) {
 
 // ---- 假的 S：一条龙 + 海鸥 + 沙丁鱼群 + 飞鱼 + 蝠鲼 + 觅食点 ----
 const S = { t: 0, hero: { x: 0, y: 20, z: 90, px: 0, py: 20, pz: 90, yaw: 0, len: 10, medium: 'air' }, creatures: [], spots: [] };
-let anchor = { x: 0, z: 100 }, heroY = 20, gullY = 10;
+let anchor = { x: 0, z: 100 }, heroY = 20, gullY = 10, heroP = null;
 const mk = (sp, n) => { for (let i = 0; i < n; i++) S.creatures.push({ id: S.creatures.length, sp, x: 0, y: 0, z: 0, px: 0, py: 0, pz: 0, yaw: 0, size: { gull: 1.4, sardine: .7, flyfish: 1, manta: 3.5 }[sp], i }); };
 mk('gull', 6); mk('sardine', 26); mk('flyfish', 4); mk('manta', 1);
 const look = { gull: [0xf4f4f0, new THREE.SphereGeometry(1, 8, 6).scale(.25, .2, .6), new THREE.BoxGeometry(2.4, .06, .4)], sardine: [0x3a8aa0, new THREE.SphereGeometry(1, 6, 4).scale(.12, .14, .45)], flyfish: [0x4a7ab8, new THREE.SphereGeometry(1, 6, 4).scale(.15, .15, .5)], manta: [0x2a3440, new THREE.SphereGeometry(1, 8, 4).scale(3.5, .4, 1.6)] };
@@ -93,6 +93,7 @@ function place() {
   }
   S.spots = [{ x: A.x - 12, z: A.z + 42, r: 12 }, { x: A.x + 40, z: A.z + 160, r: 12 }];
   const h = S.hero; h.px = h.x; h.py = h.y; h.pz = h.z; h.x = A.x; h.z = A.z - 10 + (t * 6) % 20; h.y = heroY;
+  if (heroP) { h.x = heroP[0]; h.y = heroP[1]; h.z = heroP[2] + (t * 6) % 20; }
   S.creatures.forEach((c, i) => { meshes[i].position.set(c.x, c.y, c.z); meshes[i].rotation.set(0, c.yaw, 0); });
   hero.position.set(h.x, h.y, h.z);
 }
@@ -110,12 +111,13 @@ const VIEWS = {
   掠水: { a: [0, 100], hy: 6, cam: [0, 4, 60], look: [0, 1.5, 200] },
   水线: { a: [0, 100], hy: 5, cam: [0, 'w1', 60], look: [0, .5, 200] },
   翠岛: { a: [0, 100], hy: -6, cam: [0, -8, 60], look: [0, -18, 110] },
-  火山: { a: [-1175, 600], hy: -40, cam: [-1175, -40, 590], look: [-1175, -52, 650] },
-  外海: { a: [-1210, 0], hy: -80, cam: [-1210, -80, -10], look: [-1210, -88, 50] },
+  火山: { a: [-1175, 600], hp: [-1172, -43, 600], cam: [-1175, -40, 580], look: [-1175, -50, 650] },
+  外海: { a: [-1210, 0], hp: [-1207, -82, 6], cam: [-1210, -80, -14], look: [-1210, -88, 50] },
+  岛边: { a: [-170, 60], hp: [-160, -14, 70], cam: [-170, -10, 70], look: [-170, -16, 160] },
   仰望: { a: [5, 90], hy: -14, gy: 6, cam: [20, -10, 100], look: [20, 4, 120] },
 };
 function view(name) {
-  const v = VIEWS[name]; anchor = { x: v.a[0], z: v.a[1] }; heroY = v.hy; gullY = v.gy || 10;
+  const v = VIEWS[name]; anchor = { x: v.a[0], z: v.a[1] }; heroY = v.hy; gullY = v.gy || 10; heroP = v.hp || null;
   const y = v.cam[1] === 'w1' ? waveH(v.cam[0], v.cam[2], S.t) + 1.0 : v.cam[1];
   camPos.set(v.cam[0], y, v.cam[2]); camLook.set(...v.look);
   for (const b of document.querySelectorAll('#ui button')) b.classList.toggle('on', b.textContent === name);

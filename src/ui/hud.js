@@ -93,7 +93,7 @@ export function createHUD(root, api, G, pic) {
     let dx = p.x - cx, dy = p.y - cy;
     if (behind) { dx = -dx; dy = -dy; }
     if (Math.abs(dx) + Math.abs(dy) < 1) dy = 1;
-    const L = G.sl + inset, R = G.W - G.sr - inset, T = G.st + 112, B = G.H - G.sb - inset;
+    const L = G.sl + inset, R = G.W - G.sr - inset, T = G.st + 140, B = G.H - G.sb - inset;
     const sx = dx > 0 ? (R - cx) / dx : dx < 0 ? (L - cx) / dx : 1e9, sy = dy > 0 ? (B - cy) / dy : dy < 0 ? (T - cy) / dy : 1e9;
     const s = Math.min(sx, sy);
     return { x: cx + dx * s, y: cy + dy * s, deg: Math.atan2(dy, dx) * 57.2958 + 90 };
@@ -115,13 +115,12 @@ export function createHUD(root, api, G, pic) {
 
   // ---------- 每帧 ----------
   function update(S, dt, events) {
-    if (el.hidden || !S || !S.hero) return;
+    if (el.hidden || !S || !S.hero || !api.project) return;
     const H0 = S.hero, kind = S.kind;
     if (events) for (const e of events) {
       if (e.type === 'eat') { if (S.t - (C.bumpT || -9) > .15) { C.bumpT = S.t; pop(S.stage >= 2 ? cbar : gbar, 1.06, 200); } }
       else if (e.type === 'codex') { newQ.push(e.sp); showNew(); }
       else if (e.type === 'bite') hurts.forEach(x => x.animate && x.animate([{ opacity: 0 }, { opacity: .7, offset: .3 }, { opacity: 0 }], { duration: 600 }));
-      else if (e.type === 'goal') C.goalPop = true;
     }
 
     // 成长条
@@ -204,7 +203,7 @@ export function createHUD(root, api, G, pic) {
     for (let i = 0; i < 3; i++) {
       const t = tags[i], c = tag3[i] && tag3[i].c;
       const p = c && api.project(c.x, c.y + c.size * .7, c.z);
-      if (!c || !onScreen(p, G)) { setOp(t.e, 0); continue; }
+      if (!c || !onScreen(p, G) || c.id === arrows[0].id && arrows[0].a > .1) { setOp(t.e, 0); continue; }
       const k = c.edibleCooked ? (kind === 'fire' ? 'f' : 's') : 'l' + SPECIES[c.sp].tier;
       if (k !== t.k) { t.k = k; t.e.innerHTML = k === 'f' ? icon('fire') : k === 's' ? icon('star', 'stun') : icon('lock') + `<i>${STAGE_CH[SPECIES[c.sp].tier - 1]}</i>`; t.e.classList.toggle('lk', k[0] === 'l'); }
       setTf(t.e, p.x, p.y - 16); setOp(t.e, .9);

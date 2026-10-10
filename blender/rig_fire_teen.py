@@ -63,7 +63,8 @@ WING_Y, WING_Z = 0.075, -0.03                 # wing membrane/arm: |y|>.075 and 
 WING_ROOT_Y = 0.10                            # wing verts with |y|<.10 may also take chest/spine (wing root blend)
 SHOULDER_Y, SHOULDER_Z = 0.058, -0.03         # body verts with |y|>.058 and z>-.03 may take wing1 (shoulder skin)
 LEG_Z = -0.07                                 # legs only below the belly line (belly ~-.085, chest bottom ~-.096)
-FLEG_Y, HLEG_Y = 0.020, 0.015                 # keep the chest keel (|y|<.02, hangs to z -.14 between front legs) on the chest
+FLEG_Y, HLEG_Y = 0.020, 0.015                 # keep the chest keel (|y|<.02, hangs to z -.14 between front legs) on the chest...
+KEEL_Z = -0.148                               # ...but below the keel tip every vertex is foot/toe (inner toes reach |y| .017)
 FRONT_X, HIND_X = 0.20, -0.01                 # x>.20 front leg, -.01<x<=.20 hind leg
 
 bpy.ops.wm.read_factory_settings(use_empty=True)
@@ -111,9 +112,9 @@ for v in mesh.data.vertices:
     else:
         cand = list(CORE); reg = 'core'
         if p.z < LEG_Z:
-            if p.x > FRONT_X and ay > FLEG_Y:
+            if p.x > FRONT_X and (ay > FLEG_Y or p.z < KEEL_Z):
                 cand += ['farm1' + s, 'farm2' + s, 'fpaw' + s, 'ftoe' + s]; reg = 'fleg'
-            elif HIND_X < p.x <= FRONT_X and ay > HLEG_Y:
+            elif HIND_X < p.x <= FRONT_X and (ay > HLEG_Y or p.z < KEEL_Z):
                 cand += ['hleg1' + s, 'hleg2' + s, 'hfoot' + s, 'htoe' + s]; reg = 'hleg'
         if ay > SHOULDER_Y and p.z > SHOULDER_Z: cand += ['wing1' + s]; reg = 'shoulder'
     region_count[reg] = region_count.get(reg, 0) + 1
@@ -293,10 +294,37 @@ if MANIFEST:
     man = {
         'file': 'models/' + os.path.basename(OUT_GLB), 'kind': 'fire', 'stage': 'teen',
         'length': round(max(xs) - min(xs), 3), 'pivot': list(pivot), 'mouth': list(mouth), 'headBone': 'head',
-        'neckBones': ['neck1', 'neck2'], 'tailBones': [f'tail{i}' for i in range(1, 7)],
+        # head included = same list as the adult's built-in default in src/view/dragon.js (turn overlay 3 x 0.16)
+        'neckBones': ['neck1', 'neck2', 'head'], 'tailBones': [f'tail{i}' for i in range(1, 7)],
         'wingBones': {'L': ['wing1.L', 'wing2.L', 'fing1.L'], 'R': ['wing1.R', 'wing2.R', 'fing1.R']},
         'actions': {name: round(frames / 24, 3) for name, act, frames in actions},
         'tris': tris, 'bones': len(BONES), 'bytes': os.path.getsize(OUT_GLB),
+        'extents': {'x': [round(min(xs), 3), round(max(xs), 3)], 'y': [round(min(p.y for p in V), 3), round(max(p.y for p in V), 3)],
+                    'z': [round(min(p.z for p in V), 3), round(max(p.z for p in V), 3)],
+                    'wingspan': round(max(p.y for p in V) - min(p.y for p in V), 3)},
+        'notes': (
+            "Blender rest coords (head +X, up +Z, +Y = dragon's left). Rest pose = standing on 4 straight legs, wings spread "
+            f"(leading-finger tip elevation {WING_ELEV:.1f} deg; adult 28.2). Wingspan 0.998 = nose-to-tail length 0.998 "
+            "(adult 0.998 vs 0.936), so at the same SCALE formula the teen reads about as wide as the adult relative to its length. "
+            "Keys start at frame 0: clips are exactly Fly 3.0 s (72 f, 3 flaps + one 3 s finger-breath), Glide 2.0 s (48 f), "
+            "Idle 3.0 s (72 f); first key == last key; every clip keys all 38 bones (rotation only). Same 38-bone names/topology "
+            "as fire_adult_anim (GLTFLoader strips the dot: wing1.L -> wing1L). No jaw bone. Head bone (0.40,0,0.066)->(0.497,0,0.066); "
+            "mouth = snout tip in rest pose. Fly/Glide limb angles were SOLVED to the approved adult pose and verified with "
+            "pose_report.py: elbow 70, wrist 27-33, fingers 67-83 (3 s breathing), knee 90, ankle 55, toes 37, tail 8-20 deg up "
+            "(172..160). Neck kept in its rest shape with the adult's small offsets (chest 13 -> neck1 34 -> neck2 30-35 -> head -5..0; "
+            f"adult 17/39/34-38/-4..0). Wing flap baseline shifted by +{UP0:.3f} rad (Fly up = {UP0 - 0.35:+.3f} + 0.8 sin, "
+            f"Glide {UP0 - 0.52:+.3f}) so absolute wing-tip elevations match the adult within 2 deg (-51..+67 in Fly, +4 in Glide); "
+            "flap amplitude 0.8 rad as the adult, so the runtime dive-tuck overlay on wing1/wing2/fing1 works unchanged. "
+            "neckBones includes 'head' like the adult's built-in default (dragon.js); drop it to make the teen turn its head less. "
+            "Hind leg is digitigrade on this mesh: hfoot = metatarsus (hock->ball), htoe = sole+toes. Mesh = raw Tripo P1 output "
+            "(face-limit 6500), geometry unedited: 0 inverted shells; only open seams are two ~0.035-radius rings where the elbow "
+            "armour spikes meet the front legs at (0.281,+-0.05,-0.135) plus pin-holes at eyes/nostrils; the game toon + back-face "
+            "outline test shows no black patches. Only the base-colour texture is kept (1024 WEBP q85, EXT_texture_webp); "
+            "metallic 0 / roughness 0.8, no ORM/normal map, so a MeshStandardMaterial fallback looks flatter than the adult's. "
+            "Region thresholds (rig_fire_teen.py): head x>0.39 & z>0 & |y|<0.08; wing |y|>0.075 & z>-0.03 (+chest/spine where "
+            "|y|<0.10); wing1 also on torso where |y|>0.058 & z>-0.03; legs z<-0.07 and (|y|>0.02 front / 0.015 hind, or z<-0.148 "
+            "below the chest keel), front x>0.20, hind -0.01<x<=0.20. The chest has a keel that hangs to z -0.14 between the front "
+            "legs; it is weighted to the chest only."),
     }
     json.dump(man, open(MANIFEST, 'w'), indent=2)
 print('MANIFEST_NUMBERS', json.dumps({'mouth': mouth, 'pivot': pivot, 'tris': tris, 'len': round(max(xs) - min(xs), 3)}))

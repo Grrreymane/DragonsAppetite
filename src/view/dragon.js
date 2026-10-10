@@ -6,6 +6,7 @@ import { GRAD, outlineMat } from './toon.js';
 const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
 const loader = new GLTFLoader();
 const cache = new Map();          // name → Promise<{ gltf, man }>
+const BASE = new URL('../../', import.meta.url);   // 游戏根目录（试验页在 _lab/ 里也能找到 models/）
 
 // 没有清单文件时的默认值（成年火龙，原型里量好的）
 const DEFAULT_MAN = {
@@ -18,16 +19,16 @@ export function loadModel(name, onProgress) {
   if (cache.has(name)) return cache.get(name);
   const p = (async () => {
     let man = DEFAULT_MAN[name];
-    try { const r = await fetch(`models/${name}.json`, { cache: 'no-cache' }); if (r.ok) man = { ...(man || {}), ...(await r.json()) }; } catch (e) { /* 没清单就用默认 */ }
+    try { const r = await fetch(new URL(`models/${name}.json`, BASE), { cache: 'no-cache' }); if (r.ok) man = { ...(man || {}), ...(await r.json()) }; } catch (e) { /* 没清单就用默认 */ }
     if (!man) throw new Error('没有模型 ' + name);
-    const gltf = await new Promise((res, rej) => loader.load(man.file, res, e => onProgress && e.total && onProgress(e.loaded / e.total), rej));
+    const gltf = await new Promise((res, rej) => loader.load(new URL(man.file, BASE).href, res, e => onProgress && e.total && onProgress(e.loaded / e.total), rej));
     return { gltf, man, name };
   })();
   cache.set(name, p);
   p.catch(() => cache.delete(name));
   return p;
 }
-export const hasModel = name => fetch(`models/${name}.json`, { method: 'HEAD', cache: 'no-cache' }).then(r => r.ok).catch(() => false);
+export const hasModel = name => fetch(new URL(`models/${name}.json`, BASE), { method: 'HEAD', cache: 'no-cache' }).then(r => r.ok).catch(() => false);
 
 // 一条龙的显示对象。build() 换模型（进化 / 换龙），update() 每帧
 export function createDragonView({ scene }) {

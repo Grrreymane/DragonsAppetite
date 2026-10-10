@@ -57,6 +57,7 @@
   "front_chain": ["spine1", "spine2", "spine3", "chest", "neck1", "neck2", "neck3", "head"],
   "stabilize_points": ["spine3", "chest", "neck1", "neck2", "neck3", "head"],
   "head_follow": 0.3,
+  "head_counter": 0.25,
 
   "poses": {
     "tuck": {
@@ -80,6 +81,6 @@
   "manifest": {
     "pivot": [0.13, 0, 0.005],
     "mouth": [0.497, 0, -0.012],
-    "notes": ""
+    "notes": "Wingless sea dragon. Same orientation convention as fire_adult (Blender head +X, up +Z, left +Y; glTF head +X), but the raw Tripo mesh had its head at -Y, so rig_sea.py rotates it +90 deg about Z on import; every coordinate here is in the rotated frame. Swim/Dash/Idle/Glide all loop seamlessly (keys from frame 0, first frame == last frame). The undulation is LATERAL (yaw about the vertical axis); the tail fin is vertical. The root bone 'hips' carries small yaw + sideways translation keys (Swim +-0.011, Dash +-0.015 model units) that keep chest/neck/head steady, so do not reset hips.position/quaternion in a runtime overlay (undo-then-apply like flight.html is fine). Head yaw is almost zero in Swim/Dash/Glide (about +-2 deg counter-yaw); Idle has a slow look-around (+-8 deg). Swim, Dash and Glide share the same tucked-leg pose so they crossfade cleanly; Idle has the legs hanging, crossfade 0.3-0.5 s. Dash = Swim wave with ~1.4x amplitude at 2x speed; you can also play Swim with timeScale for in-between speeds. Tail tip lateral swing: Swim +-0.073, Dash +-0.091, Idle +-0.042, Glide +-0.02 (model units). GLTFLoader strips the dot from bone names (farm1.L -> farm1L). Texture: base colour only, 1024 WEBP (ORM/normal dropped), use MeshToonMaterial({map}). Mesh is closed with consistent normals (backface-cull check clean); only the mouth slit / eye sockets have small open borders. mouth = snout tip in rest pose (for bubble/water breath). Source mesh: .cache/art/sea_adult/tripo_b_01.glb (Tripo P1, face-limit 8000); re-rig with: blender -b --factory-startup -P blender/rig_sea.py -- blender/rigs/sea_adult.json"
   }
 }

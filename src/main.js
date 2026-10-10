@@ -1,6 +1,6 @@
 // 龙游天海 · 主程序：启动、状态机（标题 / 游戏 / 暂停 / 结算）、主循环（sim 固定步长 1/60 + 渲染插值）、把各模块接起来。
 import * as THREE from 'three';
-import { createSim, step, DT, setStage, goalTarget, nearestEdible } from './sim/sim.js';
+import { createSim, step, DT, setStage, goalTarget, nearestEdible, cookableNow } from './sim/sim.js';
 import { DRAGONS, STAGE_PTS, STAGE_NAMES } from './config/dragons.js';
 import { SPECIES, SPECIES_IDS } from './config/species.js';
 import { waveH, zoneAt } from './sim/world.js';
@@ -62,7 +62,7 @@ const audio = mkAudio();
 // ---------- 存档 / 状态 ----------
 const save = loadSave();
 let S = null, state = 'title', kind = save.pick || 'fire', temp = false, loadingModel = false;
-let evo = null, resultTimer = 0, saveT = 0, hintState = {}, playSecAcc = 0, preloaded = {};
+let evo = null, resultTimer = 0, saveT = 0, hintState = {}, playSecAcc = 0, preloaded = {}, eatenBase = 0;
 const input = createInput(wrap, document.getElementById('joy'), {
   onDrag: on => { ui.dragging(on); if (on) audio.unlock(); },
   onAction: on => onAction(on),
@@ -113,6 +113,7 @@ async function startGame(k) {
   const sv = save[k];
   const seed = +(Q.get('seed') || 1) + (sv.playSec | 0);
   S = createSim({ kind: k, seed, stage: sv.stage | 0, pts: sv.pts | 0, goalIdx: sv.goal | 0, codex: save.codex });
+  eatenBase = sv.eaten | 0;
   if (Q.has('stage')) setStage(S, +Q.get('stage'));
   ui.hideTitle(); ui.setLoading && ui.setLoading(0, '');
   await applyHero(k, S.stage, S.hero.len);
@@ -135,7 +136,7 @@ addEventListener('keydown', e => { if (e.code === 'Escape') state === 'play' ? p
 function persist() {
   if (!S) return;
   const sv = save[S.kind];
-  sv.stage = S.stage; sv.pts = Math.round(S.pts); sv.goal = S.goalIdx; sv.eaten = (sv.eaten0 ?? sv.eaten) | 0;
+  sv.stage = S.stage; sv.pts = Math.round(S.pts); sv.goal = S.goalIdx; sv.eaten = (eatenBase | 0) + S.stats.eaten;
   sv.playSec = (sv.playSec || 0) + playSecAcc; playSecAcc = 0;
   save.codex = S.codex;
   writeSave(save);
@@ -165,7 +166,7 @@ function handleEvents(evs) {
       case 'enterWater': case 'exitWater': {
         const sy = waveH(e.x, e.z, S.t), big = e.type === 'enterWater' ? 1 : .8;
         P.burst('splash', e.x, sy + .3, e.z, Math.round(36 * big), 8 * Math.max(.6, k), .9, 1.1 * Math.max(.5, k), { grav: 14, up: 1.6, drag: 1 });
-        P.burst('bubble', e.x, sy - 1, e.z, 16, 4, .9, .35, { rise: 6 });
+        P.burst('bubble', e.x, sy - 1, e.z, 16, 4, .9, .12, { rise: 6, grow: .6, alpha: .7 });
         if (e.type === 'exitWater' && S.kind === 'fire') dripT = 1.5;
         break;
       }
@@ -217,7 +218,7 @@ function updateHints(dt) {
     if (!T.plunge && h.medium === 'air' && (g && g.type === 'cross' || S.spots.some(s => Math.hypot(s.x - h.x, s.z - h.z) < 70))) {
       want = 'plunge'; hintState.plungeT = (hintState.plungeT || 0) + dt;
       if (S.stats.cross > 0 || hintState.plungeT > 8) { T.plunge = 1; writeSave(save); }
-    } else if (!T.fire && S.creatures.some(c => c.edibleCooked && !c.edible && Math.hypot(c.x - h.x, c.y - h.y, c.z - h.z) < 40)) {
+    } else if (!T.fire && S.creatures.some(c => c.edibleCooked && !c.edible && cookableNow(S, c) && Math.hypot(c.x - h.x, c.y - h.y, c.z - h.z) < 40)) {
       want = 'fire'; hintState.fireT = (hintState.fireT || 0) + dt;
       if (h.firing && input.btn || hintState.fireT > 6) { T.fire = 1; writeSave(save); }
     }
@@ -225,7 +226,7 @@ function updateHints(dt) {
     if (!T.breach && h.medium === 'water' && S.creatures.some(c => (c.sp === 'gull' || c.sp === 'flyfish') && c.y > 0 && Math.hypot(c.x - h.x, c.z - h.z) < 35)) {
       want = 'breach'; hintState.breachT = (hintState.breachT || 0) + dt;
       if (S.stats.cross > 0 || hintState.breachT > 8) { T.breach = 1; writeSave(save); }
-    } else if (!T.dash && S.creatures.some(c => c.edibleCooked && !c.edible && Math.hypot(c.x - h.x, c.y - h.y, c.z - h.z) < 30)) {
+    } else if (!T.dash && S.creatures.some(c => c.edibleCooked && !c.edible && cookableNow(S, c) && Math.hypot(c.x - h.x, c.y - h.y, c.z - h.z) < 30)) {
       want = 'dash'; hintState.dashT = (hintState.dashT || 0) + dt;
       if (h.dashT > 0 || hintState.dashT > 6) { T.dash = 1; writeSave(save); }
     }
@@ -288,7 +289,7 @@ function advance(dtReal) {
     }
     if (h.firing && h.medium === 'water') P.emit('steam', _m.x, _m.y, _m.z, 0, 2, 0, .6, .5, { rise: 3 });
     if (dripT > 0) { dripT -= dtReal; if (Math.random() < .5) P.emit('splash', h.x + (Math.random() - .5) * h.len * .8, h.y, h.z + (Math.random() - .5) * h.len * .8, 0, -2, 0, .7, .25, { grav: 10 }); }
-    if (S.kind === 'sea' && h.dashT > 0 && h.medium === 'water') P.emit('bubble', h.x - _f.x * h.len * .5, h.y, h.z - _f.z * h.len * .5, (Math.random() - .5) * 2, 1, (Math.random() - .5) * 2, .8, .3, { rise: 4 });
+    if (S.kind === 'sea' && h.dashT > 0 && h.medium === 'water' && Math.random() < .6) P.emit('bubble', h.x - _f.x * h.len * .45 + (Math.random() - .5) * h.len * .2, h.y + (Math.random() - .5) * h.len * .1, h.z - _f.z * h.len * .45, (Math.random() - .5) * 1.5, 1, (Math.random() - .5) * 1.5, .7, .07 + .05 * Math.random(), { rise: 4, grow: .6, alpha: .7 });
     // 烤熟的猎物冒烟、光点
     for (const c of S.creatures) if (c.roast > 0 && Math.random() < .25) P.emit('smoke', c.x, c.y, c.z, 0, 1.5, 0, 1, c.size * .5, { rise: 1 });
     for (const o of S.orbs) P.emit('orb', o.x, o.y, o.z, 0, 0, 0, .06, 1.1, { grow: 0 });

@@ -104,15 +104,14 @@ export function createLoading(root) {
   const bar = el.querySelector('.d-lbar u'), txt = el.querySelector('.d-ltxt'), slow = el.querySelector('.d-lslow');
   slow.appendChild(button('retry', '重试', 'd-btn', () => location.reload()));
   root.appendChild(el);
-  let timer = 0, done = false, started = false;
+  let timer = 0, done = true, started = false;
   return {
     el,
     set(p, text) {
       p = Math.max(0, Math.min(1, +p || 0));
-      if (p >= 1) { done = true; clearTimeout(timer); show(el, false); return; }
-      done = false;
-      if (!started) { started = true; timer = setTimeout(() => { if (!done) slow.hidden = false; }, 8000); }
-      if (el.hidden) show(el, true);
+      if (p >= 1) { if (!done) { done = true; clearTimeout(timer); show(el, false); } return; }
+      if (done || !started) { started = true; done = false; slow.hidden = true; clearTimeout(timer); timer = setTimeout(() => { if (!done) slow.hidden = false; }, 8000); }
+      if (!el._on) show(el, true);
       bar.style.transform = `scaleX(${p.toFixed(3)})`;
       if (text) txt.textContent = text;
     },

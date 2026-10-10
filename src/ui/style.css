@@ -47,7 +47,7 @@
   box-shadow:0 4px 0 rgba(6,12,30,.4); transition:transform .1s, background .2s; }
 .dui .d-btn .ic{ font-size:26px; }
 .dui .d-btn.d-main,.dui .d-big{ background:linear-gradient(180deg,var(--fa),var(--fb) 60%,var(--fc)); border-color:#fff7e0; }
-.dui .d-btn.d-main.sea,.dui .d-big.sea{ background:linear-gradient(180deg,var(--sa),var(--sb2) 60%,var(--sc)); border-color:#e8fffb; }
+.dui .d-btn.d-main.sea,.dui .d-big.sea,.dui .d-result.sea .d-btn.d-main{ background:linear-gradient(180deg,var(--sa),var(--sb2) 60%,var(--sc)); border-color:#e8fffb; }
 .dui .d-big{ display:flex; align-items:center; justify-content:center; gap:12px; height:60px; min-width:184px; padding:0 26px; border-radius:30px; border:3px solid #fff7e0;
   font-size:24px; line-height:24px; text-shadow:var(--o1); box-shadow:0 5px 0 rgba(6,12,30,.45), 0 8px 18px rgba(0,0,0,.25); transition:transform .1s; }
 .dui .d-big .ic{ font-size:28px; }
@@ -56,6 +56,7 @@
 /* ---------- 面板 / 整屏 ---------- */
 .dui .d-full{ position:absolute; inset:0; pointer-events:auto; touch-action:none; opacity:0; transition:opacity .25s; }
 .dui .d-full.d-show{ opacity:1; }
+.dui .d-full:not(.d-show){ pointer-events:none; }
 .dui .d-dim{ background:rgba(6,12,28,.52); display:flex; align-items:center; justify-content:center; }
 .dui .d-panel{ background:var(--panel2); border:2px solid var(--line); border-radius:22px; box-shadow:0 6px 0 rgba(4,8,22,.45), 0 12px 30px rgba(0,0,0,.3); }
 
@@ -132,8 +133,8 @@
 .dui .d-tag i{ position:absolute; left:2px; top:-11px; width:20px; height:20px; border-radius:50%; font:normal 12px/16px var(--fP); text-align:center;
   background:linear-gradient(180deg,var(--k1),var(--k3)); border:2px solid #fff; text-shadow:var(--o1); }
 .dui .d-ring{ width:0; height:0; }
-.dui .d-ring svg{ position:absolute; left:-42px; top:-42px; width:84px; height:84px; transform:rotate(-90deg); overflow:visible; }
-.dui .d-ring circle{ fill:none; stroke-width:6; }
+.dui .d-ring > svg{ position:absolute; left:-42px; top:-42px; width:84px; height:84px; transform:rotate(-90deg); overflow:visible; }
+.dui .d-ring > svg circle{ fill:none; stroke-width:6; }
 .dui .d-ring .tr{ stroke:rgba(11,21,48,.45); stroke-width:9; }
 .dui .d-ring .pr{ stroke:#7ff0f0; stroke-linecap:round; }
 .dui .d-ring.air .pr{ stroke:#fff; }
@@ -176,7 +177,7 @@
 
 /* ---------- 提示 ---------- */
 .dui .d-hint{ position:absolute; z-index:2; display:flex; flex-direction:column; align-items:center; gap:8px; pointer-events:none; }
-.dui .d-hint.d-hc{ left:50%; top:64%; transform:translateX(-50%); }
+.dui .d-hint.d-hc{ left:50%; top:70%; transform:translateX(-50%); }
 .dui .d-hint.d-ha{ right:calc(var(--sr) + 14px); bottom:calc(var(--sbm) + 128px); flex-direction:column-reverse; }
 .dui.d-left .d-hint.d-ha{ right:auto; left:calc(var(--sl) + 14px); }
 .dui .d-hic{ font-size:52px; }
@@ -205,14 +206,13 @@
 .dui .d-logo span:last-child{ color:#dcfffa; }
 .dui .d-logo.sm{ font-size:48px; }
 .dui .d-cards{ margin-top:auto; display:flex; gap:14px; width:100%; max-width:420px; justify-content:center; }
-.dui .d-cwrap{ flex:1; max-width:190px; display:flex; flex-direction:column; align-items:center; gap:8px; transition:transform .2s; }
+.dui .d-cwrap{ flex:1; max-width:210px; display:flex; flex-direction:column; align-items:center; gap:8px; transition:transform .2s; }
 .dui .d-card{ position:relative; width:100%; aspect-ratio:3/4.2; border-radius:20px; overflow:hidden; border:3px solid #fff;
   box-shadow:0 5px 0 rgba(6,12,30,.45), 0 10px 22px rgba(0,0,0,.25); transition:transform .1s; }
 .dui .d-card.fire{ background:radial-gradient(circle at 50% 30%,#fff1c2,#ffb04a 40%,#e0502c 85%); }
 .dui .d-card.sea{ background:radial-gradient(circle at 50% 30%,#e6fff8,#62d8d0 40%,#1f7f9e 85%); }
 .dui .d-cart{ position:absolute; inset:0 0 34px; display:flex; align-items:center; justify-content:center; }
-.dui .d-cart .art{ width:118%; height:auto; flex:none; }
-.dui .d-card.sea .d-cart .art{ width:112%; }
+.dui .d-cart .art{ width:100%; height:auto; flex:none; }
 .dui .d-cimg{ position:absolute; inset:0; width:100%; height:100%; object-fit:cover; }
 .dui .d-card.img .art{ display:none; }
 .dui .d-cname{ position:absolute; left:0; right:0; bottom:0; height:44px; display:flex; align-items:center; justify-content:center; gap:6px;
@@ -250,7 +250,7 @@
 
 /* ---------- 图鉴 ---------- */
 .dui .d-codex{ z-index:14; }
-.dui .d-cxin{ width:calc(100% - 20px); max-width:440px; max-height:calc(100% - var(--st) - var(--sbm) - 16px); padding:12px 12px 14px; display:flex; flex-direction:column; gap:10px; }
+.dui .d-cxin{ background:rgba(12,22,50,.97); width:calc(100% - 20px); max-width:440px; max-height:calc(100% - var(--st) - var(--sbm) - 16px); padding:12px 12px 14px; display:flex; flex-direction:column; gap:10px; }
 .dui .d-cxhead{ display:flex; align-items:center; justify-content:center; gap:8px; }
 .dui .d-cxhead .ic{ font-size:30px; }
 .dui .d-cxt{ font:normal 36px/1 var(--fT); text-shadow:var(--o2); }
@@ -276,7 +276,7 @@
 
 /* ---------- 结算卡 ---------- */
 .dui .d-result{ z-index:16; }
-.dui .d-rin{ width:calc(100% - 40px); max-width:340px; padding:14px 16px 16px; display:flex; flex-direction:column; align-items:center; gap:12px; }
+.dui .d-rin{ width:calc(100% - 40px); max-width:360px; padding:14px 16px 16px; display:flex; flex-direction:column; align-items:center; gap:12px; }
 .dui .d-rtitle{ margin:0; font:normal 56px/1.05 var(--fT); color:#ffe08a; text-shadow:var(--o3), 0 0 20px rgba(255,160,60,.6); }
 .dui .d-result.sea .d-rtitle{ color:#c9fff6; text-shadow:var(--o3), 0 0 20px rgba(80,240,220,.6); }
 .dui .d-rshot{ position:relative; width:100%; aspect-ratio:16/11; border-radius:16px; overflow:hidden; border:3px solid #fff; background:#ffe2b8; }

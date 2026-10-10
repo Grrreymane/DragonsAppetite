@@ -7,6 +7,7 @@ import { MODELS, ANIM_HZ } from './creatures/models.js';
 export { ANIM_HZ };
 
 const OUT_FAR = 150;                              // 描边可见距离
+const CULL_DEPTH = 8, CULL_HEIGHT = 6;            // 镜头在水上：比 -8 米还深的不画；在水下：比 +6 米还高的不画
 const FOG_UW = new THREE.Color(0x0e5a6e);         // 水下雾色（描边往这边偏）
 const ROAST = new THREE.Color(0xb0602c);          // 烤熟的橙褐
 const GOLD_C = new THREE.Color(GOLD);
@@ -47,7 +48,7 @@ export function createCreatures(ctx) {
 
   function write(b, i, c, alpha, dt, time, fire) {
     let st = state.get(c.id);
-    if (!st) { st = { roll: c.stun > 0 ? 1 : 0, f: 0 }; state.set(c.id, st); }
+    if (!st || st.sp !== c.sp) { st = { sp: c.sp, roll: c.stun > 0 ? 1 : 0, f: 0 }; state.set(c.id, st); }
     st.f = frameNo;
     st.roll += ((c.stun > 0 ? 1 : 0) - st.roll) * (1 - Math.exp(-7 * dt));
     const a = alpha, px = c.px ?? c.x, py = c.py ?? c.y, pz = c.pz ?? c.z;
@@ -76,9 +77,12 @@ export function createCreatures(ctx) {
     frameNo++;
     camera.getWorldPosition(cp);
     const far2 = OUT_FAR * OUT_FAR, fire = S.kind === 'fire', list = S.creatures || [];
+    // 海面不透明：镜头在水上时不画深水里的，在水下时不画天上的（留足浪和半透明的余量）
+    const camUp = cp.y > 0, cull = api.cullMedium;
     for (const sp in B) { B[sp].near.length = 0; B[sp].far.length = 0; }
     for (const c of list) {
       const b = B[c.sp]; if (!b) continue;
+      if (cull) { const r = (c.size || b.cfg.len) * .6; if (camUp ? c.y + r < -CULL_DEPTH : c.y - r > CULL_HEIGHT) continue; }
       const dx = c.x - cp.x, dy = c.y - cp.y, dz = c.z - cp.z;
       (dx * dx + dy * dy + dz * dz < far2 ? b.near : b.far).push(c);
     }
@@ -170,7 +174,15 @@ export function createCreatures(ctx) {
     return { calls, tris };
   }
 
-  return { update, setUnderwater, portrait, stats, root, species: B, get underwater() { return uw; } };
+  // 预编译：加载时调一次，生物第一次出现时就不会卡一下（所有物种共用一个本体程序 + 一个描边程序）
+  function prewarm() {
+    const vis = [];
+    for (const sp in B) for (const o of [B[sp].body, B[sp].line]) { vis.push([o, o.visible]); o.visible = true; }
+    try { renderer.compile(scene, camera); } finally { for (const [o, v] of vis) o.visible = v; }
+  }
+
+  const api = { update, setUnderwater, portrait, prewarm, stats, root, species: B, cullMedium: true, get underwater() { return uw; } };
+  return api;
 }
 
 const LUT = new Uint8Array(256).map((_, i) => { const c = i / 255; return Math.round(255 * (c <= .0031308 ? c * 12.92 : 1.055 * Math.pow(c, 1 / 2.4) - .055)); });

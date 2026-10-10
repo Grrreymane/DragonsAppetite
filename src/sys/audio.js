@@ -75,7 +75,7 @@ export function buildEngine(ac) {
   const CRACK = mkBuf(2, 1, d => {
     for (let k = 0; k < 60; k++) {
       const n = rr(30, 220) | 0, p = rnd() * (d.length - n) | 0, a = rr(.25, 1);
-      for (let i = 0; i < n; i++) d[p + i] += (rnd() * 2 - 1) * a * Math.exp(-i / (n * .22)) * Math.min(1, i / 24);   // 0.5 毫秒起音，不扎耳
+      for (let i = 0; i < n; i++) d[p + i] += (rnd() * 2 - 1) * a * Math.exp(-i / (n * .22)) * Math.min(1, i / (SR * .001));   // 1 毫秒起音，不扎耳
     }
   });
   const IR = mkBuf(2.2, 2, d => {
@@ -275,7 +275,7 @@ export function buildEngine(ac) {
   const windG = G(0, sfx), windG2 = G(0, sfx), windB1 = BQ('bandpass', 400, .9, windG), windB2 = BQ('bandpass', 1200, 3, windG2);
   const wsrc = loop(WHITE, windB1); wsrc.connect(windB2);
   const fireG = G(0, sfx); fireG.connect(G(.25, sfxVerb));
-  const fireLp = BQ('lowpass', 900, 1, G(.55, fireG)), fireRum = BQ('bandpass', 150, .5, G(.7, fireG)), fireHp = BQ('highpass', 1600, 0, G(.6, fireG));
+  const fireLp = BQ('lowpass', 900, 1, G(.55, fireG)), fireRum = BQ('bandpass', 150, .5, G(.7, fireG)), fireHp = BQ('highpass', 1600, 0, G(.45, fireG));
   loop(WHITE, fireLp); loop(BROWN, fireRum); loop(CRACK, fireHp);
   const ambG = G(0, sfx), ambMod = G(.7, ambG), ambLp = BQ('lowpass', 380, 2, ambMod);
   loop(BROWN, ambLp);

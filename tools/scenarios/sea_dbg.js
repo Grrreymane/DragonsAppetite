@@ -1,13 +1,6 @@
 const wait = () => new Promise(r => { const k = () => window.__labReady ? r() : setTimeout(k, 50); k(); });
 await wait();
-const L = window.__lab, g = L.sea.group.children;
+const L = window.__lab, u = L.sea.group.children[0].material.uniforms;
 L.view('高空'); for (let f = 0; f < 30; f++) L.tick(1 / 60);
-for (const o of L.scene.children) if (o.isMesh && o !== g[0]) o.visible = false;
-L.scene.background = new (L.scene.fog.color.constructor)(1, 0, 1);
-L.scene.fog.far = 1e5; L.scene.fog.near = 1e5;
-const u = g[1].material.uniforms;
-L.render(); await __shot('e0');
-__log('uHole ' + JSON.stringify(u.uHole.value) + ' r0 ' + JSON.stringify(g[0].position) + ' r1 ' + JSON.stringify(g[1].position));
-u.uHole.value.z = 71.5; L.render(); await __shot('e1_hole715');
-u.uHole.value.z = 72; g[0].visible = false; L.render(); await __shot('e2_noring0');
+__log('N=' + u.uShN.value + ' ' + u.uShA.value.slice(0, u.uShN.value).map((a, i) => [a.x, a.y, a.z, a.w, u.uShB.value[i].z, u.uShB.value[i].w].map(v => v.toFixed(2)).join(',')).join(' | '));
 await __done();

@@ -27,13 +27,14 @@ export function writeSave(sv) {
 }
 
 // AI Made Games 平台的「你的存档」：在平台 iframe 里才发，一行文字，内容变了才发，最少隔 15 秒
-let lastText = '', lastT = 0, pending = null;
+let lastText = '', lastT = 0, pending = null, nextText = '';
 export function reportProgress(text, now = Date.now(), force = false) {
   if (window.parent === window) return;
+  nextText = text;
   if (text === lastText) return;
   const send = () => {
-    pending = null; lastT = Date.now(); lastText = text;
-    let t = String(text).slice(0, 120);
+    pending = null; lastT = Date.now(); lastText = nextText;
+    let t = String(nextText).slice(0, 120);
     try { if (window.GameI18n) t = window.GameI18n.translate(t); } catch (e) { }
     try { window.parent.postMessage({ source: 'aimadegames', v: 1, type: 'progress', text: t }, '*'); } catch (e) { }
   };

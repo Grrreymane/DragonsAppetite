@@ -16,10 +16,21 @@ const C = h => new THREE.Color(h);
 const PAL = {
   green: [C(0xd8c28c), C(0xc4ae7a)], greenGrass: C(0x8a9a58),
   volcano: [C(0x3c3438), C(0x4a3f44)], volcanoWarm: C(0x6a3a26),
-  open: [C(0x56687a), C(0x485a6c)], rock: C(0x6c6a64),
+  open: [C(0x60788e), C(0x52687e)], rock: C(0x6c6a64),
 };
 const ROCK_C = { green: C(0x8a8478), volcano: C(0x2e282c), open: C(0x5a6676) };
 
+// 远处（105–150 米）强制融进雾色：入水那 0.25 秒雾还没收拢时，也看不到这块海底的边
+const FAR_FADE = '#include <fog_fragment>
+#ifdef USE_FOG
+ gl_FragColor.rgb = mix(gl_FragColor.rgb, fogColor, smoothstep(105.0, 150.0, vFogDepth));
+#endif';
+function farFade(mat, key) {
+  const prev = mat.onBeforeCompile;
+  mat.onBeforeCompile = (sh, r) => { if (prev) prev.call(mat, sh, r); sh.fragmentShader = sh.fragmentShader.replace('#include <fog_fragment>', FAR_FADE); };
+  mat.customProgramCacheKey = () => 'far:' + key;
+  return mat;
+}
 const BED_PARS = `uniform float uT; uniform vec3 uTint; varying float vGlow; varying vec3 vWP;
 float causF(vec2 p, float t){
   p *= 0.16;
@@ -32,7 +43,7 @@ const BED_MAIN = `
   { float dd = clamp(-vWP.y / 70.0, 0.0, 1.0);
     float cs = smoothstep(0.28, 0.42, causF(vWP.xz, uT)) * 0.7 + smoothstep(0.5, 0.65, causF(vWP.xz * 1.9 + 7.0, uT * 1.3)) * 0.3;   // 卡通焦散：硬边光纹
     gl_FragColor.rgb += vec3(0.6, 0.85, 0.9) * cs * (1.0 - smoothstep(8.0, 75.0, -vWP.y)) * 0.32;   // 越深焦散越淡，深沟里没有
-    gl_FragColor.rgb = mix(gl_FragColor.rgb, uTint, 0.18 + dd * 0.45);
+    gl_FragColor.rgb = mix(gl_FragColor.rgb, uTint, 0.15 + dd * 0.35);
     gl_FragColor.rgb += vec3(1.0, 0.42, 0.12) * vGlow * (0.42 + 0.14 * sin(uT * 1.5 + vWP.x * 0.2)); }
 `;
 // 海藻摆动（本体和描边共用）：每棵按位置定朝向和相位，越往上摆得越大
@@ -104,7 +115,7 @@ export function createSeabed(ctx) {
       .replace('#include <project_vertex>', '#include <project_vertex>\n vWP = (modelMatrix * vec4(transformed, 1.0)).xyz;');
     sh.fragmentShader = BED_PARS + sh.fragmentShader.replace('#include <tonemapping_fragment>', BED_MAIN + '\n#include <tonemapping_fragment>');
   };
-  bedMat.customProgramCacheKey = () => 'seabed';
+  farFade(bedMat, 'seabed');
   const bed = new THREE.Mesh(geo, bedMat); bed.frustumCulled = false; bed.name = 'seabedTerrain'; group.add(bed);
 
   // ---- 海藻 / 石头 / 热泉烟囱：实例化，本体 + 描边各一次绘制 ----
@@ -114,7 +125,7 @@ export function createSeabed(ctx) {
     sh.uniforms.uKT = uKT;
     sh.vertexShader = 'uniform float uKT;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n vec3 oN = vec3(0.0);\n' + KELP_V);
   };
-  kelpMat.customProgramCacheKey = () => 'kelp';
+  farFade(kelpMat, 'kelp');
   const kelpHull = outlineMat(0x0b2a2c, .07, { extraPars: 'uniform float uKT;', extraVertex: KELP_V, key: 'kelp' });
   kelpHull.userData.extraUniforms = { uKT };
   const inst = (g, mat, hullG, hullMat, max) => {
@@ -127,9 +138,9 @@ export function createSeabed(ctx) {
   const kg = kelpGeo();
   const [kelp, kelpH] = inst(kg, kelpMat, kg, kelpHull, KELP_MAX);
   const rg = new THREE.IcosahedronGeometry(1, 0);
-  const [rock, rockH] = inst(rg, toonMat({ flatShading: true, color: 0xffffff }), hullNormals(rg), outlineMat(0x101c24, .07, { key: 'rock' }), ROCK_MAX);
+  const [rock, rockH] = inst(rg, farFade(toonMat({ flatShading: true, color: 0xffffff }), 'rock'), hullNormals(rg), outlineMat(0x101c24, .07, { key: 'rock' }), ROCK_MAX);
     const cg = new THREE.CylinderGeometry(.45, 1.5, 1, 7, 1, true).translate(0, .5, 0);
-  const [vent, ventH] = inst(cg, toonMat({ flatShading: true, color: 0x2a2226 }), hullNormals(cg, .5, .3), outlineMat(0x120a0a, .08, { key: 'vent' }), VENT_MAX);
+  const [vent, ventH] = inst(cg, farFade(toonMat({ flatShading: true, color: 0x2a2226 }), 'vent'), hullNormals(cg, .5, .3), outlineMat(0x120a0a, .08, { key: 'vent' }), VENT_MAX);
     const capMat = new THREE.MeshBasicMaterial({ color: 0xff7a30, fog: true });
   const cap = new THREE.InstancedMesh(new THREE.SphereGeometry(1, 8, 5), capMat, VENT_MAX); cap.count = 0; cap.frustumCulled = false; group.add(cap);
 
@@ -173,11 +184,11 @@ export function createSeabed(ctx) {
     glowA.addUpdateRange(base, VPC);
     // 石头
     const zc = zoneAt(x0 + CH / 2, z0 + CH / 2), rocks = [], kelps = [];
-    const nr = zc === 'volcano' ? 2 + Math.floor(hash(ci, cj, 11) * 3) : Math.floor(hash(ci, cj, 11) * 2.4);
+    const nr = zc === 'green' ? Math.floor(hash(ci, cj, 11) * 2.4) : 2 + Math.floor(hash(ci, cj, 11) * 3);
     for (let k = 0; k < nr; k++) {
       const x = x0 + 3 + hash(ci, cj, 20 + k) * (CH - 6), z = z0 + 3 + hash(ci, cj, 40 + k) * (CH - 6), y = seabedY(x, z);
       if (y > -4) continue;
-      const s = .8 + hash(ci, cj, 60 + k) ** 2 * 3.2;
+      const s = (.8 + hash(ci, cj, 60 + k) ** 2 * 3.2) * (zc === 'open' ? 1.6 : 1);
       rocks.push({ x, y: y - s * .25, z, s, sy: s * (.5 + hash(ci, cj, 70 + k) * .5), a: hash(ci, cj, 80 + k) * 6.28, b: hash(ci, cj, 90 + k) * 6.28, c: ROCK_C[zoneAt(x, z)] });
     }
     // 海藻：翠岛海、水深 14 以上的地方，成片长（低频噪声定疏密）

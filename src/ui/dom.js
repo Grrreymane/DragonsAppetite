@@ -41,13 +41,11 @@ export function blocker(el) {
   return el;
 }
 
-// 显示 / 隐藏（带淡入淡出，CSS 里 .d-show 控制）
+// 显示 / 隐藏（带淡入淡出，CSS 里 .d-show 控制）。el._on = 当前想要的状态（连着关了又开也不会被延时的隐藏吃掉）
 export function show(el, on) {
-  if (on) { el.hidden = false; requestAnimationFrame(() => el.classList.add('d-show')); }
-  else {
-    el.classList.remove('d-show');
-    clearTimeout(el._hideT); el._hideT = setTimeout(() => { if (!el.classList.contains('d-show')) el.hidden = true; }, 260);
-  }
+  el._on = on; clearTimeout(el._hideT);
+  if (on) { el.hidden = false; requestAnimationFrame(() => requestAnimationFrame(() => { if (el._on) el.classList.add('d-show'); })); }
+  else { el.classList.remove('d-show'); el._hideT = setTimeout(() => { if (!el._on) el.hidden = true; }, 260); }
 }
 
 // 小动画（Web Animations，不用强制重排）

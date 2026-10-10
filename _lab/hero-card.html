@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>主角卡片图</title>
+<style>html,body{margin:0;background:transparent;overflow:hidden}canvas{display:block;width:100vw;height:100vh}</style>
+<script type="importmap">{ "imports": { "three": "../lib/three.module.min.js" } }</script>
+</head>
+<body>
+<script type="module">
+// 主角卡片图 / 封面用：?m=fire_adult&act=Fly&t=0.4&yaw=0.6&pitch=0.15&bg=0（bg=1 画天空背景）
+// 用法：python tools/rec3d.py --page _lab/hero-card.html --director tools/scenarios/card.js --size 600x600 --out .cache/cards --query "m=fire_adult"
+import * as THREE from 'three';
+import { createDragonView, loadModel } from '../src/view/dragon.js';
+const Q = new URLSearchParams(location.search);
+const name = Q.get('m') || 'fire_adult', act = Q.get('act') || null, T = +(Q.get('t') || .3);
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: !Q.has('bg'), preserveDrawingBuffer: true });
+renderer.setPixelRatio(1); renderer.setSize(innerWidth, innerHeight); renderer.toneMapping = THREE.ACESFilmicToneMapping;
+document.body.appendChild(renderer.domElement);
+const scene = new THREE.Scene();
+if (Q.has('bg')) scene.background = new THREE.Color(Q.get('bgc') || 0x9cc4e4);
+scene.add(new THREE.HemisphereLight(0xdcecff, 0x6b5a4a, .9));
+const sun = new THREE.DirectionalLight(0xfff0d8, 2.6); sun.position.set(-35, 62, 70); scene.add(sun);
+const camera = new THREE.PerspectiveCamera(30, innerWidth / innerHeight, .1, 500);
+const D = createDragonView({ scene });
+const loaded = await loadModel(name);
+D.build(loaded, 10, null);
+// 只播一个动作的某一帧
+for (const k in D.act) D.act[k].setEffectiveWeight(0);
+const a = D.act[act] || D.act.Fly || D.act.Swim || D.act.Idle || Object.values(D.act)[0];
+if (a) { a.setEffectiveWeight(1); a.time = T * a.getClip().duration; }
+D.mixer.update(0);
+if (D.kind === 'sea') D.glow.value = .8;
+const yaw = +(Q.get('yaw') || .65), pitch = +(Q.get('pitch') || .18), dist = +(Q.get('dist') || 26);
+D.root.rotation.set(0, 0, 0);
+const c = new THREE.Vector3(0, 0, 0);   // 模型已经按清单的 pivot 居中在原点
+camera.position.set(c.x + Math.sin(yaw) * dist * Math.cos(pitch), c.y + Math.sin(pitch) * dist, c.z + Math.cos(yaw) * dist * Math.cos(pitch));
+camera.lookAt(c);
+renderer.render(scene, camera);
+window.__cardReady = true;
+window.__render = () => renderer.render(scene, camera);
+</script>
+</body>
+</html>

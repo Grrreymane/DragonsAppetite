@@ -19,6 +19,17 @@ export function makeBot(tier, seed) {
     errA = r.range(-1, 1) * tier.err * Math.PI / 180; errP = r.range(-1, 1) * tier.err * Math.PI / 180 * .5;
     const h = S.hero;
     let tgt = goalTarget(S) || nearestEdible(S, 300);
+    // 顺路的先吃：目标还远、身边 25 米内正前方有能吃的
+    if (tgt && Math.hypot(tgt.x - h.x, tgt.y - h.y, tgt.z - h.z) > 35) {
+      const n = nearestEdible(S, 30);
+      if (n && ((n.x - h.x) * h.fwd.x + (n.y - h.y) * h.fwd.y + (n.z - h.z) * h.fwd.z) > 0) tgt = n;
+    }
+    // 瞄准一群的中心（人会往鸟群 / 鱼群中间钻）
+    if (tgt && tgt.edible) {
+      let sx = 0, sy = 0, sz = 0, n = 0;
+      for (const c of S.creatures) if (c.sp === tgt.sp && c.edible && Math.abs(c.x - tgt.x) < 10 && Math.abs(c.y - tgt.y) < 6 && Math.abs(c.z - tgt.z) < 10) { sx += c.x; sy += c.y; sz += c.z; n++; }
+      if (n > 1) tgt = { ...tgt, x: (sx / n + tgt.x) / 2, y: (sy / n + tgt.y) / 2, z: (sz / n + tgt.z) / 2 };
+    }
     let wantYaw = h.yaw, wantPitch = 0, act = false, tap = false;
     // 躲天敌
     const pred = tier.dodge && S.creatures.find(c => c.chasing || c.alert > .5);
