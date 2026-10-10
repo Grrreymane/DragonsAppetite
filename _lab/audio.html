@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>声音试验</title>
+<style>
+html,body{margin:0;background:#0b0e1c;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-text-size-adjust:100%;font-family:"PingFang SC","Microsoft YaHei",system-ui,sans-serif;color:#18324a}
+#wrap{max-width:540px;margin:0 auto;min-height:100vh;background:linear-gradient(#9cc4e4,#cfe4f2 40%,#e8f2f8);padding:10px 12px 24px;box-sizing:border-box}
+h1{font-size:17px;margin:2px 0 8px;display:flex;align-items:center;gap:8px}
+h1 small{font-size:11px;font-weight:400;opacity:.7}
+.box{background:rgba(255,255,255,.6);border-radius:12px;padding:8px 10px;margin-bottom:8px;box-shadow:0 1px 4px rgba(30,60,90,.12)}
+.row{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:3px 0;font-size:13px}
+.row>span{min-width:30px;font-weight:700}
+.row input[type=range]{flex:1;min-width:120px;accent-color:#e2552a}
+.row b{min-width:34px;text-align:right;font:600 12px ui-monospace,monospace}
+button{border:0;border-radius:9px;padding:7px 10px;font:700 13px/1 inherit;font-family:inherit;color:#fff;background:#4f7aa6;box-shadow:0 2px 0 #34587e;touch-action:manipulation}
+button:active{transform:translateY(1px);box-shadow:0 1px 0 #34587e}
+button.on{background:#e2552a;box-shadow:0 2px 0 #9e3416}
+#pads{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+#pads button{padding:9px 2px;display:flex;flex-direction:column;align-items:center;gap:3px}
+#pads button i{font:10px/1 ui-monospace,monospace;opacity:.75;font-style:normal}
+#sum{font-size:12px}
+#res{display:block;width:100%;margin-top:6px;border-radius:8px;background:#122030}
+#dl{font-size:11px;margin-top:6px;line-height:1.7;word-break:break-all}
+#dl a{color:#1d5a90;margin-right:6px}
+</style>
+<script type="importmap">{ "imports": { "three": "../lib/three.module.min.js" } }</script>
+</head>
+<body>
+<div id="wrap">
+  <h1>声音试验 <small>第一次点按钮时解锁声音</small></h1>
+  <div class="box">
+    <div class="row"><span>龙</span><button data-kind="fire" class="on">火龙</button><button data-kind="sea">海龙</button></div>
+    <div class="row"><span>阶段</span><button data-stage="0">幼龙</button><button data-stage="1">少年</button><button data-stage="2" class="on">成龙</button></div>
+    <div class="row"><span>速度</span><input id="speed" type="range" min="0" max="50" step="1" value="22"><b id="speedV">22</b></div>
+    <div class="row"><span>俯仰</span><input id="pitch" type="range" min="-1" max=".6" step=".05" value="0"><b id="pitchV">0</b></div>
+    <div class="row"><span>水下</span><input id="under" type="range" min="0" max="1" step=".01" value="0"><b id="underV">0</b></div>
+    <div class="row"><button id="fire">喷火</button><button id="autoflap">扇翅</button><button id="music" class="on">音乐</button><button id="mute">静音</button><span id="st" style="font-weight:400;font-size:11px"></span></div>
+  </div>
+  <div class="box"><div id="pads"></div></div>
+  <div class="box">
+    <div class="row"><button id="run">离线检测</button><span id="sum">渲染每个音效和 8 秒音乐，量峰值 / 响度</span></div>
+    <canvas id="res" width="516" height="60"></canvas>
+    <div id="dl"></div>
+  </div>
+</div>
+<script type="module">
+import { createAudio, renderOffline } from '../src/sys/audio.js';
+import { DRAGONS } from '../src/config/dragons.js';
+const $ = id => document.getElementById(id);
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+
+// ---------- 假的 sim 状态（只填 audio 会读的字段）----------
+const S = { t: 0, kind: 'fire', stage: 2, cfg: DRAGONS.fire.stages[2],
+  hero: { x: 0, y: 30, z: 0, yaw: 0, pitch: 0, speed: 22, medium: 'air', firing: false, tuck: 0 },
+  creatures: [{ id: 7, sp: 'roc', x: -40, y: 50, z: 30 }], combo: { n: 0, t: 0 } };
+const A = createAudio();
+window.__A = A;
+let pending = [], under = 0, autoflap = false, flapT = 0, comboT = 0;
+const ev = e => pending.push(e);
+const PADS = [
+  ['扇翅', 'flap', () => ev({ type: 'flap' })],
+  ['冲刺', 'dash', () => ev({ type: 'dash' })],
+  ['咬吞', 'eat', () => { S.combo.n = comboT > 0 ? S.combo.n + 1 : 1; comboT = 2; ev({ type: 'eat', sp: 'sparrow', combo: S.combo.n, gold: false }); }],
+  ['金色', 'eat gold', () => ev({ type: 'eat', sp: 'sparrow', combo: 1, gold: true })],
+  ['烤熟', 'cook', () => ev({ type: 'cook', id: 1, sp: 'sparrow' })],
+  ['撞晕', 'stun', () => ev({ type: 'stun', id: 1, sp: 'sardine' })],
+  ['入水', 'enterWater', () => ev({ type: 'enterWater', x: 0, z: 0, speed: S.hero.speed })],
+  ['出水', 'exitWater', () => ev({ type: 'exitWater', x: 0, z: 0, speed: S.hero.speed })],
+  ['水花', 'splash', () => { const a = Math.random() * 6.28, d = 10 + Math.random() * 60; ev({ type: 'splash', x: Math.cos(a) * d, z: Math.sin(a) * d, size: .5 + Math.random() * 2 }); }],
+  ['预警', 'alert', () => ev({ type: 'alert', id: 7, sp: 'roc' })],
+  ['被咬', 'bite', () => ev({ type: 'bite', x: 0, y: 30, z: 0, lost: 3 })],
+  ['光点', 'orb', () => ev({ type: 'orb', x: 0, y: 30, z: 0 })],
+  ['目标', 'goal', () => ev({ type: 'goal', idx: 0 })],
+  ['图鉴', 'codex', () => ev({ type: 'codex', sp: 'gull' })],
+  ['进化', 'evolve', () => ev({ type: 'evolve', stage: 1 })],
+  ['撞岛', 'bump', () => ev({ type: 'bump', x: 0, y: 30, z: 0 })],
+  ['跨界', 'crossWarn', () => ev({ type: 'crossWarn' })],
+  ['护盾', 'shield', () => ev({ type: 'shield' })],
+  ['气泡', 'bubble', () => A.play('bubble')],
+  ['按钮', 'tap', () => A.play('tap')],
+];
+for (const [zh, id, f] of PADS) { const b = document.createElement('button'); b.innerHTML = zh + '<i>' + id + '</i>'; b.onclick = () => { A.unlock(); f(); }; $('pads').append(b); }
+const pick = (sel, f) => document.querySelectorAll(sel).forEach(b => b.onclick = () => { document.querySelectorAll(sel).forEach(x => x.classList.toggle('on', x === b)); f(b.dataset); });
+pick('[data-kind]', d => { S.kind = d.kind; S.cfg = DRAGONS[S.kind].stages[S.stage]; });
+pick('[data-stage]', d => { S.stage = +d.stage; S.cfg = DRAGONS[S.kind].stages[S.stage]; });
+for (const k of ['speed', 'pitch', 'under']) $(k).oninput = () => { $(k + 'V').textContent = (+$(k).value).toFixed(k === 'speed' ? 0 : 2); };
+const fireB = $('fire');
+const fireOn = on => { A.unlock(); S.hero.firing = on; fireB.classList.toggle('on', on); };
+fireB.onpointerdown = e => { fireB.setPointerCapture(e.pointerId); fireOn(true); };
+fireB.onpointerup = fireB.onpointercancel = () => fireOn(false);
+$('autoflap').onclick = () => { autoflap = !autoflap; $('autoflap').classList.toggle('on', autoflap); };
+$('music').onclick = () => { const on = !$('music').classList.contains('on'); $('music').classList.toggle('on', on); A.setMusic(on); };
+$('mute').onclick = () => { A.setMute(!A.muted); $('mute').classList.toggle('on', A.muted); };
+
+// ---------- 主循环：和游戏一样，每帧把攒下的事件交给 audio.update ----------
+let lastT = performance.now();
+function frame(now) {
+  const dt = Math.min(.1, (now - lastT) / 1000); lastT = now;
+  const h = S.hero;
+  h.speed = +$('speed').value; h.pitch = +$('pitch').value; under = +$('under').value;
+  h.medium = under > .5 ? 'water' : 'air';
+  comboT -= dt;
+  if (autoflap && h.medium === 'air' && (flapT -= dt) < 0) { flapT = clamp(1.1 - h.speed / 60, .45, 1); ev({ type: 'flap' }); }
+  if (!window.__labPause) { A.update(S, dt, pending, under); pending = []; }   // 自动测试时暂停这里，由导演脚本自己喂
+  const E = A.engine;
+  $('st').textContent = E ? `${A.ctx.state} · 声部 ${E.voices} · 丢 ${E.dropped}` : '未解锁';
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+// ======================================================================
+// 离线检测：同一套搭图代码接 OfflineAudioContext，渲染 → 量峰值 / RMS / 「平均频率」→ 画表、存 WAV
+// ======================================================================
+const one = (name, o = {}) => [2.5, E => E.play(name, o, .05)];
+const loops = (dur, f) => [dur, E => { for (let t = 0; t <= dur; t += .05) E.setLoops(f(t), t); }];
+const music = (dur, mixAt) => [dur, E => { E.setMix(mixAt(0), mixAt(dur), 0); E.musicTick(dur); for (let t = 0; t <= dur; t += .05) E.setMix(mixAt(t), mixAt(dur), t); }];
+const SKY_LOOP = 128 * 60 / 84 / 2, SEA_LOOP = 128 * 60 / 70 / 2;   // 16 小节
+// [名字, 时长, setup, 类别]  类别决定 RMS 的合理范围
+const TESTS = [
+  ['flap', ...one('flap', { pitch: 1 })], ['flap_baby', ...one('flap', { pitch: 1.3 })],
+  ['dash', ...one('dash')],
+  ['eat', ...one('eat', { combo: 1 })], ['eat_combo4', ...one('eat', { combo: 4 })], ['eat_combo9', ...one('eat', { combo: 9 })], ['eat_gold', ...one('eat', { combo: 1, gold: true })],
+  ['eat_under', 2.5, E => { E.setUnder(1, 0); E.play('eat', { combo: 1 }, .3); }], ['splash_under', 2.5, E => { E.setUnder(1, 0); E.play('splash', { size: 1 }, .3); }],
+  ['cook', ...one('cook')], ['stun', ...one('stun')],
+  ['enterWater', ...one('enterWater', { speed: 40 })], ['landWater', ...one('enterWater', { speed: 30, thick: true })], ['exitWater', ...one('exitWater')],
+  ['splash', ...one('splash', { size: 1 })], ['splash_big', ...one('splash', { size: 3 })],
+  ['alert', ...one('alert')], ['bite', ...one('bite', { lost: 3 })], ['orb', ...one('orb')],
+  ['goal', ...one('goal')], ['codex', ...one('codex')], ['evolve', 4.5, E => E.play('evolve', {}, .05)],
+  ['bump', ...one('bump')], ['crossWarn', ...one('crossWarn')], ['shield', ...one('shield')], ['bubble', ...one('bubble')], ['tap', ...one('tap')],
+  ['wind_ramp', ...loops(6, t => ({ wind: clamp(t / 5, 0, 1), windK: 1, gust: .5 + .5 * Math.sin(t * 1.3) }))],
+  ['wind_water', 4, E => { E.setUnder(1, 0); for (let t = 0; t <= 4; t += .05) E.setLoops({ wind: .7, windK: .6 * .55, water: true, gust: .5 }, t); }],
+  ['fire_loop', ...loops(3.5, t => ({ fire: t > .2 && t < 2.8 ? 1 : 0, fireK: 1, flick: .5 + .5 * Math.sin(t * 13.1) * Math.sin(t * 7.3 + 2) }))],
+  ['under_amb', 5, E => { E.setUnder(1, 0); for (let t = 0; t <= 5; t += .05) E.setLoops({ amb: 1 }, t); [.6, 1.7, 2.2, 3.5].forEach(t => E.play('bubble', { k: .8 }, t)); }],
+  ['music_sky', ...music(8, () => 0)], ['music_sea', ...music(8, () => 1)],
+  ['music_xfade', ...music(8, t => clamp((t - 2) / 1.5, 0, 1))],
+  ['stress', 3, E => {   // 一下子来一大堆：看压限器和 24 声部上限
+    E.setMix(0, 0, 0); E.musicTick(3);
+    for (let t = 0; t <= 3; t += .05) E.setLoops({ wind: 1, windK: 1, fire: 1, fireK: 1, flick: .5, gust: 1 }, t);
+    for (let i = 0; i < 40; i++) E.play('eat', { combo: 1 + i }, .5 + i * .01);
+    for (let i = 0; i < 20; i++) E.play('splash', { size: 3 }, .5 + i * .02);
+    ['evolve', 'goal', 'codex', 'bite', 'cook', 'enterWater', 'flap', 'dash', 'bump'].forEach(n => E.play(n, { thick: true, speed: 50 }, .55));
+  }],
+  ['sky_full', SKY_LOOP + 3, E => { E.setMix(0, 0, 0); E.musicTick(SKY_LOOP); }],
+  ['sea_full', SEA_LOOP + 3, E => { E.setMix(1, 1, 0); E.musicTick(SEA_LOOP); }],
+];
+const isMusic = n => /^music|_full$/.test(n);
+function stats(buf) {
+  const ch = [...Array(buf.numberOfChannels)].map((_, c) => buf.getChannelData(c)), n = buf.length, sr = buf.sampleRate;
+  let peak = 0, a = -1, b = -1;
+  for (let i = 0; i < n; i++) for (const d of ch) { const x = Math.abs(d[i]); if (x > peak) peak = x; if (x > .002) { if (a < 0) a = i; b = i; } }
+  if (a < 0) return { peak, rms: 0, st: 0, fr: 0, len: 0 };
+  let s2 = 0, d2 = 0, st = 0, w = 0, px = 0; const W = Math.round(sr * .05), ring = new Float64Array(W), R = ch[1] || ch[0];   // st = 50 毫秒窗口的最大 RMS
+  for (let i = a, k = 0; i <= b; i++, k++) {
+    const x = (ch[0][i] + R[i]) * .5, dx = i > a ? x - px : 0; px = x;
+    s2 += x * x; d2 += dx * dx;
+    const j = k % W; w += x * x - ring[j]; ring[j] = x * x;
+    if (k >= W) st = Math.max(st, Math.sqrt(Math.max(0, w) / W));
+  }
+  const m = b - a + 1;
+  return { peak, rms: Math.sqrt(s2 / m), st, fr: sr / (2 * Math.PI) * Math.sqrt(d2 / Math.max(1e-12, s2)), len: m / sr };
+}
+function check(name, r) {
+  const bad = [];
+  if (r.peak >= .95) bad.push('peak>=0.95');
+  if (r.peak < .02) bad.push('too-quiet');
+  const lo = isMusic(name) ? .01 : .004, hi = isMusic(name) ? .15 : .3;
+  if (r.rms < lo || r.rms > hi) bad.push(`rms-out-of-${lo}..${hi}`);
+  return bad;
+}
+function wav(buf) {   // 16 位 PCM WAV
+  const ch = buf.numberOfChannels, n = buf.length, dv = new DataView(new ArrayBuffer(44 + n * ch * 2));
+  const W = (o, s) => { for (let i = 0; i < s.length; i++) dv.setUint8(o + i, s.charCodeAt(i)); };
+  W(0, 'RIFF'); dv.setUint32(4, 36 + n * ch * 2, true); W(8, 'WAVEfmt '); dv.setUint32(16, 16, true); dv.setUint16(20, 1, true); dv.setUint16(22, ch, true);
+  dv.setUint32(24, buf.sampleRate, true); dv.setUint32(28, buf.sampleRate * ch * 2, true); dv.setUint16(32, ch * 2, true); dv.setUint16(34, 16, true); W(36, 'data'); dv.setUint32(40, n * ch * 2, true);
+  const d = [...Array(ch)].map((_, c) => buf.getChannelData(c));
+  for (let i = 0, o = 44; i < n; i++) for (let c = 0; c < ch; c++, o += 2) dv.setInt16(o, clamp(Math.round(d[c][i] * 32767), -32768, 32767), true);
+  return new Blob([dv], { type: 'audio/wav' });
+}
+const results = [];
+async function runTests(only) {
+  results.length = 0; $('dl').innerHTML = ''; $('sum').textContent = '渲染中…';
+  for (const [name, dur, setup] of TESTS) {
+    if (only && !only.includes(name)) continue;
+    const t0 = performance.now();
+    const { buf, E } = await renderOffline(dur, setup);
+    const r = { name, dur, ...stats(buf), ms: performance.now() - t0, maxV: E.maxVoices, dropped: E.dropped, buf };
+    r.bad = check(name, r); results.push(r);
+    draw();
+    const a = document.createElement('a'); a.href = URL.createObjectURL(wav(buf)); a.download = name + '.wav'; a.textContent = name; $('dl').append(a);
+  }
+  // 额外检查：水下的水花要明显更闷（平均频率降一半以上）；压力测试的声部不超上限（24 + 重要音效）
+  const R = n => results.find(r => r.name === n);
+  if (R('splash') && R('splash_under') && !(R('splash_under').fr < R('splash').fr * .5)) R('splash_under').bad.push('underwater-not-muffled');
+  if (R('stress') && R('stress').maxV > 24 + 5) R('stress').bad.push('voices-over-cap');
+  const nBad = results.filter(r => r.bad.length).length;
+  $('sum').textContent = nBad ? `${nBad} 项不合格` : `全部 ${results.length} 项合格`;
+  draw();
+  return results;
+}
+// 结果表：名字 | 波形（±1 满格，虚线 = 0.95）| 峰值 / RMS / 平均频率
+function draw() {
+  const cv = $('res'), W = cv.clientWidth || 516, RH = 22, H = 24 + RH * Math.max(1, results.length), dpr = Math.min(2, devicePixelRatio || 1);
+  cv.width = W * dpr; cv.height = H * dpr; cv.style.height = H + 'px';
+  const g = cv.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.fillStyle = '#122030'; g.fillRect(0, 0, W, H);
+  const nameW = 78, numW = 128, wx = nameW, ww = W - nameW - numW - 6;
+  g.font = '10px ui-monospace,Consolas,monospace'; g.fillStyle = '#8fb0cc'; g.textBaseline = 'middle';
+  g.fillText('声音', 6, 12); g.fillText('波形', wx, 12); g.fillText(' 峰值   RMS  均频Hz', W - numW, 12);
+  results.forEach((r, i) => {
+    const y = 24 + i * RH, cy = y + RH / 2, ok = !r.bad.length;
+    g.fillStyle = i & 1 ? '#16283a' : '#13233a'; g.fillRect(0, y, W, RH);
+    g.fillStyle = ok ? '#dff3e6' : '#ff9a8a'; g.fillText(r.name, 6, cy);
+    g.strokeStyle = 'rgba(255,255,255,.18)'; g.setLineDash([2, 3]); g.beginPath();
+    for (const s of [-1, 1]) { g.moveTo(wx, cy + s * .95 * (RH / 2 - 1)); g.lineTo(wx + ww, cy + s * .95 * (RH / 2 - 1)); } g.stroke(); g.setLineDash([]);
+    const d = r.buf.getChannelData(0), per = d.length / ww;
+    g.fillStyle = ok ? (isMusic(r.name) ? '#7ec8f0' : '#8fe0a8') : '#ff7a6a';
+    for (let x = 0; x < ww; x++) {
+      let mn = 0, mx = 0; const a = Math.floor(x * per), b = Math.min(d.length, Math.floor((x + 1) * per));
+      for (let j = a; j < b; j += 4) { const v = d[j]; if (v < mn) mn = v; if (v > mx) mx = v; }
+      const k = RH / 2 - 1; g.fillRect(wx + x, cy - mx * k, 1, Math.max(1, (mx - mn) * k));
+    }
+    g.fillStyle = ok ? '#dff3e6' : '#ff9a8a';
+    g.fillText(`${r.peak.toFixed(3)} ${r.rms.toFixed(3)} ${String(Math.round(r.fr)).padStart(5)}`, W - numW, cy);
+  });
+}
+draw();
+$('run').onclick = () => runTests();
+window.__audioLab = { runTests, results, wav, stats, S };
+if (/[?&]auto/.test(location.search)) runTests();
+</script>
+</body>
+</html>

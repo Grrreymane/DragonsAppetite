@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>海 · 试验</title>
+<style>
+html,body{margin:0;background:#0b0e1c;overflow:hidden;touch-action:none;font-family:"PingFang SC","Microsoft YaHei",system-ui,sans-serif}
+#wrap{position:fixed;top:0;bottom:0;left:50%;transform:translateX(-50%);width:min(100vw,calc(100vh * 9 / 16));overflow:hidden;background:#9cc4e4}
+#wrap canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+#ui{position:absolute;left:0;right:0;bottom:calc(10px + env(safe-area-inset-bottom));display:flex;flex-wrap:wrap;gap:6px;justify-content:center;padding:0 8px}
+#ui button{border:0;border-radius:9px;padding:8px 10px;font:700 13px/1 inherit;font-family:inherit;color:#fff;background:rgba(20,30,50,.45)}
+#ui button.on{background:#2b8fae}
+#info{position:absolute;top:8px;left:8px;color:#fff;font:11px/1.4 ui-monospace,monospace;opacity:.7;pointer-events:none;white-space:pre}
+#err{position:absolute;left:8px;right:8px;top:40%;color:#fff;background:#a22;padding:10px;border-radius:8px;font-size:12px;display:none;white-space:pre-wrap}
+</style>
+<script type="importmap">{"imports":{"three":"../lib/three.module.min.js"}}</script>
+</head>
+<body>
+<div id="wrap"><div id="info"></div><div id="ui"></div><div id="err"></div></div>
+<script>
+addEventListener('error', e => { const el = document.getElementById('err'); el.style.display = 'block'; el.textContent = '出错了：' + e.message + '\n' + (e.filename || '') + ':' + (e.lineno || ''); });
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { GRAD, outlineMat, toonMat, addHull } from '../src/view/toon.js';
+import { islands, waveH } from '../src/sim/world.js';
+import { createSea } from '../src/view/sea.js';
+
+const REC = new URLSearchParams(location.search).has('rec');
+const wrap = document.getElementById('wrap');
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: REC });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+wrap.prepend(renderer.domElement);
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(62, .5625, .5, 3000);
+const SUN = new THREE.Vector3(-.35, .62, -.7).normalize();
+
+// ---- 天空（原型原样）----
+const SKY = { top: new THREE.Color(0x3d78c6), mid: new THREE.Color(0xc8dcec), bot: new THREE.Color(0xe9d7c2), sun: new THREE.Color(0xfff1d0) };
+scene.fog = new THREE.Fog(SKY.mid.clone(), 180, 900);
+const skyMat = new THREE.ShaderMaterial({
+  side: THREE.BackSide, depthWrite: false, fog: false,
+  uniforms: { top: { value: SKY.top }, mid: { value: SKY.mid }, bot: { value: SKY.bot }, sunC: { value: SKY.sun }, sunD: { value: SUN } },
+  vertexShader: 'varying vec3 vP; void main(){ vP = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+  fragmentShader: `uniform vec3 top, mid, bot, sunC, sunD; varying vec3 vP;
+    void main(){ float h = vP.y; vec3 c = h > 0.0 ? mix(mid, top, smoothstep(0.0, 0.6, h)) : mix(mid, bot, smoothstep(0.0, -0.2, h));
+      float s = max(dot(normalize(vP), sunD), 0.0); c += sunC * (pow(s, 600.0) * 2.5 + pow(s, 12.0) * 0.25);
+      gl_FragColor = vec4(c, 1.0);
+      #include <colorspace_fragment>
+    }`,
+});
+const sky = new THREE.Mesh(new THREE.SphereGeometry(1400, 32, 16), skyMat);
+sky.frustumCulled = false; sky.renderOrder = -10; scene.add(sky);
+scene.add(new THREE.HemisphereLight(0xdcecff, 0x6b5a4a, .9));
+const sunL = new THREE.DirectionalLight(0xfff0d8, 2.6); sunL.position.copy(SUN).multiplyScalar(100); scene.add(sunL);
+
+// ---- 岛（只为看海和岛的交界，按 world.js 的剖面车出来）----
+const islMat = toonMat({ vertexColors: true, flatShading: true });
+for (const is of islands) {
+  const pts = is.prof.map(([r, h]) => new THREE.Vector2(r, h));
+  const g = new THREE.LatheGeometry(pts, 20);
+  const p = g.attributes.position, col = [];
+  for (let i = 0; i < p.count; i++) {
+    const y = p.getY(i), c = new THREE.Color(y < -1 ? 0x8a8070 : y < 2 ? 0xd8c890 : is.kind === 'green' ? 0x5a9a48 : is.kind === 'volcano' ? 0x5a4a44 : 0x8a7a6a);
+    col.push(c.r, c.g, c.b);
+  }
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  const m = new THREE.Mesh(g, islMat); m.position.set(is.x, 0, is.z); addHull(m, 0x2a1e1a, .45); scene.add(m);
+}
+
+// ---- 假的 S：一条龙 + 海鸥 + 沙丁鱼群 + 飞鱼 + 蝠鲼 + 觅食点 ----
+const S = { t: 0, hero: { x: 0, y: 20, z: 90, px: 0, py: 20, pz: 90, yaw: 0, len: 10, medium: 'air' }, creatures: [], spots: [] };
+let anchor = { x: 0, z: 100 }, heroY = 20, gullY = 10;
+const mk = (sp, n) => { for (let i = 0; i < n; i++) S.creatures.push({ id: S.creatures.length, sp, x: 0, y: 0, z: 0, px: 0, py: 0, pz: 0, yaw: 0, size: { gull: 1.4, sardine: .7, flyfish: 1, manta: 3.5 }[sp], i }); };
+mk('gull', 6); mk('sardine', 26); mk('flyfish', 4); mk('manta', 1);
+const look = { gull: [0xf4f4f0, new THREE.SphereGeometry(1, 8, 6).scale(.25, .2, .6), new THREE.BoxGeometry(2.4, .06, .4)], sardine: [0x3a8aa0, new THREE.SphereGeometry(1, 6, 4).scale(.12, .14, .45)], flyfish: [0x4a7ab8, new THREE.SphereGeometry(1, 6, 4).scale(.15, .15, .5)], manta: [0x2a3440, new THREE.SphereGeometry(1, 8, 4).scale(3.5, .4, 1.6)] };
+const meshes = S.creatures.map(c => {
+  const [col, g, wing] = look[c.sp], m = new THREE.Mesh(g, toonMat({ color: col })); addHull(m, new THREE.Color(col).multiplyScalar(.25), .05);
+  if (wing) m.add(new THREE.Mesh(wing, toonMat({ color: col }))); scene.add(m); return m;
+});
+const hero = new THREE.Mesh(new THREE.SphereGeometry(1, 12, 8).scale(1.2, 1, 5), toonMat({ color: 0xd8562a })); addHull(hero, 0x3a1408, .08);
+hero.add(Object.assign(new THREE.Mesh(new THREE.BoxGeometry(9, .2, 1.6), toonMat({ color: 0xb8401e })), {})); scene.add(hero);
+function place() {
+  const t = S.t, A = anchor;
+  for (const c of S.creatures) {
+    c.px = c.x; c.py = c.y; c.pz = c.z;
+    if (c.sp === 'gull') { const a = t * .5 + c.i * 1.05; c.x = A.x + 15 + Math.cos(a) * 12; c.z = A.z + 28 + Math.sin(a) * 12; c.y = gullY + Math.sin(a * 2) * 2; c.yaw = Math.atan2(-Math.sin(a), Math.cos(a)); }
+    if (c.sp === 'sardine') { const a = c.i * 2.4; c.x = A.x - 12 + Math.cos(a) * (1 + c.i % 5) + Math.sin(t) * 2; c.z = A.z + 40 + Math.sin(a) * (1 + c.i % 4) + t * 1.5 % 10; c.y = -1.5 - (c.i % 3) * .6; c.yaw = .3; }
+    if (c.sp === 'flyfish') { c.x = A.x + 22 + c.i * 2.5; c.z = A.z + 55 + c.i * 3; c.y = -1.2; c.yaw = -.5; }
+    if (c.sp === 'manta') { c.x = A.x - 25; c.z = A.z + 70; c.y = -3; c.yaw = .8; }
+  }
+  S.spots = [{ x: A.x - 12, z: A.z + 42, r: 12 }, { x: A.x + 40, z: A.z + 160, r: 12 }];
+  const h = S.hero; h.px = h.x; h.py = h.y; h.pz = h.z; h.x = A.x; h.z = A.z - 10 + (t * 6) % 20; h.y = heroY;
+  S.creatures.forEach((c, i) => { meshes[i].position.set(c.x, c.y, c.z); meshes[i].rotation.set(0, c.yaw, 0); });
+  hero.position.set(h.x, h.y, h.z);
+}
+
+const sea = createSea({ THREE, scene, camera, renderer, GRAD, outlineMat, toonMat, sky, sun: SUN });
+const camPos = new THREE.Vector3(0, 60, 40), camLook = new THREE.Vector3(0, 0, 150);
+let time = 0, last = performance.now();
+function tick(dt) { S.t += dt; time += dt; place(); camera.position.copy(camPos); camera.lookAt(camLook); sea.update(S, 1, dt, time); }
+function render() { renderer.render(scene, camera); }
+function resize() { const w = wrap.clientWidth, h = wrap.clientHeight; renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix(); }
+addEventListener('resize', resize); resize();
+
+const VIEWS = {
+  高空: { a: [0, 100], hy: 20, cam: [0, 60, 40], look: [0, 0, 150] },
+  掠水: { a: [0, 100], hy: 6, cam: [0, 4, 60], look: [0, 1.5, 200] },
+  水线: { a: [0, 100], hy: 5, cam: [0, 'w1', 60], look: [0, .5, 200] },
+  翠岛: { a: [0, 100], hy: -6, cam: [0, -8, 60], look: [0, -18, 110] },
+  火山: { a: [-1175, 600], hy: -40, cam: [-1175, -40, 590], look: [-1175, -52, 650] },
+  外海: { a: [-1210, 0], hy: -80, cam: [-1210, -80, -10], look: [-1210, -88, 50] },
+  仰望: { a: [5, 90], hy: -14, gy: 6, cam: [20, -10, 100], look: [20, 4, 120] },
+};
+function view(name) {
+  const v = VIEWS[name]; anchor = { x: v.a[0], z: v.a[1] }; heroY = v.hy; gullY = v.gy || 10;
+  const y = v.cam[1] === 'w1' ? waveH(v.cam[0], v.cam[2], S.t) + 1.0 : v.cam[1];
+  camPos.set(v.cam[0], y, v.cam[2]); camLook.set(...v.look);
+  for (const b of document.querySelectorAll('#ui button')) b.classList.toggle('on', b.textContent === name);
+}
+for (const n in VIEWS) { const b = document.createElement('button'); b.textContent = n; b.onclick = () => view(n); document.getElementById('ui').append(b); }
+view('高空');
+const info = document.getElementById('info');
+function frame(now) {
+  const dt = Math.min(.05, (now - last) / 1000); last = now;
+  if (!REC) { tick(dt); render(); info.textContent = `水下 ${sea.underwater.toFixed(2)}  三角面 ${renderer.info.render.triangles}  绘制 ${renderer.info.render.calls}`; requestAnimationFrame(frame); }
+}
+requestAnimationFrame(frame);
+window.__lab = { S, sea, renderer, scene, camera, view, tick, render, camPos, camLook, VIEWS,
+  setCam(p, l) { camPos.set(...p); camLook.set(...l); }, info: () => renderer.info.render };
+window.__labReady = true;
+</script>
+</body>
+</html>

@@ -1,0 +1,629 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>龙种设计 · 2D 草图</title>
+<style>
+:root{--bg:#f3eee6;--card:#fffdf9;--ink:#2b2420;--sub:#8a7f74;--line:#e4dccf;--on:#ffd56b}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);font-family:"PingFang SC","Microsoft YaHei",system-ui,sans-serif;-webkit-text-size-adjust:100%}
+header{position:sticky;top:0;z-index:5;background:rgba(243,238,230,.92);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);padding:12px 16px 10px;border-bottom:1px solid var(--line)}
+h1{margin:0 0 8px;font-size:17px;font-weight:700}
+.ctrl{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.seg{display:flex;background:#e9e1d5;border-radius:10px;padding:3px;gap:2px}
+button{border:0;border-radius:8px;padding:7px 13px;font:600 14px/1 inherit;font-family:inherit;color:var(--ink);background:transparent;cursor:pointer}
+button.on{background:var(--on)}
+#sil{background:#e9e1d5}
+#sil.on{background:#2b2420;color:#fff}
+main{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:14px;padding:14px 16px 28px;max-width:1500px;margin:0 auto}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;overflow:hidden}
+.hd{display:flex;align-items:baseline;gap:10px;padding:12px 14px 4px}
+.hd b{font-size:18px}
+.hd span{color:var(--sub);font-size:13px}
+canvas{display:block;width:100%}
+.ft{display:flex;align-items:center;gap:10px;padding:4px 12px 12px}
+.ft canvas{width:46%;border-radius:12px;background:#f7f2ea}
+.sw{display:flex;flex-wrap:wrap;gap:6px}
+.sw i{width:22px;height:22px;border-radius:50%;border:2px solid rgba(0,0,0,.12)}
+</style>
+</head>
+<body>
+<header>
+  <h1>龙种设计 · 2D 草图</h1>
+  <div class="ctrl">
+    <div class="seg" id="stage"><button data-v="0">幼龙</button><button data-v="1">少年</button><button data-v="2" class="on">成龙</button></div>
+    <button id="sil">剪影</button>
+  </div>
+</header>
+<main id="cards"></main>
+<script>
+// ---------- 小工具 ----------
+const lerp = (a, b, t) => a + (b - a) * t;
+const sm = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+function curve(K, j) {            // 平滑插值（Hermite），身体粗细用
+  const n = K.length, T = K.map(k => k[0]), Y = K.map(k => k[j]);
+  const M = Y.map((y, i) => i === 0 ? (Y[1] - Y[0]) / (T[1] - T[0]) : i === n - 1 ? (Y[n - 1] - Y[n - 2]) / (T[n - 1] - T[n - 2]) : (Y[i + 1] - Y[i - 1]) / (T[i + 1] - T[i - 1]));
+  return t => {
+    if (t <= T[0]) return Y[0]; if (t >= T[n - 1]) return Y[n - 1];
+    let i = 0; while (t > T[i + 1]) i++;
+    const h = T[i + 1] - T[i], s = (t - T[i]) / h, s2 = s * s, s3 = s2 * s;
+    return (2 * s3 - 3 * s2 + 1) * Y[i] + (s3 - 2 * s2 + s) * h * M[i] + (-2 * s3 + 3 * s2) * Y[i + 1] + (s3 - s2) * h * M[i + 1];
+  };
+}
+function mix(a, b, t) {          // 颜色混合 '#rrggbb'
+  const p = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
+  const A = p(a), B = p(b);
+  return '#' + A.map((v, i) => Math.round(lerp(v, B[i], t)).toString(16).padStart(2, '0')).join('');
+}
+function hash(n) { const s = Math.sin(n * 127.1 + 311.7) * 43758.5453; return s - Math.floor(s); }
+
+// ---------- 龙种设定 ----------
+const SP = {
+  fire: {
+    name: '火龙', icon: '🔥', tags: '四足 · 宽翼 · 力量型',
+    L: 8.2, tA: 0.23, tH: 0.48, headSize: 1.7, wingSize: 1.2,
+    prof: [[0, .32, .34], [.08, .37, .42], [.2, .72, .9], [.3, .8, .98], [.46, .64, .74], [.56, .48, .54], [.8, .2, .22], [.96, .06, .06], [1, .02, .02]],
+    neckUp: 0.8, neckLevel: 0.95, tailDroop: 0.26, tailLift: 0.16, tailWave: 0.16,
+    c: { back: '#7a1e17', side: '#c4402c', belly: '#f2b45e', mark: '#5a1611', accent: '#3a2422', horn: '#f0dfbf', eye: '#ffd23a', wing: '#e8703f', wingIn: '#d65a34', bone: '#8c281d', out: '#2b0d0a', claw: '#f0dfbf' },
+    wing: 'bat', legs: 'four', legW: 1.15, dorsal: 'spikes', tip: 'spade', head: 'fire', flapF: 0.55, glide: 0,
+  },
+  ice: {
+    name: '冰龙', icon: '❄️', tags: '长颈 · 羽翼 · 滑翔型',
+    L: 9, tA: 0.3, tH: 0.55, headSize: 1.45, wingSize: 1.15,
+    prof: [[0, .22, .23], [.15, .25, .28], [.3, .5, .62], [.4, .55, .66], [.55, .42, .48], [.7, .23, .25], [.92, .07, .07], [1, .02, .02]],
+    neckUp: 1.05, neckLevel: 1.0, tailDroop: 0.14, tailLift: 0.2, tailWave: 0.22,
+    c: { back: '#4f8fca', side: '#9fd0f0', belly: '#f4fbff', mark: '#ffffff', accent: '#d4f6ff', horn: '#c8f3ff', eye: '#2fc4ff', wing: '#f8fcff', wingTip: '#7fc0ee', bone: '#b5d8f0', out: '#173a5c', claw: '#e8f8ff', glow: '#9fecff' },
+    wing: 'feather', legs: 'four', legW: 0.72, dorsal: 'crystals', tip: 'fan', head: 'ice', ruff: true, flapF: 0.42, glide: 0.55,
+  },
+  storm: {
+    name: '雷龙', icon: '⚡', tags: '双足 · 刃翼 · 速度型',
+    L: 9.2, tA: 0.2, tH: 0.41, headSize: 1.55, wingSize: 1.2,
+    prof: [[0, .26, .28], [.09, .3, .33], [.18, .52, .64], [.28, .55, .66], [.4, .41, .47], [.55, .22, .24], [.8, .08, .08], [1, .02, .02]],
+    neckUp: 0.6, neckLevel: 0.85, tailDroop: 0.08, tailLift: 0.12, tailWave: 0.32,
+    c: { back: '#231c58', side: '#4a3d93', belly: '#c2b4ff', mark: '#ffe14a', accent: '#ffe14a', horn: '#ffe14a', eye: '#fff27a', wing: '#5b48c6', wingIn: '#4b3aaa', bone: '#2a2266', out: '#0f0b2b', claw: '#f3ead2', glow: '#ffe14a' },
+    wing: 'blade', legs: 'two', legW: 1.1, dorsal: 'fins', tip: 'fork', head: 'storm', flapF: 0.9, glide: 0,
+  },
+};
+const STG = [
+  { len: .62, thick: 1.3, head: 1.55, snout: .72, eye: 1.55, wing: .55, horn: .35, spike: .45, leg: 1.12 },
+  { len: .82, thick: 1.1, head: 1.22, snout: .87, eye: 1.22, wing: .8, horn: .7, spike: .75, leg: 1.04 },
+  { len: 1, thick: 1, head: 1, snout: 1, eye: 1, wing: 1, horn: 1, spike: 1, leg: 1 },
+];
+// 翅膀：肩在原点，x 向前，y 向翼展方向（侧视时朝上）
+const WINGS = {
+  bat:   { E: [0.5, 1.0], W: [-0.2, 2.3], tips: [[-0.5, 4.2], [-1.6, 3.8], [-2.45, 2.8], [-2.95, 1.5]], sag: 0.3, sagH: 0.26, hipT: 0.9, bone: 0.055 },
+  blade: { E: [0.55, 0.9], W: [0.2, 2.1], tips: [[-1.4, 4.8], [-2.15, 3.0], [-2.45, 1.55]], sag: 0.22, sagH: 0.16, hipT: 0.85, bone: 0.05 },
+  feather: { E: [0.42, 0.95], W: [-0.02, 2.05], Hd: [-0.15, 2.75] },
+};
+
+// ---------- 画图工具（坐标 y 朝上） ----------
+let LW = 0.035;   // 描边粗细（单位：龙的长度单位）
+function smoothLoop(ctx, pts) {
+  const n = pts.length;
+  ctx.moveTo((pts[n - 1][0] + pts[0][0]) / 2, (pts[n - 1][1] + pts[0][1]) / 2);
+  for (let i = 0; i < n; i++) { const a = pts[i], b = pts[(i + 1) % n]; ctx.quadraticCurveTo(a[0], a[1], (a[0] + b[0]) / 2, (a[1] + b[1]) / 2); }
+  ctx.closePath();
+}
+function smoothLine(ctx, pts) {
+  ctx.moveTo(pts[0][0], pts[0][1]);
+  for (let i = 1; i < pts.length - 1; i++) { const a = pts[i], b = pts[i + 1]; ctx.quadraticCurveTo(a[0], a[1], (a[0] + b[0]) / 2, (a[1] + b[1]) / 2); }
+  const l = pts[pts.length - 1]; ctx.lineTo(l[0], l[1]);
+}
+function fillOut(ctx, fill, out, lw = LW) { ctx.fillStyle = fill; ctx.fill(); ctx.lineWidth = lw; ctx.strokeStyle = out; ctx.stroke(); }
+// 带描边的渐细管子（腿、角、骨头）：先画一遍深色粗线，再画一遍颜色细线
+function tube(ctx, pts, ws, col, out, lw = LW) {
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  const seg = (pass) => {
+    for (let i = 0; i < pts.length - 1; i++) {
+      const w = (ws[i] + ws[i + 1]);
+      ctx.beginPath(); ctx.moveTo(pts[i][0], pts[i][1]); ctx.lineTo(pts[i + 1][0], pts[i + 1][1]);
+      ctx.lineWidth = pass ? w : w + lw * 2; ctx.strokeStyle = pass ? col : out; ctx.stroke();
+    }
+  };
+  seg(0); seg(1);
+}
+// 沿二次曲线取点，配合 tube 画弯角
+function bez(a, c, b, n = 10) { const o = []; for (let i = 0; i <= n; i++) { const t = i / n, u = 1 - t; o.push([u * u * a[0] + 2 * u * t * c[0] + t * t * b[0], u * u * a[1] + 2 * u * t * c[1] + t * t * b[1]]); } return o; }
+function taperW(n, w0, w1) { const o = []; for (let i = 0; i <= n; i++) o.push(lerp(w0, w1, Math.pow(i / n, 0.9))); return o; }
+function leaf(ctx, b, d, len, wid) {     // 羽毛 / 叶片形
+  const nx = -d[1], ny = d[0], tip = [b[0] + d[0] * len, b[1] + d[1] * len];
+  ctx.moveTo(b[0], b[1]);
+  ctx.quadraticCurveTo(b[0] + d[0] * len * 0.5 + nx * wid * 1.7, b[1] + d[1] * len * 0.5 + ny * wid * 1.7, tip[0], tip[1]);
+  ctx.quadraticCurveTo(b[0] + d[0] * len * 0.5 - nx * wid * 1.5, b[1] + d[1] * len * 0.5 - ny * wid * 1.5, b[0], b[1]);
+  ctx.closePath();
+}
+function eye(ctx, x, y, rx, ry, rot, col, blink, out, lw, glow) {
+  ctx.save(); ctx.translate(x, y); ctx.rotate(rot); ctx.scale(1, blink);
+  ctx.beginPath(); ctx.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2);
+  if (glow) { ctx.shadowColor = glow; ctx.shadowBlur = 10; }
+  ctx.fillStyle = col; ctx.fill(); ctx.shadowBlur = 0;
+  ctx.lineWidth = lw; ctx.strokeStyle = out; ctx.stroke();
+  ctx.beginPath(); ctx.ellipse(rx * 0.08, 0, rx * 0.2, ry * 0.82, 0, 0, Math.PI * 2); ctx.fillStyle = '#140c10'; ctx.fill();
+  ctx.beginPath(); ctx.arc(rx * 0.38, ry * 0.38, ry * 0.26, 0, Math.PI * 2); ctx.fillStyle = '#fff'; ctx.fill();
+  ctx.restore();
+}
+
+// ---------- 身体脊柱 ----------
+function spine(sp, P, time, bob) {
+  const N = 64, L = sp.L * P.len, ds = L / (N - 1), a = Math.round(sp.tA * (N - 1));
+  const phi = [];
+  for (let i = 0; i < N; i++) {
+    const t = i / (N - 1); let f = 0;
+    if (t < sp.tA) { const u = (sp.tA - t) / sp.tA; f = sp.neckUp * sm(0, .4, u) * (1 - sp.neckLevel * sm(.45, 1, u)) + 0.05 * Math.sin(time * 1.2 - u * 2.5); }
+    else if (t > sp.tH) { const w = (t - sp.tH) / (1 - sp.tH); f = sp.tailDroop * Math.sin(Math.PI * Math.min(1, w * 1.3)) - sp.tailLift * w * w + sp.tailWave * w * Math.sin(time * 1.7 - w * 4.5); }
+    phi.push(f + bob);
+  }
+  const x = new Float32Array(N), y = new Float32Array(N);
+  for (let i = a - 1; i >= 0; i--) { const f = (phi[i] + phi[i + 1]) / 2; x[i] = x[i + 1] + Math.cos(f) * ds; y[i] = y[i + 1] + Math.sin(f) * ds; }
+  for (let i = a + 1; i < N; i++) { const f = (phi[i] + phi[i - 1]) / 2; x[i] = x[i - 1] - Math.cos(f) * ds; y[i] = y[i - 1] - Math.sin(f) * ds; }
+  const wt = curve(sp.prof, 1), wb = curve(sp.prof, 2);
+  const top = [], bot = [], nx = [], ny = [], U = [], Lo = [];
+  for (let i = 0; i < N; i++) {
+    const t = i / (N - 1);
+    top.push(Math.max(0.012, wt(t)) * P.thick); bot.push(Math.max(0.012, wb(t)) * P.thick);
+    nx.push(-Math.sin(phi[i])); ny.push(Math.cos(phi[i]));
+    U.push([x[i] + nx[i] * top[i], y[i] + ny[i] * top[i]]);
+    Lo.push([x[i] - nx[i] * bot[i], y[i] - ny[i] * bot[i]]);
+  }
+  return { N, a, ds, x, y, phi, top, bot, nx, ny, U, Lo, iH: Math.round(sp.tH * (N - 1)) };
+}
+
+// ---------- 头 ----------
+// 头的局部坐标：x 向前（吻部），y 向上，原点在脖子末端
+const HEADS = {
+  fire: {
+    upper: [['m', -.12, -.16], ['c', -.17, .02, -.1, .24, .06, .29], ['c', .2, .34, .36, .33, .46, .27], ['c', .56, .22, .66, .2, .78, .18], ['c', .9, .16, 1, .13, 1.02, .06], ['c', 1.04, 0, 1, -.045, .94, -.05], ['l', .5, -.065], ['c', .32, -.075, .2, -.12, .12, -.17], ['c', .04, -.22, -.06, -.2, -.12, -.16]],
+    jaw: [['m', .1, -.12], ['l', .88, -.075], ['c', .93, -.08, .92, -.13, .86, -.14], ['c', .7, -.18, .5, -.23, .3, -.25], ['c', .15, -.26, .04, -.23, 0, -.18]],
+    pivot: [.14, -.1], band: .17, eye: [.42, .16, .07, .056, -.05], nostril: [.93, .065],
+    brow: [['m', .28, .2], ['c', .36, .3, .5, .31, .58, .22], ['c', .5, .25, .4, .24, .3, .18]],
+    teeth: [[.6, -.06, .05], [.72, -.067, .045], [.84, -.072, .04]],
+  },
+  ice: {
+    upper: [['m', -.1, -.14], ['c', -.14, .04, -.06, .22, .1, .26], ['c', .24, .29, .36, .26, .46, .2], ['c', .6, .13, .78, .09, .92, .06], ['c', .99, .045, 1, 0, .94, -.01], ['l', .48, -.035], ['c', .3, -.05, .18, -.1, .1, -.15], ['c', .02, -.19, -.06, -.18, -.1, -.14]],
+    jaw: [['m', .1, -.1], ['l', .9, -.03], ['c', .93, -.04, .92, -.08, .87, -.09], ['c', .65, -.13, .4, -.17, .25, -.19], ['c', .12, -.2, .03, -.17, 0, -.14]],
+    pivot: [.14, -.08], band: .15, eye: [.4, .12, .078, .062, -.08], nostril: [.88, .04],
+    brow: [['m', .3, .16], ['c', .38, .21, .48, .2, .55, .14], ['c', .48, .17, .38, .18, .3, .16]],
+    teeth: [[.78, -.035, .03]],
+  },
+  storm: {
+    upper: [['m', -.1, -.13], ['c', -.12, .05, -.04, .18, .08, .22], ['l', .34, .24], ['c', .48, .24, .6, .16, .74, .11], ['l', 1.05, .015], ['l', .99, -.035], ['l', .5, -.055], ['c', .32, -.065, .18, -.1, .1, -.15], ['c', .02, -.19, -.06, -.17, -.1, -.13]],
+    jaw: [['m', .1, -.1], ['l', .97, -.04], ['l', .91, -.085], ['c', .6, -.135, .35, -.18, .22, -.19], ['c', .1, -.2, .02, -.17, 0, -.13]],
+    pivot: [.14, -.08], band: .16, eye: [.45, .12, .08, .042, -.22], nostril: [.94, .03],
+    brow: [['m', .3, .2], ['l', .6, .13], ['c', .5, .15, .4, .17, .3, .13]],
+    teeth: [[.62, -.062, .045], [.76, -.055, .04], [.88, -.048, .035]],
+  },
+};
+function runPath(ctx, cmds, X) {
+  ctx.beginPath();
+  for (const c of cmds) {
+    if (c[0] === 'm') ctx.moveTo(X(c[1]), c[2]);
+    else if (c[0] === 'l') ctx.lineTo(X(c[1]), c[2]);
+    else if (c[0] === 'c') ctx.bezierCurveTo(X(c[1]), c[2], X(c[3]), c[4], X(c[5]), c[6]);
+  }
+  ctx.closePath();
+}
+function crystal(ctx, b, tip, w, col, out, lw, glow) {
+  const dx = tip[0] - b[0], dy = tip[1] - b[1], L = Math.hypot(dx, dy), nx = -dy / L, ny = dx / L;
+  const m = [b[0] + dx * 0.32, b[1] + dy * 0.32];
+  ctx.beginPath(); ctx.moveTo(b[0], b[1]); ctx.lineTo(m[0] + nx * w, m[1] + ny * w); ctx.lineTo(tip[0], tip[1]); ctx.lineTo(m[0] - nx * w, m[1] - ny * w); ctx.closePath();
+  if (glow) { ctx.shadowColor = glow; ctx.shadowBlur = 12; }
+  ctx.fillStyle = col; ctx.fill(); ctx.shadowBlur = 0;
+  ctx.lineWidth = lw; ctx.strokeStyle = out; ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(b[0], b[1]); ctx.lineTo(m[0] + nx * w, m[1] + ny * w); ctx.lineTo(tip[0], tip[1]); ctx.closePath();
+  ctx.fillStyle = 'rgba(255,255,255,.55)'; ctx.fill();
+}
+function zigzag(pts, ctx) { ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]); for (const p of pts.slice(1)) ctx.lineTo(p[0], p[1]); ctx.closePath(); }
+
+// 角 / 冠 / 冠饰：far=true 画在头后面那一侧（颜色更暗）
+function headExtras(ctx, sp, P, far, X, lw) {
+  const c = sp.c, k = P.horn, d = far ? 0.3 : 0, out = c.out;
+  const col = far ? mix(c.horn, out, 0.35) : c.horn;
+  const off = far ? [-0.04, 0.03] : [0, 0];
+  const pt = (x, y) => [X(x) + off[0], y + off[1]];
+  if (sp.head === 'fire') {
+    // 主角：向后弯
+    const b = pt(.16, .27);
+    const hp = bez(b, [b[0] - .35 * k, b[1] + .3 * k], [b[0] - .78 * k, b[1] + .02 * k], 12);
+    tube(ctx, hp, taperW(12, .075 * Math.sqrt(k) + .02, .006), col, out, lw);
+    ctx.strokeStyle = mix(col, out, .35); ctx.lineWidth = lw * 0.8;
+    for (let i = 2; i < 10; i += 2) { const p = hp[i], q = hp[i + 1], dx = q[0] - p[0], dy = q[1] - p[1], L = Math.hypot(dx, dy), w = lerp(.06, .01, i / 12) * Math.sqrt(k); ctx.beginPath(); ctx.moveTo(p[0] - dy / L * w, p[1] + dx / L * w); ctx.lineTo(p[0] + dy / L * w, p[1] - dx / L * w); ctx.stroke(); }
+    // 下面的小角
+    const b2 = pt(.03, .14);
+    tube(ctx, bez(b2, [b2[0] - .25 * k, b2[1] + .06 * k], [b2[0] - .5 * k, b2[1] - .14 * k], 8), taperW(8, .05 * Math.sqrt(k) + .01, .005), col, out, lw);
+    if (!far) {   // 腮刺 + 鼻角
+      for (const [x, y, l] of [[.06, -.2, .3], [.16, -.23, .2]]) { const p = pt(x, y); tube(ctx, bez(p, [p[0] - l * .5, p[1] - l * .1], [p[0] - l, p[1] - l * .45], 6), taperW(6, .035, .004), c.horn, out, lw); }
+      const n = pt(.8, .16); tube(ctx, bez(n, [n[0] + .02, n[1] + .07 * k + .02], [n[0] - .04, n[1] + .12 * k + .03], 6), taperW(6, .035, .004), c.horn, out, lw);
+    }
+  } else if (sp.head === 'ice') {
+    const glow = far ? null : c.glow;
+    crystal(ctx, pt(.12, .23), pt(.12 - .62 * k, .23 + .5 * k + .05), .07 * Math.sqrt(k) + .02, col, out, lw, glow);
+    crystal(ctx, pt(.02, .17), pt(.02 - .62 * k, .17 + .22 * k + .02), .06 * Math.sqrt(k) + .015, col, out, lw, glow);
+    crystal(ctx, pt(.25, .24), pt(.25 - .22 * k, .24 + .3 * k + .03), .045 * Math.sqrt(k) + .012, col, out, lw, glow);
+    if (!far) {   // 腮边羽毛
+      for (const [dx, dy, l] of [[-1, .12, .42], [-1, -.12, .4], [-.9, -.42, .32]]) {
+        const L = Math.hypot(dx, dy), d = [dx / L, dy / L], b = pt(.04, -.06);
+        ctx.beginPath(); leaf(ctx, b, d, l * (.6 + .4 * k), l * .14); fillOut(ctx, c.wing, out, lw);
+        ctx.beginPath(); leaf(ctx, [b[0] + d[0] * l * .55, b[1] + d[1] * l * .55], d, l * .45 * (.6 + .4 * k), l * .08); ctx.fillStyle = c.wingTip; ctx.fill();
+      }
+    }
+  } else if (sp.head === 'storm') {
+    if (!far) {
+      // 大头冠：向后掠的刀刃
+      const s = .45 + .55 * k;
+      const A = pt(.36, .22), T = pt(.36 - 1.3 * s, .22 + .44 * s), B = pt(-.06, .1);
+      ctx.beginPath(); ctx.moveTo(A[0], A[1]);
+      ctx.quadraticCurveTo(A[0] - .45 * s, A[1] + .3 * s, T[0], T[1]);
+      ctx.quadraticCurveTo(T[0] + .5 * s, T[1] - .32 * s, B[0], B[1]);
+      ctx.closePath(); fillOut(ctx, c.back, out, lw);
+      ctx.save(); ctx.clip();
+      ctx.beginPath(); ctx.moveTo(T[0] - .1, T[1] + .1); ctx.lineTo(T[0] + .55 * s, T[1] + .05); ctx.lineTo(T[0] + .35 * s, T[1] - .3 * s); ctx.closePath(); ctx.fillStyle = c.accent; ctx.fill();
+      ctx.beginPath(); ctx.moveTo(A[0], A[1]); ctx.quadraticCurveTo(A[0] - .45 * s, A[1] + .3 * s, T[0], T[1]); ctx.lineWidth = .05; ctx.strokeStyle = c.accent; ctx.stroke();
+      ctx.restore();
+    }
+    // 闪电角
+    const z = (x, y) => pt(x, y);
+    const g = .5 + .5 * k, b = [.24, .22];
+    const pts = [z(b[0], b[1]), z(b[0] - .1 * g, b[1] + .16 * g), z(b[0] - .03 * g, b[1] + .16 * g), z(b[0] - .14 * g, b[1] + .34 * g), z(b[0] + .02 * g, b[1] + .13 * g), z(b[0] - .05 * g, b[1] + .13 * g), z(b[0] + .07, b[1] - .01)];
+    zigzag(pts, ctx); if (!far) { ctx.shadowColor = c.glow; ctx.shadowBlur = 10; } ctx.fillStyle = col; ctx.fill(); ctx.shadowBlur = 0; ctx.lineWidth = lw; ctx.strokeStyle = out; ctx.stroke();
+    if (!far) for (const [x, y] of [[.32, -.18], [.2, -.19]]) { const p = pt(x, y); ctx.beginPath(); ctx.moveTo(p[0] + .04, p[1] + .02); ctx.lineTo(p[0] - .1, p[1] - .1); ctx.lineTo(p[0] - .04, p[1] + .02); ctx.closePath(); fillOut(ctx, c.side, out, lw); }
+  }
+}
+function drawHead(ctx, sp, P, st) {
+  const H = HEADS[sp.head], c = sp.c, out = c.out, lw = LW / (P.head * sp.headSize);
+  const sn = P.snout, X = x => x > 0.3 ? 0.3 + (x - 0.3) * sn : x;
+  headExtras(ctx, sp, P, true, X, lw);
+  // 嘴里
+  ctx.beginPath(); ctx.moveTo(X(.2), -.1); ctx.lineTo(X(.92), -.06); ctx.lineTo(X(.8), -.2); ctx.lineTo(X(.2), -.2); ctx.closePath(); ctx.fillStyle = '#5a1a22'; ctx.fill();
+  // 下巴（可以张开）
+  ctx.save(); ctx.translate(X(H.pivot[0]), H.pivot[1]); ctx.rotate(-st.open); ctx.translate(-X(H.pivot[0]), -H.pivot[1]);
+  runPath(ctx, H.jaw, X); fillOut(ctx, c.belly, out, lw);
+  ctx.restore();
+  // 牙
+  for (const [x, y, l] of H.teeth) { if (P.horn < .5 && x < .7) continue; ctx.beginPath(); ctx.moveTo(X(x) - .022, y); ctx.lineTo(X(x), y - l); ctx.lineTo(X(x) + .022, y); ctx.closePath(); fillOut(ctx, '#fffaf0', out, lw * .7); }
+  // 上半个头：侧面色 + 头顶背色
+  runPath(ctx, H.upper, X); ctx.fillStyle = c.side; ctx.fill();
+  ctx.save(); ctx.clip();
+  ctx.beginPath(); ctx.moveTo(-.3, H.band); ctx.bezierCurveTo(X(.3), H.band + .05, X(.6), H.band - .02, X(1.2), H.band - .1); ctx.lineTo(X(1.2), .6); ctx.lineTo(-.3, .6); ctx.closePath(); ctx.fillStyle = c.back; ctx.fill();
+  ctx.beginPath(); ctx.moveTo(-.3, -.07); ctx.bezierCurveTo(X(.3), -.04, X(.6), -.035, X(1.2), -.02); ctx.lineTo(X(1.2), -.4); ctx.lineTo(-.3, -.4); ctx.closePath(); ctx.fillStyle = mix(c.side, c.belly, .45); ctx.fill();
+  ctx.restore();
+  runPath(ctx, H.upper, X); ctx.lineWidth = lw; ctx.strokeStyle = out; ctx.stroke();
+  // 嘴线
+  ctx.beginPath(); ctx.moveTo(X(.92), -.055); ctx.quadraticCurveTo(X(.55), -.07, X(.22), -.12); ctx.lineWidth = lw * .9; ctx.strokeStyle = out; ctx.stroke();
+  // 鼻孔
+  ctx.beginPath(); ctx.ellipse(X(H.nostril[0]), H.nostril[1], .028, .014, -.4, 0, Math.PI * 2); ctx.fillStyle = out; ctx.fill();
+  // 眼睛 + 眉骨
+  const [ex, ey, rx, ry, rot] = H.eye;
+  eye(ctx, X(ex), ey, rx * P.eye, ry * P.eye, rot, c.eye, st.blink, out, lw, sp.head === 'storm' ? c.glow : null);
+  runPath(ctx, H.brow, x => X(x)); fillOut(ctx, c.back, out, lw);
+  headExtras(ctx, sp, P, false, X, lw);
+}
+
+// ---------- 翅膀 ----------
+function wingXform(sh, s, f) { return p => [sh[0] + p[0] * s, sh[1] + p[1] * s * f]; }
+function drawMembraneWing(ctx, sp, P, B, f, far) {
+  const Wd = WINGS[sp.wing], c = sp.c, s = P.wing * sp.wingSize, out = c.out;
+  const dk = col => far ? mix(col, out, 0.32) : col;
+  const off = far ? [0.16, 0.12] : [0, 0];
+  const a = B.a, iH = Math.round(lerp(a, B.iH, Wd.hipT));
+  const sh = [B.U[a][0] + off[0], B.U[a][1] + off[1] - B.top[a] * 0.25];
+  const T = wingXform(sh, s, f);
+  const E = T(Wd.E), W = T(Wd.W), tips = Wd.tips.map(T);
+  const H = [B.U[iH][0] + off[0], B.U[iH][1] + off[1]];
+  const ctrl = (p, q, sag) => { const m = [(p[0] + q[0]) / 2, (p[1] + q[1]) / 2]; return [m[0] + (W[0] - m[0]) * sag, m[1] + (W[1] - m[1]) * sag]; };
+  const membrane = () => {
+    ctx.beginPath(); ctx.moveTo(sh[0], sh[1]); ctx.lineTo(E[0], E[1]); ctx.lineTo(W[0], W[1]); ctx.lineTo(tips[0][0], tips[0][1]);
+    for (let k = 0; k < tips.length - 1; k++) { const q = ctrl(tips[k], tips[k + 1], Wd.sag); ctx.quadraticCurveTo(q[0], q[1], tips[k + 1][0], tips[k + 1][1]); }
+    const q = ctrl(tips[tips.length - 1], H, Wd.sagH); ctx.quadraticCurveTo(q[0], q[1], H[0], H[1]);
+    for (let i = iH - 1; i >= a; i--) ctx.lineTo(B.U[i][0] + off[0], B.U[i][1] + off[1]);
+    ctx.closePath();
+  };
+  membrane(); ctx.fillStyle = dk(c.wing); ctx.fill();
+  ctx.save(); ctx.clip();
+  // 指间的膜块：深浅交替
+  for (let k = 0; k < tips.length - 1; k += 2) {
+    const q = ctrl(tips[k], tips[k + 1], Wd.sag);
+    ctx.beginPath(); ctx.moveTo(W[0], W[1]); ctx.lineTo(tips[k][0], tips[k][1]); ctx.quadraticCurveTo(q[0], q[1], tips[k + 1][0], tips[k + 1][1]); ctx.closePath();
+    ctx.fillStyle = dk(c.wingIn); ctx.fill();
+  }
+  // 靠近身体的一块阴影
+  ctx.beginPath(); ctx.moveTo(sh[0], sh[1]); ctx.lineTo(E[0], E[1]); ctx.lineTo(W[0], W[1]); ctx.lineTo(H[0], H[1]); ctx.closePath(); ctx.fillStyle = 'rgba(0,0,0,.08)'; ctx.fill();
+  if (sp.wing === 'blade') {   // 雷龙：翼膜上的闪电条
+    const p0 = [lerp(W[0], H[0], .15), lerp(W[1], H[1], .15)], p1 = [lerp(tips[0][0], tips[2][0], .5), lerp(tips[0][1], tips[2][1], .5)];
+    const zz = []; for (let i = 0; i <= 6; i++) { const t = i / 6; zz.push([lerp(p0[0], p1[0], t) + (i % 2 ? .18 : -.18) * s, lerp(p0[1], p1[1], t) + (i % 2 ? -.1 : .1) * s * f]); }
+    ctx.beginPath(); ctx.moveTo(zz[0][0], zz[0][1]); for (const p of zz) ctx.lineTo(p[0], p[1]);
+    if (!far) { ctx.shadowColor = c.glow; ctx.shadowBlur = 8; }
+    ctx.lineWidth = .09 * s; ctx.strokeStyle = dk(c.accent); ctx.lineJoin = 'miter'; ctx.stroke(); ctx.shadowBlur = 0; ctx.lineJoin = 'round';
+  }
+  ctx.restore();
+  membrane(); ctx.lineWidth = LW; ctx.strokeStyle = out; ctx.lineJoin = 'round'; ctx.stroke();
+  // 骨头
+  const bw = Wd.bone * s;
+  for (const tp of tips) tube(ctx, [W, tp], [bw * .75, bw * .2], dk(c.bone), out);
+  const arm = bez(sh, [lerp(sh[0], E[0], .55), lerp(sh[1], E[1], .45)], E, 6).concat(bez(E, [lerp(E[0], W[0], .5) + .05, lerp(E[1], W[1], .5)], W, 6).slice(1));
+  tube(ctx, arm, taperW(arm.length - 1, bw * 2.4, bw * 1.05), dk(c.side), out);
+  // 翼爪（小钩子）
+  const c0 = T([Wd.W[0] + .06, Wd.W[1] + .04]), c2 = T([Wd.W[0] + .2, Wd.W[1] + .06]), c1 = T([Wd.W[0] + .16, Wd.W[1] + .16]);
+  tube(ctx, bez(c0, c1, c2, 5), taperW(5, bw * .7, .004), dk(c.claw), out);
+}
+function drawFeatherWing(ctx, sp, P, B, f, far) {
+  const Wd = WINGS.feather, c = sp.c, s = P.wing * sp.wingSize, out = c.out;
+  const dk = col => far ? mix(col, out, 0.3) : col;
+  const off = far ? [0.16, 0.12] : [0, 0], a = B.a;
+  const sh = [B.U[a][0] + off[0], B.U[a][1] + off[1] - B.top[a] * 0.25];
+  const T = wingXform(sh, s, f);
+  const S0 = [0, 0], E = Wd.E, W = Wd.W, Hd = Wd.Hd;
+  const lp = (p, q, t) => [lerp(p[0], q[0], t), lerp(p[1], q[1], t)];
+  const feather = (b, ang, len, wid, tipCol) => {
+    const d = [Math.cos(ang), Math.sin(ang)];
+    // 先在翅膀平面里算，再整体变换（扇动时会被压扁）
+    const pts = [b, [b[0] + d[0] * len * .5 - d[1] * wid * 1.7, b[1] + d[1] * len * .5 + d[0] * wid * 1.7], [b[0] + d[0] * len, b[1] + d[1] * len], [b[0] + d[0] * len * .5 + d[1] * wid * 1.5, b[1] + d[1] * len * .5 - d[0] * wid * 1.5]].map(T);
+    ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]); ctx.quadraticCurveTo(pts[1][0], pts[1][1], pts[2][0], pts[2][1]); ctx.quadraticCurveTo(pts[3][0], pts[3][1], pts[0][0], pts[0][1]); ctx.closePath();
+    ctx.fillStyle = dk(c.wing); ctx.fill();
+    ctx.save(); ctx.clip();
+    const m = T([b[0] + d[0] * len * .64, b[1] + d[1] * len * .64]);
+    const tp = pts[2], nx = -(tp[1] - m[1]), ny = tp[0] - m[0];
+    ctx.beginPath(); ctx.moveTo(m[0] + nx * 3, m[1] + ny * 3); ctx.lineTo(m[0] - nx * 3, m[1] - ny * 3); ctx.lineTo(tp[0] - nx * 3 + (tp[0] - m[0]) * 2, tp[1] - ny * 3 + (tp[1] - m[1]) * 2); ctx.lineTo(tp[0] + nx * 3 + (tp[0] - m[0]) * 2, tp[1] + ny * 3 + (tp[1] - m[1]) * 2); ctx.closePath();
+    ctx.fillStyle = dk(tipCol); ctx.fill();
+    ctx.restore();
+    ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]); ctx.quadraticCurveTo(pts[1][0], pts[1][1], pts[2][0], pts[2][1]); ctx.quadraticCurveTo(pts[3][0], pts[3][1], pts[0][0], pts[0][1]); ctx.closePath();
+    ctx.lineWidth = LW * .85; ctx.strokeStyle = out; ctx.stroke();
+    const sb = T(b), se = T([b[0] + d[0] * len * .8, b[1] + d[1] * len * .8]);
+    ctx.beginPath(); ctx.moveTo(sb[0], sb[1]); ctx.lineTo(se[0], se[1]); ctx.lineWidth = LW * .5; ctx.strokeStyle = dk(c.bone); ctx.stroke();
+  };
+  const D = Math.PI / 180;
+  const arm = [S0, E, W, Hd].map(T);
+  tube(ctx, arm, [.075 * s, .06 * s, .045 * s, .03 * s], dk(c.side), out);
+  for (let k = 0; k < 3; k++) feather(lp(S0, E, .25 + k * .3), (178 - k * 3) * D, 1.15 - k * .07, .14, c.wingTip);
+  for (let k = 0; k < 7; k++) feather(lp(E, W, k / 6), (172 - k * 4) * D, 1.5 - k * .02, .17, c.wingTip);
+  for (let k = 0; k < 7; k++) feather(lp(W, Hd, k / 6), (150 - k * 8) * D, 1.55 + k * .08, .18, c.wingTip);
+  for (let k = 0; k < 8; k++) feather(k < 4 ? lp(S0, E, .2 + k * .27) : lp(E, Hd, (k - 4) / 3.2), (k < 4 ? 176 : 168 - (k - 4) * 8) * D, .85 - k * .02, .14, c.side);
+  for (let k = 0; k < 9; k++) feather(k < 3 ? lp(S0, E, .3 + k * .3) : lp(E, Hd, (k - 3) / 5.5), (k < 3 ? 172 : 165 - (k - 3) * 6) * D, .45, .11, c.wing);
+}
+
+// ---------- 腿 ----------
+// 第一节画成肌肉（椭圆），后面几节是细腿
+const LEGS = {
+  fire:  { front: { l: [.5, .45, .2], a: [-2.0, -.3, -1.2], w: [.2, .085, .07, .06] }, hind: { l: [.75, .55, .38], a: [-2.25, -2.9, -2.95], w: [.25, .1, .075, .06] } },
+  ice:   { front: { l: [.55, .55, .22], a: [-2.0, -.35, -1.3], w: [.12, .06, .05, .045] }, hind: { l: [.8, .65, .4], a: [-2.25, -2.95, -3.0], w: [.2, .07, .055, .045] } },
+  storm: { hind: { l: [.8, .6, .42], a: [-2.3, -3.0, -2.75], w: [.22, .095, .075, .06] } },
+};
+function drawLeg(ctx, sp, P, B, which, far, time) {
+  const D = LEGS[sp.head][which]; if (!D) return;
+  const c = sp.c, out = c.out, k = sp.legW * P.leg * 1.25 * (P.thick > 1.2 ? 0.9 : 1);
+  const i = which === 'front' ? B.a + 2 : B.iH;
+  const off = far ? [0.14, 0.08] : [0, 0];
+  let p = [B.x[i] - B.nx[i] * B.bot[i] * .5 + off[0], B.y[i] - B.ny[i] * B.bot[i] * .5 + off[1]];
+  const pts = [p], base = B.phi[i];
+  D.l.forEach((l, j) => { const ang = base + D.a[j] + 0.1 * Math.sin(time * 1.4 + j + (far ? 1 : 0)); p = [p[0] + Math.cos(ang) * l * k, p[1] + Math.sin(ang) * l * k]; pts.push(p); });
+  const col = far ? mix(c.side, out, .35) : c.side;
+  tube(ctx, pts.slice(1), D.w.slice(1).map(w => w * k), col, out);
+  const h0 = pts[0], h1 = pts[1], ha = Math.atan2(h1[1] - h0[1], h1[0] - h0[0]);
+  ctx.beginPath(); ctx.ellipse(lerp(h0[0], h1[0], .4), lerp(h0[1], h1[1], .4), D.l[0] * k * .6, D.w[0] * k, ha, 0, Math.PI * 2);
+  fillOut(ctx, col, out);
+  // 爪子
+  const e = pts[pts.length - 1], q = pts[pts.length - 2], ang = Math.atan2(e[1] - q[1], e[0] - q[0]);
+  const big = sp.legs === 'two' ? 1.5 : 1;
+  for (const s of [-.45, 0, .45]) {
+    const a2 = ang + s, cl = [e[0] + Math.cos(a2) * .16 * k * big, e[1] + Math.sin(a2) * .16 * k * big];
+    const cm = [e[0] + Math.cos(a2) * .1 * k * big - Math.sin(a2) * .03, e[1] + Math.sin(a2) * .1 * k * big + Math.cos(a2) * .03];
+    tube(ctx, bez(e, cm, cl, 4), taperW(4, .035 * k * big, .004), far ? mix(c.claw, out, .35) : c.claw, out);
+  }
+}
+
+// ---------- 背上的装饰 ----------
+function drawDorsal(ctx, sp, P, B) {
+  const c = sp.c, out = c.out;
+  if (sp.dorsal === 'spikes') {
+    for (let i = 3; i < B.N - 5; i += 3) {
+      const t = i / (B.N - 1), h = (.16 + .3 * Math.exp(-Math.pow((t - sp.tA - .06) / .16, 2))) * P.spike * Math.min(1.2, B.top[i] / .4 + .3);
+      const fx = Math.cos(B.phi[i]), fy = Math.sin(B.phi[i]);
+      const b1 = B.U[Math.max(0, i - 1)], b2 = B.U[Math.min(B.N - 1, i + 1)];
+      const tip = [B.U[i][0] + B.nx[i] * h - fx * h * .6, B.U[i][1] + B.ny[i] * h - fy * h * .6];
+      ctx.beginPath(); ctx.moveTo(b1[0] - B.nx[i] * .05, b1[1] - B.ny[i] * .05); ctx.quadraticCurveTo(b1[0] + B.nx[i] * h * .5, b1[1] + B.ny[i] * h * .5, tip[0], tip[1]); ctx.lineTo(b2[0] - B.nx[i] * .05, b2[1] - B.ny[i] * .05); ctx.closePath();
+      fillOut(ctx, c.accent, out);
+    }
+  } else if (sp.dorsal === 'crystals') {
+    for (let i = B.a - 3; i < B.N * .78; i += 4) {
+      const h = (.22 + .22 * hash(i)) * P.spike * Math.min(1.2, B.top[i] / .35 + .2);
+      const fx = Math.cos(B.phi[i]), fy = Math.sin(B.phi[i]), b = [B.U[i][0] - B.nx[i] * .05, B.U[i][1] - B.ny[i] * .05];
+      crystal(ctx, b, [B.U[i][0] + B.nx[i] * h - fx * h * .45, B.U[i][1] + B.ny[i] * h - fy * h * .45], .055 * Math.sqrt(P.spike) + .01, c.horn, out, LW, c.glow);
+    }
+  } else if (sp.dorsal === 'fins') {
+    for (let i = 4; i < B.N * .7; i += 5) {
+      const t = i / (B.N - 1), h = (.16 + .18 * Math.exp(-Math.pow((t - sp.tA) / .2, 2))) * P.spike;
+      const fx = Math.cos(B.phi[i]), fy = Math.sin(B.phi[i]);
+      const b1 = B.U[Math.max(0, i - 2)], b2 = B.U[Math.min(B.N - 1, i + 1)];
+      const tip = [B.U[i][0] + B.nx[i] * h - fx * h * 1.3, B.U[i][1] + B.ny[i] * h - fy * h * 1.3];
+      ctx.beginPath(); ctx.moveTo(b1[0] - B.nx[i] * .05, b1[1] - B.ny[i] * .05); ctx.quadraticCurveTo(b1[0] + B.nx[i] * h, b1[1] + B.ny[i] * h, tip[0], tip[1]); ctx.quadraticCurveTo(b2[0] + B.nx[i] * h * .2, b2[1] + B.ny[i] * h * .2, b2[0] - B.nx[i] * .05, b2[1] - B.ny[i] * .05); ctx.closePath();
+      fillOut(ctx, c.accent, out);
+    }
+  }
+}
+function drawRuff(ctx, sp, P, B) {     // 冰龙脖子上的一圈羽毛
+  const c = sp.c, out = c.out;
+  for (let r = 0; r < 2; r++) for (let i = B.a - 9 + r * 2; i <= B.a + 1; i += 2) {
+    for (const up of [1, -1]) {
+      const base = up > 0 ? B.U[i] : B.Lo[i];
+      const fx = Math.cos(B.phi[i]), fy = Math.sin(B.phi[i]), ang = Math.atan2(-fy + B.ny[i] * up * .45, -fx + B.nx[i] * up * .45);
+      const d = [Math.cos(ang), Math.sin(ang)], len = (.42 + .12 * hash(i + r * 7)) * (.6 + .4 * P.spike) * (up < 0 ? .8 : 1);
+      ctx.beginPath(); leaf(ctx, [base[0] + fx * .08, base[1] + fy * .08], d, len, len * .17); fillOut(ctx, c.wing, out);
+      ctx.beginPath(); leaf(ctx, [base[0] + fx * .08 + d[0] * len * .6, base[1] + fy * .08 + d[1] * len * .6], d, len * .4, len * .08); ctx.fillStyle = c.wingTip; ctx.fill();
+    }
+  }
+}
+function drawTailTip(ctx, sp, P, B) {
+  const c = sp.c, out = c.out, i = B.N - 1, e = [B.x[i], B.y[i]], ang = B.phi[i] + Math.PI, s = .75 + .35 * P.horn;
+  ctx.save(); ctx.translate(e[0], e[1]); ctx.rotate(ang); ctx.scale(s, s);
+  const lw = LW / s;
+  if (sp.tip === 'spade') {
+    ctx.beginPath(); ctx.moveTo(-.05, 0); ctx.bezierCurveTo(.12, .3, .35, .32, .45, .2); ctx.quadraticCurveTo(.6, .06, .78, 0); ctx.quadraticCurveTo(.6, -.06, .45, -.2); ctx.bezierCurveTo(.35, -.32, .12, -.3, -.05, 0); ctx.closePath();
+    fillOut(ctx, c.back, out, lw);
+    ctx.beginPath(); ctx.moveTo(.05, 0); ctx.lineTo(.62, 0); ctx.strokeStyle = c.mark; ctx.lineWidth = lw * 1.2; ctx.stroke();
+  } else if (sp.tip === 'fan') {
+    for (const a of [-.55, .55, -.3, .3, 0]) { const d = [Math.cos(a), Math.sin(a)], l = 1 - Math.abs(a) * .35; ctx.beginPath(); leaf(ctx, [-.05, 0], d, l, l * .15); fillOut(ctx, c.wing, out, lw); ctx.beginPath(); leaf(ctx, [d[0] * l * .58, d[1] * l * .58], d, l * .42, l * .08); ctx.fillStyle = c.wingTip; ctx.fill(); }
+  } else if (sp.tip === 'fork') {
+    for (const a of [-.5, .5]) {
+      const d = [Math.cos(a), Math.sin(a)], L = .8;
+      ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(d[0] * L * .4 - d[1] * .1, d[1] * L * .4 + d[0] * .1); ctx.lineTo(d[0] * L, d[1] * L); ctx.lineTo(d[0] * L * .45 + d[1] * .07, d[1] * L * .45 - d[0] * .07); ctx.closePath();
+      ctx.shadowColor = c.glow; ctx.shadowBlur = 8; ctx.fillStyle = c.accent; ctx.fill(); ctx.shadowBlur = 0; ctx.lineWidth = lw; ctx.strokeStyle = out; ctx.stroke();
+    }
+  }
+  ctx.restore();
+}
+
+// ---------- 身体（一整条，没有分节） ----------
+function drawBody(ctx, sp, P, B) {
+  const c = sp.c, out = c.out;
+  const loop = B.U.concat(B.Lo.slice().reverse());
+  ctx.beginPath(); smoothLoop(ctx, loop); ctx.fillStyle = c.side; ctx.fill();
+  ctx.save(); ctx.clip();
+  // 背色
+  const back = [], mid = [];
+  for (let i = 0; i < B.N; i++) { back.push(B.U[i]); mid.push([B.x[i] + B.nx[i] * B.top[i] * .38, B.y[i] + B.ny[i] * B.top[i] * .38]); }
+  ctx.beginPath(); smoothLoop(ctx, back.concat(mid.reverse())); ctx.fillStyle = c.back; ctx.fill();
+  // 花纹
+  if (sp.head === 'fire') {
+    for (let i = B.a - 4; i < B.N - 8; i += 4) {
+      const w = B.top[i], a = B.U[i - 1], b = B.U[i + 1], tip = [B.x[i] - B.nx[i] * w * .1 - Math.cos(B.phi[i]) * w * .3, B.y[i] - B.ny[i] * w * .1 - Math.sin(B.phi[i]) * w * .3];
+      ctx.beginPath(); ctx.moveTo(a[0] + B.nx[i] * .1, a[1] + B.ny[i] * .1); ctx.lineTo(b[0] + B.nx[i] * .1, b[1] + B.ny[i] * .1); ctx.lineTo(tip[0], tip[1]); ctx.closePath(); ctx.fillStyle = c.mark; ctx.fill();
+    }
+  } else if (sp.head === 'ice') {
+    for (let i = 4; i < B.N - 6; i++) {
+      if (hash(i * 3.7) < .62) continue;
+      const r = (.2 + .5 * hash(i)), p = [B.x[i] + B.nx[i] * B.top[i] * r, B.y[i] + B.ny[i] * B.top[i] * r];
+      ctx.beginPath(); ctx.arc(p[0], p[1], .035 + .03 * hash(i + 9), 0, Math.PI * 2); ctx.fillStyle = 'rgba(255,255,255,.85)'; ctx.fill();
+    }
+    ctx.beginPath(); smoothLine(ctx, B.U.slice(2, B.N - 4).map((p, k) => [p[0] - B.nx[k + 2] * .05, p[1] - B.ny[k + 2] * .05]));
+    ctx.shadowColor = c.glow; ctx.shadowBlur = 8; ctx.lineWidth = .05; ctx.strokeStyle = '#ffffff'; ctx.stroke(); ctx.shadowBlur = 0;
+  } else if (sp.head === 'storm') {
+    const zz = [];
+    for (let i = 2; i < B.N - 10; i += 3) { const k = (i / 3) % 2 ? .3 : -.05; zz.push([B.x[i] + B.nx[i] * B.top[i] * k, B.y[i] + B.ny[i] * B.top[i] * k]); }
+    ctx.beginPath(); ctx.moveTo(zz[0][0], zz[0][1]); for (const p of zz) ctx.lineTo(p[0], p[1]);
+    ctx.shadowColor = c.glow; ctx.shadowBlur = 10; ctx.lineJoin = 'miter'; ctx.lineWidth = .08; ctx.strokeStyle = c.mark; ctx.stroke(); ctx.shadowBlur = 0; ctx.lineJoin = 'round';
+  }
+  // 腹甲
+  const bs = 1, be = B.N - 6, outer = [], inner = [];
+  for (let i = bs; i <= be; i++) { const d = B.bot[i] * .42; outer.push([B.Lo[i][0] - B.nx[i] * .2, B.Lo[i][1] - B.ny[i] * .2]); inner.push([B.Lo[i][0] + B.nx[i] * d, B.Lo[i][1] + B.ny[i] * d]); }
+  ctx.beginPath(); smoothLoop(ctx, outer.concat(inner.slice().reverse())); ctx.fillStyle = c.belly; ctx.fill();
+  ctx.strokeStyle = mix(c.belly, out, .28); ctx.lineWidth = LW * .7;
+  for (let i = bs + 2; i < be; i += 2) { const d = B.bot[i] * .42; ctx.beginPath(); ctx.moveTo(B.Lo[i][0] - B.nx[i] * .05, B.Lo[i][1] - B.ny[i] * .05); ctx.lineTo(B.Lo[i][0] + B.nx[i] * d, B.Lo[i][1] + B.ny[i] * d); ctx.stroke(); }
+  ctx.beginPath(); smoothLine(ctx, inner); ctx.lineWidth = LW * .8; ctx.stroke();
+  // 背上一道高光
+  ctx.beginPath(); smoothLine(ctx, B.U.slice(1, B.N - 6).map((p, k) => [p[0] - B.nx[k + 1] * .07, p[1] - B.ny[k + 1] * .07]));
+  ctx.lineWidth = .05; ctx.strokeStyle = 'rgba(255,255,255,.22)'; ctx.stroke();
+  ctx.restore();
+  ctx.beginPath(); smoothLoop(ctx, loop); ctx.lineWidth = LW; ctx.strokeStyle = out; ctx.lineJoin = 'round'; ctx.stroke();
+}
+
+// ---------- 整条龙 ----------
+function flapOf(sp, time) {
+  const ph = time * Math.PI * 2 * sp.flapF;
+  let f = 0.7 + 0.3 * Math.sin(ph);
+  if (sp.glide) { const g = sm(.2, .6, Math.sin(time * .5)); f = lerp(f, 0.5 + 0.04 * Math.sin(time * 2), g * sp.glide * 1.6 > 1 ? 1 : g * sp.glide * 1.6); }
+  return { f, bob: -0.05 * Math.sin(ph - 0.6) };
+}
+function drawDragon(ctx, sp, P, time) {
+  const { f, bob } = flapOf(sp, time);
+  const B = spine(sp, P, time, bob * .3);
+  const blink = (time % 3.7) < 0.12 ? 0.1 : 1;
+  const wing = sp.wing === 'feather' ? drawFeatherWing : drawMembraneWing;
+  ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+  ctx.save(); ctx.translate(0, bob * .4);
+  wing(ctx, sp, P, B, f, true);
+  if (sp.legs === 'four') drawLeg(ctx, sp, P, B, 'front', true, time);
+  drawLeg(ctx, sp, P, B, 'hind', true, time);
+  drawDorsal(ctx, sp, P, B);
+  drawBody(ctx, sp, P, B);
+  drawTailTip(ctx, sp, P, B);
+  if (sp.legs === 'four') drawLeg(ctx, sp, P, B, 'front', false, time + .5);
+  drawLeg(ctx, sp, P, B, 'hind', false, time + .5);
+  if (sp.ruff) drawRuff(ctx, sp, P, B);
+  ctx.save();
+  const hs = P.head * sp.headSize, ha = -0.1 + 0.3 * B.phi[0] + 0.04 * Math.sin(time * 1.1);
+  ctx.translate(B.x[0], B.y[0]); ctx.rotate(ha); ctx.scale(hs, hs); ctx.translate(-0.06, 0);
+  drawHead(ctx, sp, P, { blink, open: 0.05 + 0.04 * Math.sin(time * 0.9) });
+  ctx.restore();
+  wing(ctx, sp, P, B, f, false);
+  ctx.restore();
+  return B;
+}
+// 估一个包围盒，让每张卡片都把龙放在正中
+function bounds(sp, P) {
+  const B = spine(sp, P, 0, 0);
+  let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
+  const add = (x, y) => { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); };
+  for (let i = 0; i < B.N; i++) { add(B.U[i][0], B.U[i][1] + .4); add(B.Lo[i][0], B.Lo[i][1] - .5); }
+  const hs = P.head * sp.headSize; add(B.x[0] + 1.1 * hs, B.y[0] + .7 * hs); add(B.x[0] - .9 * hs, B.y[0] + .8 * hs * P.horn);
+  const W = WINGS[sp.wing], sh = B.U[B.a];
+  const pts = sp.wing === 'feather' ? [[-1.8, 3.9], [.4, 1], [-2, .5]] : W.tips.concat([W.E]);
+  const ws = P.wing * sp.wingSize;
+  for (const p of pts) { add(sh[0] + p[0] * ws, sh[1] + p[1] * ws); add(sh[0] + p[0] * ws, sh[1] + p[1] * ws * .2); }
+  add(B.x[B.N - 1] - 1, B.y[B.N - 1] - .4);
+  const lk = sp.legW * P.leg * 1.25; add(B.x[B.iH] - 1.6 * lk, B.y[B.iH] - B.bot[B.iH] - 1.1 * lk); add(B.x[B.a], B.y[B.a] - B.bot[B.a] - 1.0 * lk);
+  return { x0, x1, y0, y1 };
+}
+
+// ---------- 页面 ----------
+let stage = 2, silhouette = false;
+const cards = [];
+const root = document.getElementById('cards');
+const only = new URLSearchParams(location.search).get('only');
+for (const key of (only ? [only] : ['fire', 'ice', 'storm'])) {
+  const sp = SP[key];
+  const el = document.createElement('div'); el.className = 'card';
+  el.innerHTML = `<div class="hd"><b>${sp.icon} ${sp.name}</b><span>${sp.tags}</span></div><canvas class="main"></canvas><div class="ft"><canvas class="head"></canvas><div class="sw"></div></div>`;
+  root.appendChild(el);
+  const sw = el.querySelector('.sw');
+  for (const k of ['back', 'side', 'belly', sp.wing === 'feather' ? 'wingTip' : 'wing', 'horn', 'eye']) { const i = document.createElement('i'); i.style.background = sp.c[k]; sw.appendChild(i); }
+  cards.push({ sp, main: el.querySelector('canvas.main'), head: el.querySelector('canvas.head'), off: document.createElement('canvas'), bb: null });
+}
+function fitCanvas(cv, ratio) {
+  const w = cv.clientWidth, h = Math.round(w * ratio), d = Math.min(devicePixelRatio || 1, 2);
+  if (cv.width !== Math.round(w * d)) { cv.width = Math.round(w * d); cv.height = Math.round(h * d); cv.style.height = h + 'px'; }
+  return { W: cv.width, H: cv.height };
+}
+function background(ctx, W, H, sp) {
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, mix(sp.c.side, '#ffffff', .86)); g.addColorStop(1, '#fbf7f0');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+}
+function render(time) {
+  const P = STG[stage];
+  for (const cd of cards) {
+    const { sp, main, head, off } = cd;
+    const { W, H } = fitCanvas(main, 0.72);
+    if (!cd.bb || cd.bbStage !== stage) { cd.bb = bounds(sp, P); cd.bbStage = stage; }
+    const bb = cd.bb, sc = Math.min(W / ((bb.x1 - bb.x0) * 1.08), H / ((bb.y1 - bb.y0) * 1.1));
+    if (off.width !== W || off.height !== H) { off.width = W; off.height = H; }
+    const o = off.getContext('2d');
+    o.setTransform(1, 0, 0, 1, 0, 0); o.clearRect(0, 0, W, H);
+    o.setTransform(sc, 0, 0, -sc, W / 2 - (bb.x0 + bb.x1) / 2 * sc, H / 2 + (bb.y0 + bb.y1) / 2 * sc);
+    LW = Math.max(0.03, 2.6 / sc * (W / 700));
+    drawDragon(o, sp, P, time);
+    if (silhouette) { o.setTransform(1, 0, 0, 1, 0, 0); o.globalCompositeOperation = 'source-in'; o.fillStyle = '#231d1a'; o.fillRect(0, 0, W, H); o.globalCompositeOperation = 'source-over'; }
+    const ctx = main.getContext('2d');
+    ctx.setTransform(1, 0, 0, 1, 0, 0); background(ctx, W, H, sp); ctx.drawImage(off, 0, 0);
+    // 头部特写
+    const hc = fitCanvas(head, 0.78), hx = head.getContext('2d');
+    hx.setTransform(1, 0, 0, 1, 0, 0); hx.fillStyle = '#f7f2ea'; hx.fillRect(0, 0, hc.W, hc.H);
+    const hsc = Math.min(hc.W / 2.25, hc.H / 1.35);
+    hx.setTransform(hsc, 0, 0, -hsc, hc.W * .5 - .05 * hsc, hc.H * .55);
+    LW = 2.6 / hsc * (hc.W / 260);
+    hx.lineJoin = 'round'; hx.lineCap = 'round';
+    drawHead(hx, sp, { ...P, head: 1 }, { blink: (time % 3.7) < .12 ? .1 : 1, open: .1 + .08 * Math.sin(time * .9) });
+  }
+}
+let t0 = performance.now();
+function loop(now) { requestAnimationFrame(loop); render((now - t0) / 1000); }
+requestAnimationFrame(loop);
+
+document.querySelectorAll('#stage button').forEach(b => b.addEventListener('click', () => {
+  stage = +b.dataset.v; document.querySelectorAll('#stage button').forEach(x => x.classList.toggle('on', x === b));
+}));
+const silBtn = document.getElementById('sil');
+silBtn.addEventListener('click', () => { silhouette = !silhouette; silBtn.classList.toggle('on', silhouette); });
+window.__d = { SP, STG, render };
+</script>
+</body>
+</html>

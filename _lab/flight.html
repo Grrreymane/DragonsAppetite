@@ -1,0 +1,468 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>火龙试飞</title>
+<style>
+html,body{margin:0;background:#0b0e1c;overflow:hidden;touch-action:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-text-size-adjust:100%;text-size-adjust:100%;font-family:"PingFang SC","Microsoft YaHei",system-ui,sans-serif}
+#wrap{position:fixed;top:0;bottom:0;left:50%;transform:translateX(-50%);width:min(100vw,calc(100vh * 9 / 16));overflow:hidden;background:#9cc4e4}
+#wrap canvas{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none}
+#hint{position:absolute;top:calc(16px + env(safe-area-inset-top));left:0;right:0;text-align:center;color:#fff;font-size:15px;font-weight:700;text-shadow:0 1px 4px rgba(0,0,0,.55);pointer-events:none;transition:opacity .8s}
+#style{position:absolute;left:12px;bottom:calc(30px + env(safe-area-inset-bottom));border:0;border-radius:10px;padding:8px 12px;font:700 13px/1 inherit;font-family:inherit;color:#fff;background:rgba(20,30,50,.38);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px)}
+#fps{position:absolute;top:calc(8px + env(safe-area-inset-top));right:8px;color:#fff;font:11px/1 ui-monospace,monospace;opacity:.5;pointer-events:none}
+#joy{position:absolute;width:96px;height:96px;margin:-48px 0 0 -48px;border-radius:50%;border:2px solid rgba(255,255,255,.6);background:rgba(255,255,255,.1);pointer-events:none;display:none}
+#joy i{position:absolute;left:50%;top:50%;width:40px;height:40px;margin:-20px 0 0 -20px;border-radius:50%;background:rgba(255,255,255,.75)}
+#fire{position:absolute;right:16px;bottom:calc(22px + env(safe-area-inset-bottom));width:92px;height:92px;border-radius:50%;border:0;background:radial-gradient(circle at 40% 35%,#ffcf6a,#e2552a 70%);color:#fff;font:800 16px/1.2 inherit;font-family:inherit;text-shadow:0 1px 3px rgba(80,20,0,.6);box-shadow:0 4px 14px rgba(120,30,0,.45);touch-action:none}
+#fire.on{transform:scale(.94);filter:brightness(1.15)}
+#load{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#fff;font-size:16px;font-weight:700;background:#6f9cc4;transition:opacity .6s}
+#err{position:absolute;left:8px;right:8px;top:40%;color:#fff;background:#a22;padding:10px;border-radius:8px;font-size:12px;display:none;white-space:pre-wrap}
+</style>
+<script type="importmap">{ "imports": { "three": "../lib/three.module.min.js" } }</script>
+</head>
+<body>
+<div id="wrap">
+  <div id="hint">按住屏幕拖动 控制方向</div>
+  <div id="fps"></div>
+  <button id="style">🎨 卡通描边</button>
+  <div id="joy"><i></i></div>
+  <button id="fire">按住<br>喷火</button>
+  <div id="load">加载中…</div>
+  <div id="err"></div>
+</div>
+<script>
+addEventListener('error', e => { const el = document.getElementById('err'); el.style.display = 'block'; el.textContent = '出错了：' + e.message + '\n' + (e.filename || '') + ':' + (e.lineno || ''); });
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from '../lib/jsm/loaders/GLTFLoader.js';
+
+const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
+const lerp = (a, b, t) => a + (b - a) * t;
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const damp = (k, dt) => 1 - Math.exp(-k * dt);
+let seed = 5;
+const rnd = () => ((seed = Math.imul(seed ^ (seed >>> 15), 2246822507) + 0x6d2b79f5 | 0) >>> 0) / 4294967296;
+const rr = (a, b) => a + (b - a) * rnd();
+const hash3 = (x, y, z) => { let h = (Math.round(x * 97) * 73856093) ^ (Math.round(y * 97) * 19349663) ^ (Math.round(z * 97) * 83492791); h = Math.imul(h ^ (h >>> 15), 2246822507); h = Math.imul(h ^ (h >>> 13), 3266489909); return ((h ^ (h >>> 16)) >>> 0) / 4294967295 * 2 - 1; };
+
+// ---------- 渲染器 ----------
+const wrap = document.getElementById('wrap');
+const REC = new URLSearchParams(location.search).has('rec');   // 录视频时保留画面缓冲，方便逐帧抓图
+const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance', preserveDrawingBuffer: REC });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.0;
+wrap.prepend(renderer.domElement);
+const canvas = renderer.domElement;
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(62, .5, .5, 3000);
+const SUN = V(-.35, .62, -.7).normalize();
+
+// ---------- 卡通描边：分层光照 + 反面外扩描边 ----------
+const GRAD = (() => { const t = new THREE.DataTexture(new Uint8Array([95, 170, 255]), 3, 1, THREE.RedFormat); t.minFilter = t.magFilter = THREE.NearestFilter; t.needsUpdate = true; return t; })();
+function outlineMat(color, w) {
+  const m = new THREE.MeshBasicMaterial({ color, side: THREE.BackSide, fog: true });
+  m.onBeforeCompile = sh => { sh.uniforms.uW = { value: w }; sh.vertexShader = 'uniform float uW;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n transformed += normalize(normal) * uW;'); };
+  m.customProgramCacheKey = () => 'outline';
+  return m;
+}
+const STYLE = { toon: true, swaps: [], hulls: [] };   // swaps: {mesh, std, toon}；hulls: 只在卡通模式显示
+function applyStyle() {
+  for (const s of STYLE.swaps) s.mesh.material = STYLE.toon ? s.toon : s.std;
+  for (const h of STYLE.hulls) h.visible = STYLE.toon;
+  document.getElementById('style').textContent = STYLE.toon ? '🎨 卡通描边' : '🎨 写实';
+}
+
+// ---------- 天空 ----------
+const SKY = { top: new THREE.Color(0x3d78c6), mid: new THREE.Color(0xc8dcec), bot: new THREE.Color(0xe9d7c2), sun: new THREE.Color(0xfff1d0) };
+scene.fog = new THREE.Fog(SKY.mid.clone(), 180, 900);
+const skyMat = new THREE.ShaderMaterial({
+  side: THREE.BackSide, depthWrite: false, fog: false,
+  uniforms: { top: { value: SKY.top }, mid: { value: SKY.mid }, bot: { value: SKY.bot }, sunC: { value: SKY.sun }, sunD: { value: SUN } },
+  vertexShader: 'varying vec3 vP; void main(){ vP = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+  fragmentShader: `uniform vec3 top, mid, bot, sunC, sunD; varying vec3 vP;
+    void main(){
+      float h = vP.y;
+      vec3 c = h > 0.0 ? mix(mid, top, smoothstep(0.0, 0.6, h)) : mix(mid, bot, smoothstep(0.0, -0.2, h));
+      float s = max(dot(normalize(vP), sunD), 0.0);
+      c += sunC * (pow(s, 600.0) * 2.5 + pow(s, 12.0) * 0.25);
+      gl_FragColor = vec4(c, 1.0);
+      #include <colorspace_fragment>
+    }`,
+});
+const sky = new THREE.Mesh(new THREE.SphereGeometry(1400, 32, 16), skyMat);
+sky.frustumCulled = false; sky.renderOrder = -10; scene.add(sky);
+// 用天空做环境反射，让龙身上的金属感 / 高光有颜色
+{
+  const pm = new THREE.PMREMGenerator(renderer), s2 = new THREE.Scene();
+  s2.add(new THREE.Mesh(new THREE.SphereGeometry(100, 32, 16), skyMat));
+  scene.environment = pm.fromScene(s2, .02).texture;
+}
+scene.add(new THREE.HemisphereLight(0xdcecff, 0x6b5a4a, .9));
+const sunL = new THREE.DirectionalLight(0xfff0d8, 2.6); sunL.position.copy(SUN).multiplyScalar(100); scene.add(sunL);
+
+// ---------- 海 ----------
+const WAVE = 'float waveH(vec2 p, float t){ return sin(p.x*0.045+t*1.1)*1.0 + sin(p.y*0.06-t*0.85)*0.8 + sin((p.x+p.y)*0.1+t*1.7)*0.35 + sin(p.x*0.21-p.y*0.17+t*2.3)*0.15; }';
+const seaMat = new THREE.ShaderMaterial({
+  fog: true,
+  uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, {
+    uT: { value: 0 }, deepC: { value: new THREE.Color(0x0f4f73) }, shallowC: { value: new THREE.Color(0x2b8fae) },
+    skyC: { value: new THREE.Color(0xbcd6ea) }, foamC: { value: new THREE.Color(0xf2f8fb) }, sunD: { value: SUN }, sunC: { value: new THREE.Color(0xfff0d0) },
+  }]),
+  vertexShader: `uniform float uT; varying vec3 vW; varying vec3 vN;
+    #include <fog_pars_vertex>
+    ${WAVE}
+    void main(){
+      vec4 w = modelMatrix * vec4(position, 1.0);
+      float e = 0.7, h = waveH(w.xz, uT);
+      float hx = waveH(w.xz + vec2(e, 0.0), uT) - waveH(w.xz - vec2(e, 0.0), uT);
+      float hz = waveH(w.xz + vec2(0.0, e), uT) - waveH(w.xz - vec2(0.0, e), uT);
+      vN = normalize(vec3(-hx / (2.0 * e), 1.0, -hz / (2.0 * e)));
+      w.y += h; vW = w.xyz;
+      vec4 mvPosition = viewMatrix * w;
+      gl_Position = projectionMatrix * mvPosition;
+      #include <fog_vertex>
+    }`,
+  fragmentShader: `uniform vec3 deepC, shallowC, skyC, foamC, sunD, sunC; varying vec3 vW; varying vec3 vN;
+    #include <fog_pars_fragment>
+    void main(){
+      vec3 V = normalize(cameraPosition - vW), N = normalize(vN);
+      float fr = pow(1.0 - max(dot(N, V), 0.0), 4.0);
+      vec3 c = mix(deepC, shallowC, clamp(vW.y * 0.25 + 0.4, 0.0, 1.0));
+      c = mix(c, skyC, clamp(fr * 1.2, 0.0, 0.85));
+      vec3 H = normalize(sunD + V);
+      c += sunC * pow(max(dot(N, H), 0.0), 280.0) * 2.2;
+      c = mix(c, foamC, smoothstep(1.55, 2.0, vW.y) * 0.6);
+      gl_FragColor = vec4(c, 1.0);
+      #include <colorspace_fragment>
+      #include <fog_fragment>
+    }`,
+});
+const sea = new THREE.Mesh(new THREE.PlaneGeometry(2400, 2400, 120, 120).rotateX(-Math.PI / 2), seaMat);
+sea.frustumCulled = false; scene.add(sea);
+const waveH = (x, z, t) => Math.sin(x * .045 + t * 1.1) + Math.sin(z * .06 - t * .85) * .8 + Math.sin((x + z) * .1 + t * 1.7) * .35 + Math.sin(x * .21 - z * .17 + t * 2.3) * .15;
+
+// ---------- 岛：火山 / 绿岛 / 石柱 ----------
+const PERIOD = 1400, worldObjs = [];
+const islandMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .95, metalness: 0, flatShading: true });
+const islandToon = Object.assign(new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: GRAD }), { flatShading: true });
+const islandHull = outlineMat(0x2a1e1a, .45);
+function islandMesh(geo, hullGeo) {
+  const m = new THREE.Mesh(geo, islandMat); STYLE.swaps.push({ mesh: m, std: islandMat, toon: islandToon });
+  const h = new THREE.Mesh(hullGeo || geo, islandHull); m.add(h); STYLE.hulls.push(h);
+  return m;
+}
+const lavaMat = new THREE.MeshBasicMaterial({ color: 0xff6a1f, fog: true });
+function heightAt(prof, d) {
+  if (d >= prof[0][0]) return -99;
+  for (let i = 0; i < prof.length - 1; i++) { const [r0, h0] = prof[i], [r1, h1] = prof[i + 1]; if (d <= r0 && d >= r1) return lerp(h0, h1, (r0 - d) / Math.max(1e-4, r0 - r1)); }
+  return prof[prof.length - 1][1];
+}
+const C = h => new THREE.Color(h);
+function islandGeo(prof, seg, jit, colorFn) {
+  const g = new THREE.LatheGeometry(prof.map(p => new THREE.Vector2(p[0], p[1])), seg);
+  const pos = g.attributes.position;
+  for (let i = 0; i < pos.count; i++) { const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i); const k = jit * (y < 0 ? .3 : 1); pos.setXYZ(i, x + hash3(x, y, z) * k, y + hash3(z, x, y) * k * .6, z + hash3(y, z, x) * k); }
+  g.computeVertexNormals();
+  const ng = g.toNonIndexed(); ng.computeVertexNormals(); ng.userData.hull = g;
+  const p = ng.attributes.position, col = new Float32Array(p.count * 3), a = V(), b = V(), c = V(), n = V();
+  for (let i = 0; i < p.count; i += 3) {
+    a.fromBufferAttribute(p, i); b.fromBufferAttribute(p, i + 1); c.fromBufferAttribute(p, i + 2);
+    n.subVectors(c, b).cross(a.clone().sub(b)).normalize();
+    const cc = colorFn((a.y + b.y + c.y) / 3, n.y).multiplyScalar(1 + hash3(a.x, a.y, a.z) * .06);
+    for (let k = 0; k < 3; k++) col.set([cc.r, cc.g, cc.b], (i + k) * 3);
+  }
+  ng.setAttribute('color', new THREE.BufferAttribute(col, 3)); return ng;
+}
+function makeIsland(kind, r, h) {
+  const g = new THREE.Group(); let prof;
+  if (kind === 'volcano') {
+    prof = [[r * 1.15, -8], [r, .5], [r * .8, h * .22], [r * .5, h * .62], [r * .24, h], [r * .17, h * .9], [.01, h * .8]];
+    { const ig = islandGeo(prof, 18, r * .05, (y, ny) => y < 1.5 ? C(0x3a302c) : y > h * .78 ? C(0x2c2422) : ny < .45 ? C(0x5a4a42) : C(0x4a3c36).lerp(C(0x6a3a2a), Math.max(0, y / h - .4))); g.add(islandMesh(ig, ig.userData.hull)); }
+    const lava = new THREE.Mesh(new THREE.CircleGeometry(r * .2, 14).rotateX(-Math.PI / 2).translate(0, h * .83, 0), lavaMat); g.add(lava);
+    // 岩浆流：几条发光的细带顺着山坡往下
+    for (let k = 0; k < 3; k++) {
+      const a0 = rr(0, 6.28), pts = [];
+      for (let t = 0; t <= 1.001; t += .1) { const d = lerp(r * .2, r * .75, t), a = a0 + Math.sin(t * 5 + k) * .15; pts.push(V(Math.cos(a) * d, heightAt(prof, d) + .6, Math.sin(a) * d)); }
+      g.add(new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 20, r * .018, 5), lavaMat));
+    }
+    g.userData.smoke = V(0, h * .9, 0);
+  } else if (kind === 'green') {
+    prof = [[r * 1.15, -8], [r, .5], [r * .85, 2.2], [r * .6, h * .45], [r * .32, h * .85], [.01, h]];
+    { const ig = islandGeo(prof, 16, r * .06, (y, ny) => y < 2 ? C(0xd9c48e) : ny < .5 ? C(0x7d7266) : C(0x5f9a4a).lerp(C(0x86b55a), y / h)); g.add(islandMesh(ig, ig.userData.hull)); }
+    const trees = [];
+    for (let k = 0; k < 14; k++) {
+      const a = rr(0, 6.28), d = rr(r * .2, r * .75), y = heightAt(prof, d), s = rr(1.3, 2.4);
+      trees.push(new THREE.ConeGeometry(1.6 * s, 4.2 * s, 7).translate(Math.cos(a) * d, y + 2.6 * s, Math.sin(a) * d));
+    }
+    for (const t of trees) { const n = t.attributes.position.count, c = new Float32Array(n * 3), cc = C(0x3f6e34).multiplyScalar(rr(.85, 1.15)); for (let i = 0; i < n; i++) c.set([cc.r, cc.g, cc.b], i * 3); t.setAttribute('color', new THREE.BufferAttribute(c, 3)); t.deleteAttribute('uv'); }
+    trees.forEach(t => g.add(islandMesh(t)));
+  } else {
+    prof = [[r * 1.1, -8], [r, .5], [r * .7, h * .3], [r * .55, h * .75], [r * .3, h], [.01, h * 1.02]];
+    { const ig = islandGeo(prof, 9, r * .09, (y, ny) => ny > .7 ? C(0x6f8a52) : C(0x6e625a).lerp(C(0x8a7a6c), y / h)); g.add(islandMesh(ig, ig.userData.hull)); }
+  }
+  return { g, prof };
+}
+function place(kind, x, z, r, h) {
+  const isl = makeIsland(kind, r, h);
+  isl.g.position.set(x, 0, z); scene.add(isl.g);
+  worldObjs.push({ obj: isl.g, base: V(x, 0, z), prof: isl.prof, smoke: isl.g.userData.smoke });
+}
+place('volcano', 30, 300, 60, 75); place('green', -170, 170, 45, 22); place('spire', 120, 120, 14, 55); place('volcano', -260, 520, 70, 95);
+for (const k of ['volcano', 'green', 'green', 'spire', 'spire', 'volcano', 'green', 'spire', 'green', 'volcano', 'spire', 'green']) {
+  const x = rr(-PERIOD / 2, PERIOD / 2), z = rr(-PERIOD / 2, PERIOD / 2);
+  if (Math.hypot(x, z - 200) < 260) continue;
+  place(k, x, z, k === 'spire' ? rr(10, 18) : rr(35, 70), k === 'volcano' ? rr(55, 100) : k === 'spire' ? rr(40, 80) : rr(14, 28));
+}
+
+// ---------- 云和火山烟（软软的贴图） ----------
+function puffTex(warm) {
+  const S = 128, c = document.createElement('canvas'); c.width = c.height = S; const g = c.getContext('2d');
+  for (let i = 0; i < 9; i++) {
+    const x = S * (.3 + Math.random() * .4), y = S * (.35 + Math.random() * .3), r = S * (.18 + Math.random() * .16);
+    const gr = g.createRadialGradient(x, y, 0, x, y, r);
+    gr.addColorStop(0, warm ? 'rgba(120,110,105,.55)' : 'rgba(255,255,255,.9)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = gr; g.fillRect(0, 0, S, S);
+  }
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+}
+const cloudTex = puffTex(false), smokeTex = puffTex(true);
+for (let i = 0; i < 34; i++) {
+  const grp = new THREE.Group(), n = 4 + (rnd() * 5 | 0), w = rr(20, 45);
+  for (let k = 0; k < n; k++) {
+    const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: cloudTex, color: new THREE.Color().setScalar(rr(.92, 1)), transparent: true, depthWrite: false, opacity: rr(.75, .95), fog: true }));
+    const s = rr(.6, 1) * w * 1.6; sp.scale.set(s * 1.6, s, 1); sp.position.set(rr(-w, w), rr(-w, w) * .15, rr(-w, w) * .5); grp.add(sp);
+  }
+  const base = V(rr(-PERIOD / 2, PERIOD / 2), rr(45, 150), rr(-PERIOD / 2, PERIOD / 2));
+  grp.position.copy(base); scene.add(grp); worldObjs.push({ obj: grp, base, drift: rr(1.5, 4) });
+}
+const smokes = [];
+for (const w of worldObjs) if (w.smoke) for (let k = 0; k < 7; k++) {
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: smokeTex, transparent: true, depthWrite: false, opacity: 0, fog: true }));
+  w.obj.add(sp); smokes.push({ sp, base: w.smoke, t: k / 7, sz: rr(25, 40) });
+}
+
+// ---------- 火焰粒子 ----------
+const MAXP = 500;
+const pGeo = new THREE.BufferGeometry();
+const pPos = new Float32Array(MAXP * 3), pCol = new Float32Array(MAXP * 4), pSize = new Float32Array(MAXP);
+pGeo.setAttribute('position', new THREE.BufferAttribute(pPos, 3).setUsage(THREE.DynamicDrawUsage));
+pGeo.setAttribute('col', new THREE.BufferAttribute(pCol, 4).setUsage(THREE.DynamicDrawUsage));
+pGeo.setAttribute('size', new THREE.BufferAttribute(pSize, 1).setUsage(THREE.DynamicDrawUsage));
+const pMat = new THREE.ShaderMaterial({
+  transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+  uniforms: { uScale: { value: 400 } },
+  vertexShader: 'attribute float size; attribute vec4 col; varying vec4 vC; uniform float uScale; void main(){ vec4 mv = modelViewMatrix * vec4(position, 1.0); gl_PointSize = size * uScale / -mv.z; gl_Position = projectionMatrix * mv; vC = col; }',
+  fragmentShader: 'varying vec4 vC; void main(){ float d = length(gl_PointCoord - 0.5); float a = smoothstep(0.5, 0.05, d); gl_FragColor = vec4(vC.rgb * vC.a * a, 1.0); }',
+});
+const points = new THREE.Points(pGeo, pMat); points.frustumCulled = false; scene.add(points);
+const parts = [];
+const FIRE = [[1, .97, .8], [1, .75, .3], [1, .4, .1], [.7, .15, .05], [.15, .05, .03]];
+function emitFire(p, v, size) { if (parts.length >= MAXP) parts.shift(); parts.push({ p: p.clone(), v: v.clone(), life: rr(.55, .85), max: .85, size }); parts[parts.length - 1].max = parts[parts.length - 1].life; }
+function updateParts(dt) {
+  let n = 0;
+  for (let i = parts.length - 1; i >= 0; i--) {
+    const q = parts[i]; q.life -= dt; if (q.life <= 0) { parts.splice(i, 1); continue; }
+    q.v.multiplyScalar(Math.exp(-1.8 * dt)); q.v.y += 5 * dt; q.p.addScaledVector(q.v, dt);
+    const a = 1 - q.life / q.max, s = a * (FIRE.length - 1), k = Math.min(FIRE.length - 2, s | 0), f = s - k;
+    pPos.set([q.p.x, q.p.y, q.p.z], n * 3);
+    pCol.set([lerp(FIRE[k][0], FIRE[k + 1][0], f), lerp(FIRE[k][1], FIRE[k + 1][1], f), lerp(FIRE[k][2], FIRE[k + 1][2], f), Math.min(1, (1 - a) * 2.2)], n * 4);
+    pSize[n] = q.size * (.5 + a * 2.2); n++;
+  }
+  pGeo.setDrawRange(0, n);
+  for (const k of ['position', 'col', 'size']) pGeo.attributes[k].needsUpdate = true;
+}
+const mouthLight = new THREE.PointLight(0xff7a30, 0, 40, 1.6); scene.add(mouthLight);
+
+// ---------- 龙 ----------
+const SCALE = 11;           // 模型约 0.95 长 → 游戏里约 10 米
+const dragon = new THREE.Group(); scene.add(dragon);
+let model = null, mixer = null, act = {}, bones = {};
+const fl = { pos: V(0, 60, 0), yaw: 0, pitch: 0, bank: 0, speed: 26, yawRate: 0, flapT: 3, flapping: true, flyW: 1, tuck: 0, vel: V() };
+new GLTFLoader().load('../models/fire_adult_anim.glb', g => {
+  model = g.scene;
+  // 模型头朝 +X，转成朝 +Z；把身体中心放到原点
+  model.rotation.y = -Math.PI / 2; model.scale.setScalar(SCALE);
+  model.position.set(0, .07 * SCALE, -.15 * SCALE);
+  dragon.add(model);
+  const skinned = [];
+  model.traverse(o => {
+    if (o.isMesh) { o.frustumCulled = false; for (const m of [].concat(o.material)) { m.envMapIntensity = .6; } if (o.isSkinnedMesh) skinned.push(o); }
+    if (o.isBone) bones[o.name] = o;
+  });
+  for (const o of skinned) {
+    const std = o.material, toon = new THREE.MeshToonMaterial({ map: std.map, gradientMap: GRAD });
+    STYLE.swaps.push({ mesh: o, std, toon });
+    const h = new THREE.SkinnedMesh(o.geometry, outlineMat(0x1c0d08, .0042));
+    h.bind(o.skeleton, o.bindMatrix); h.frustumCulled = false;
+    h.position.copy(o.position); h.quaternion.copy(o.quaternion); h.scale.copy(o.scale);
+    o.parent.add(h); STYLE.hulls.push(h);
+  }
+  applyStyle();
+  window.__flReady = true;
+  mixer = new THREE.AnimationMixer(model);
+  for (const c of g.animations) { act[c.name] = mixer.clipAction(c); act[c.name].play(); act[c.name].setEffectiveWeight(0); }
+  document.getElementById('load').style.opacity = 0; setTimeout(() => document.getElementById('load').remove(), 700);
+}, undefined, e => { throw new Error('模型加载失败：' + e.message); });
+const bone = n => bones[n] || bones[n.replace('.', '')];
+
+// 在动画之上再叠一点转动：转弯时头看向弯里、尾巴甩向外侧；俯冲时收翅膀
+// 注意：动画里数值不变的骨头，混合器不会每帧重写，叠上去的转动会越积越多（脖子会越拧越歪）。
+// 所以每帧先把上一帧叠的转动撤掉，再重新叠。
+const _q = new THREE.Quaternion(), _q2 = new THREE.Quaternion(), _ax = V(), saved = new Map();
+function undoOverlay() { for (const [b, q] of saved) b.quaternion.copy(q); saved.clear(); }
+function rotWorld(name, axis, ang) {
+  const b = bone(name); if (!b || !ang) return;
+  if (!saved.has(b)) saved.set(b, b.quaternion.clone());
+  b.parent.getWorldQuaternion(_q).invert(); _ax.copy(axis).applyQuaternion(_q).normalize();
+  b.quaternion.premultiply(_q2.setFromAxisAngle(_ax, ang)); b.updateMatrixWorld(true);
+}
+const U = V(), F = V(), Lf = V();
+function overlay() {
+  dragon.updateMatrixWorld(true);
+  U.set(0, 1, 0).applyQuaternion(dragon.quaternion); F.set(0, 0, 1).applyQuaternion(dragon.quaternion); Lf.set(1, 0, 0).applyQuaternion(dragon.quaternion);
+  const turn = fl.yawRate, t = fl.tuck;
+  for (const n of ['neck1', 'neck2', 'head']) { rotWorld(n, U, turn * .16); rotWorld(n, Lf, -fl.pitch * .18); }
+  for (let i = 1; i <= 6; i++) rotWorld('tail' + i, U, -turn * .05);
+  if (t > .01) {
+    rotWorld('wing1.L', U, .85 * t); rotWorld('wing1.L', F, -.3 * t); rotWorld('wing2.L', U, .7 * t); rotWorld('fing1.L', U, .5 * t);
+    rotWorld('wing1.R', U, -.85 * t); rotWorld('wing1.R', F, .3 * t); rotWorld('wing2.R', U, -.7 * t); rotWorld('fing1.R', U, -.5 * t);
+  }
+}
+function mouthPos(out) {
+  const h = bone('head'); if (!h) return out.copy(fl.pos);
+  h.getWorldPosition(out); return out.addScaledVector(F, .1 * SCALE).addScaledVector(U, -.012 * SCALE);
+}
+
+// ---------- 输入 ----------
+const joy = document.getElementById('joy'), knob = joy.firstElementChild, hint = document.getElementById('hint');
+let ptr = null, hintT = 5; const stick = { x: 0, y: 0 };
+canvas.addEventListener('pointerdown', e => {
+  ptr = { id: e.pointerId, x0: e.clientX, y0: e.clientY }; canvas.setPointerCapture(e.pointerId);
+  const r = wrap.getBoundingClientRect(); joy.style.display = 'block'; joy.style.left = (e.clientX - r.left) + 'px'; joy.style.top = (e.clientY - r.top) + 'px';
+});
+canvas.addEventListener('pointermove', e => {
+  if (!ptr || e.pointerId !== ptr.id) return;
+  const dx = e.clientX - ptr.x0, dy = e.clientY - ptr.y0, R = 48, l = Math.hypot(dx, dy), k = l > R ? R / l : 1;
+  stick.x = dx * k / R; stick.y = dy * k / R; knob.style.transform = `translate(${dx * k}px,${dy * k}px)`;
+  if (hintT > .8 && l > 10) hintT = .8;
+});
+const endPtr = e => { if (ptr && e.pointerId === ptr.id) { ptr = null; stick.x = stick.y = 0; joy.style.display = 'none'; knob.style.transform = ''; } };
+canvas.addEventListener('pointerup', endPtr); canvas.addEventListener('pointercancel', endPtr);
+addEventListener('contextmenu', e => e.preventDefault());
+document.getElementById('style').addEventListener('click', () => { STYLE.toon = !STYLE.toon; applyStyle(); });
+const fireBtn = document.getElementById('fire'); let firing = false;
+const setFire = v => { firing = v; fireBtn.classList.toggle('on', v); };
+fireBtn.addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); fireBtn.setPointerCapture(e.pointerId); setFire(true); });
+for (const ev of ['pointerup', 'pointercancel', 'lostpointercapture']) fireBtn.addEventListener(ev, () => setFire(false));
+const keys = {};
+addEventListener('keydown', e => { keys[e.code] = true; if (e.code === 'Space') setFire(true); });
+addEventListener('keyup', e => { keys[e.code] = false; if (e.code === 'Space') setFire(false); });
+
+function resize() {
+  const w = wrap.clientWidth, h = wrap.clientHeight; if (!w || !h) return;
+  renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix();
+  pMat.uniforms.uScale.value = h * renderer.getPixelRatio() * .5 / Math.tan(camera.fov * Math.PI / 360);
+}
+addEventListener('resize', resize); if (window.visualViewport) visualViewport.addEventListener('resize', resize);
+
+// ---------- 主循环 ----------
+const fpsEl = document.getElementById('fps'); let fpsN = 0, fpsT = 0, last = performance.now(), T = 0, lastW = 0;
+const camPos = V(0, 70, -30), look = V(0, 60, 20), fwd = V(), _m = V(), _v = V();
+function frame(now) {
+  requestAnimationFrame(frame);
+  if (window.__pause) { last = now; return; }
+  if (wrap.clientWidth !== lastW) { lastW = wrap.clientWidth; resize(); }
+  const dt = Math.min(.05, (now - last) / 1000); last = now;
+  fpsN++; fpsT += dt; if (fpsT > .5) { fpsEl.textContent = Math.round(fpsN / fpsT) + ' fps'; fpsN = fpsT = 0; }
+  if (hintT > 0) { hintT -= dt; if (hintT <= 0) hint.style.opacity = 0; }
+  tick(dt);
+  renderer.render(scene, camera);
+}
+function tick(dt) {
+  T += dt;
+
+  // 飞行
+  const jx = clamp(stick.x + (keys.ArrowRight || keys.KeyD ? 1 : 0) - (keys.ArrowLeft || keys.KeyA ? 1 : 0), -1, 1);
+  const jy = clamp(stick.y + (keys.ArrowDown || keys.KeyS ? 1 : 0) - (keys.ArrowUp || keys.KeyW ? 1 : 0), -1, 1);
+  fl.yawRate = lerp(fl.yawRate, -jx * 1.05, damp(3.5, dt));
+  fl.yaw += fl.yawRate * dt;
+  let pt = -jy * .62;
+  const sea0 = waveH(fl.pos.x, fl.pos.z, T);
+  if (fl.pos.y < sea0 + 9 && pt < .2) pt = .35;
+  if (fl.pos.y > 240 && pt > 0) pt = -.2;
+  fl.pitch = lerp(fl.pitch, pt, damp(2.2, dt));
+  fl.bank = lerp(fl.bank, -fl.yawRate * .6, damp(2.8, dt));
+  const diving = fl.pitch < -.25, climbing = fl.pitch > .12;
+  fl.speed = lerp(fl.speed, diving ? 48 : climbing ? 19 : 27, damp(1.1, dt));
+  fwd.set(Math.sin(fl.yaw) * Math.cos(fl.pitch), Math.sin(fl.pitch), Math.cos(fl.yaw) * Math.cos(fl.pitch));
+  fl.vel.copy(fwd).multiplyScalar(fl.speed);
+  fl.pos.addScaledVector(fl.vel, dt);
+  for (const w of worldObjs) if (w.prof) {   // 别钻进山里
+    const h = heightAt(w.prof, Math.hypot(fl.pos.x - w.obj.position.x, fl.pos.z - w.obj.position.z));
+    if (fl.pos.y < h + 6) fl.pos.y = lerp(fl.pos.y, h + 6, damp(8, dt));
+  }
+  fl.pos.y = Math.max(fl.pos.y, sea0 + 5);
+  const bob = Math.sin(T * Math.PI * 2) * .35 * fl.flyW;
+  dragon.position.copy(fl.pos).y += bob;
+  dragon.rotation.set(-fl.pitch, fl.yaw, fl.bank, 'YXZ');
+
+  // 扇翅 / 滑翔：爬升一直扇，平飞扇一阵滑一阵，俯冲收翅
+  fl.flapT -= dt; if (fl.flapT < 0) { fl.flapping = !fl.flapping; fl.flapT = fl.flapping ? 3 : 2.5; }
+  const wantFly = diving ? 0 : (climbing || fl.flapping) ? 1 : 0;
+  fl.flyW = lerp(fl.flyW, wantFly, damp(2.5, dt));
+  fl.tuck = lerp(fl.tuck, diving ? 1 : 0, damp(3, dt));
+  if (mixer) {
+    act.Fly.setEffectiveWeight(fl.flyW); act.Glide.setEffectiveWeight(1 - fl.flyW);
+    act.Fly.setEffectiveTimeScale(climbing ? 1.35 : 1);
+    undoOverlay(); mixer.update(dt); if (!window.__noOverlay) overlay();
+  }
+
+  // 喷火
+  mouthLight.intensity = lerp(mouthLight.intensity, firing ? 600 : 0, damp(10, dt));
+  if (firing && model) {
+    mouthPos(_m); mouthLight.position.copy(_m).addScaledVector(F, 3);
+    for (let i = 0; i < Math.ceil(dt * 160); i++) {
+      _v.copy(F).add(V(rr(-.14, .14), rr(-.14, .1), rr(-.14, .14))).normalize().multiplyScalar(rr(40, 58)).add(fl.vel);
+      emitFire(_m, _v, rr(1.6, 2.6));
+    }
+  }
+  updateParts(dt);
+
+  // 镜头：在龙后上方追着跑，速度越快视野越宽
+  const span = 1.0 * SCALE, hTan = Math.tan(camera.fov * Math.PI / 360) * Math.min(1, camera.aspect);
+  const dist = span * .46 / hTan + 3;
+  const back = V(Math.sin(fl.yaw), 0, Math.cos(fl.yaw));
+  const want = V().copy(fl.pos).addScaledVector(back, -dist).add(V(0, dist * .22 - fl.pitch * dist * .3, 0));
+  want.y = Math.max(want.y, waveH(want.x, want.z, T) + 3);
+  if (T < .1) camPos.copy(want);   // 开局直接放到龙身后，不从下面飞过来
+  camPos.lerp(want, damp(3.2, dt)); camera.position.copy(camPos);
+  look.lerp(V().copy(fl.pos).addScaledVector(fwd, dist * .4).add(V(0, span * .12, 0)), damp(6, dt));
+  camera.lookAt(look);
+  camera.fov = lerp(camera.fov, 62 + (fl.speed - 27) * .3, damp(2, dt)); camera.updateProjectionMatrix();
+  sky.position.copy(camera.position);
+
+  // 世界无限循环 + 云飘 + 火山冒烟
+  const f = fl.pos;
+  sea.position.set(Math.round(f.x / 20) * 20, 0, Math.round(f.z / 20) * 20);
+  seaMat.uniforms.uT.value = T;
+  for (const w of worldObjs) {
+    if (w.drift) w.base.x += w.drift * dt;
+    w.obj.position.x = w.base.x + PERIOD * Math.round((f.x - w.base.x) / PERIOD);
+    w.obj.position.z = w.base.z + PERIOD * Math.round((f.z - w.base.z) / PERIOD);
+    w.obj.position.y = w.base.y;
+  }
+  for (const s of smokes) {
+    s.t = (s.t + dt * .05) % 1;
+    s.sp.position.set(s.base.x + Math.sin(s.t * 5) * 4 + s.t * 30, s.base.y + s.t * 90, s.base.z + s.t * 12);
+    s.sp.scale.setScalar(s.sz * (.4 + s.t * 1.6)); s.sp.material.opacity = Math.sin(Math.PI * s.t) * .55;
+  }
+  lavaMat.color.setHSL(.055, 1, .52 + .05 * Math.sin(T * 2.2));
+}
+resize();
+requestAnimationFrame(frame);
+// 测试用：快进 n 步（浏览器后台暂停动画时也能跑）
+window.__fl = { fl, scene, camera, stick, keys, setFire, dragon, render: () => renderer.render(scene, camera), bones: () => bones, step(n, dt = 1 / 30) { for (let i = 0; i < n; i++) tick(dt); renderer.render(scene, camera); } };
+</script>
+</body>
+</html>

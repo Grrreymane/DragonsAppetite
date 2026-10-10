@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>生物 · 试验</title>
+<style>
+html,body{margin:0;height:100%;background:#0b0e1c;overflow:hidden;font-family:"PingFang SC","Microsoft YaHei",system-ui,sans-serif;-webkit-user-select:none;user-select:none}
+#wrap{position:fixed;top:0;bottom:0;left:50%;transform:translateX(-50%);width:min(100vw,calc(100vh * 9 / 16));overflow:hidden;background:#9cc4e4}
+#wrap canvas{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none}
+#ui{position:absolute;left:0;right:0;bottom:calc(10px + env(safe-area-inset-bottom));display:flex;gap:6px;justify-content:center;flex-wrap:wrap;padding:0 8px}
+#ui button{border:0;border-radius:9px;padding:8px 10px;font:700 13px/1 inherit;font-family:inherit;color:#fff;background:rgba(20,30,50,.45)}
+#ui button.on{background:#b9452f}
+#info{position:absolute;left:8px;top:8px;color:#fff;font:11px/1.4 ui-monospace,monospace;text-shadow:0 1px 2px #000;pointer-events:none;white-space:pre}
+#err{position:absolute;left:8px;right:8px;top:40%;color:#fff;background:#a22;padding:10px;border-radius:8px;font-size:12px;display:none;white-space:pre-wrap}
+</style>
+<script type="importmap">{"imports":{"three":"../lib/three.module.min.js"}}</script>
+</head>
+<body>
+<div id="wrap">
+  <div id="info"></div>
+  <div id="ui">
+    <button data-m="gallery">图鉴</button><button data-m="zoo">转台</button><button data-m="phases">动作</button><button data-m="flock">鸟群</button><button data-m="portrait">小图</button>
+    <button data-b="sky">天空</button><button data-b="sea">水下</button>
+  </div>
+  <div id="err"></div>
+</div>
+<script>
+addEventListener('error', e => { const el = document.getElementById('err'); el.style.display = 'block'; el.textContent = '出错了：' + e.message + '\n' + (e.filename || '') + ':' + (e.lineno || ''); });
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { GRAD, outlineMat, toonMat } from '../src/view/toon.js';
+import { createCreatures } from '../src/view/creatures.js';
+import { SPECIES, SPECIES_IDS } from '../src/config/species.js';
+
+const Q = new URLSearchParams(location.search);
+const wrap = document.getElementById('wrap'), info = document.getElementById('info');
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+wrap.prepend(renderer.domElement);
+const scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera(40, .5625, .5, 3000);
+const SUN = new THREE.Vector3(-.35, .62, -.7).normalize();
+
+// ---------- 背景：原型的天空 / 水下 ----------
+const SKY = { top: new THREE.Color(0x3d78c6), mid: new THREE.Color(0xc8dcec), bot: new THREE.Color(0xe9d7c2), sun: new THREE.Color(0xfff1d0) };
+const UW = { top: new THREE.Color(0x3aa6b8), mid: new THREE.Color(0x0e5a6e), bot: new THREE.Color(0x06283a), sun: new THREE.Color(0x9fe8ee) };
+const skyMat = new THREE.ShaderMaterial({
+  side: THREE.BackSide, depthWrite: false, fog: false,
+  uniforms: { top: { value: SKY.top.clone() }, mid: { value: SKY.mid.clone() }, bot: { value: SKY.bot.clone() }, sunC: { value: SKY.sun.clone() }, sunD: { value: SUN }, sunK: { value: 1 } },
+  vertexShader: 'varying vec3 vP; void main(){ vP = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+  fragmentShader: `uniform vec3 top, mid, bot, sunC, sunD; uniform float sunK; varying vec3 vP;
+    void main(){ float h = vP.y; vec3 c = h > 0.0 ? mix(mid, top, smoothstep(0.0, 0.6, h)) : mix(mid, bot, smoothstep(0.0, -0.4, h));
+      float s = max(dot(normalize(vP), sunD), 0.0); c += sunC * (pow(s, 600.0) * 2.5 + pow(s, 12.0) * 0.25) * sunK;
+      gl_FragColor = vec4(c, 1.0);
+      #include <colorspace_fragment>
+    }`,
+});
+const sky = new THREE.Mesh(new THREE.SphereGeometry(1400, 32, 16), skyMat); sky.frustumCulled = false; sky.renderOrder = -10; scene.add(sky);
+const hemi = new THREE.HemisphereLight(0xdcecff, 0x6b5a4a, .9); scene.add(hemi);
+const sunL = new THREE.DirectionalLight(0xfff0d8, 2.6); sunL.position.copy(SUN).multiplyScalar(100); scene.add(sunL);
+scene.fog = new THREE.Fog(SKY.mid.clone(), 180, 900);
+
+const cr = createCreatures({ THREE, scene, camera, renderer, GRAD, outlineMat, toonMat });
+window.cr = cr;
+
+let BG = Q.get('bg') || 'sky';
+function setBg(b) {
+  BG = b; const P = b === 'sea' ? UW : SKY;
+  for (const k of ['top', 'mid', 'bot']) skyMat.uniforms[k].value.copy(P[k]);
+  skyMat.uniforms.sunC.value.copy(P.sun); skyMat.uniforms.sunK.value = b === 'sea' ? .35 : 1;
+  if (b === 'sea') { scene.fog.color.set(0x0e5a6e); scene.fog.near = 8; scene.fog.far = 120; hemi.intensity = .75; sunL.intensity = 1.9; }
+  else { scene.fog.color.copy(SKY.mid); scene.fog.near = 180; scene.fog.far = 900; hemi.intensity = .9; sunL.intensity = 2.6; }
+  cr.setUnderwater(b === 'sea' ? 1 : 0);
+}
+
+// ---------- 假的 sim 状态 ----------
+const S = { kind: Q.get('kind') || 'fire', creatures: [], t: 0 };
+let MODE = Q.get('mode') || 'gallery', T = 0, nid = 1;
+const ext = sp => { const b = cr.species[sp].geo.boundingBox; return Math.max(b.max.x - b.min.x, b.max.y - b.min.y, b.max.z - b.min.z); };
+const mk = (sp, o) => Object.assign({ id: nid++, sp, x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0, size: SPECIES[sp].len, flap: 1, gold: false, cooked: 0, stun: 0, roast: 0 }, o);
+const VARS = [{}, { gold: true }, { roast: 2, cooked: 1 }, { stun: 2, cooked: 1 }];
+let movers = [];
+
+function build(mode, page) {
+  MODE = mode; S.creatures = []; movers = []; nid = 1;
+  const list = page === '0' ? SPECIES_IDS.slice(0, 6) : page === '1' ? SPECIES_IDS.slice(6) : SPECIES_IDS;
+  if (mode === 'gallery') {             // 每行一种：普通 / 金色 / 烤熟 / 撞晕
+    const W = 2.25, H = 2.5, rows = list.length;
+    list.forEach((sp, r) => VARS.forEach((v, c) => S.creatures.push(mk(sp, { x: (c - 1.5) * W, y: ((rows - 1) / 2 - r) * H, z: 0, yaw: Math.PI / 2 - .55, pitch: .08, size: 1.9 / ext(sp), ...v }))));
+    const h = rows * H / 2 + .6, D = h / Math.tan(THREE.MathUtils.degToRad(20));
+    camera.position.set(0, D * .12, D); camera.lookAt(0, 0, 0);
+  } else if (mode === 'zoo') {          // 3 × 4 大图，慢慢转
+    SPECIES_IDS.forEach((sp, i) => S.creatures.push(mk(sp, { x: (i % 3 - 1) * 3.3, y: (1.5 - (i / 3 | 0)) * 3.6, z: 0, size: 2.7 / ext(sp), spin: true })));
+    camera.position.set(0, 2.4, 25); camera.lookAt(0, 0, 0);
+  } else if (mode === 'phases') {       // 一种生物，12 个相位（看翅膀 / 尾巴变形和描边有没有跟上）
+    const sp = SPECIES[page] ? page : Q.get('sp') || 'gull';
+    for (let i = 0; i < 12; i++) S.creatures.push(mk(sp, { x: (i % 3 - 1) * 3.3, y: (1.5 - (i / 3 | 0)) * 3.6, z: 0, yaw: Math.PI / 2 - .7, pitch: .15, size: 2.8 / ext(sp), phase: i / 12 * Math.PI * 2, fixed: true }));
+    camera.position.set(0, 3, 25); camera.lookAt(0, 0, 0);
+  } else if (mode === 'flock') {        // 性能：60 小雀 + 120 沙丁鱼，远近都有（一部分在 150 米外，不画描边）
+    for (let g = 0; g < 6; g++) { const cx = (g - 2.5) * 22, cz = -20 - g * 38, cy = 8 + (g % 3) * 6; for (let k = 0; k < 10; k++) movers.push(mk('sparrow', { cx, cy, cz, r: 3 + (k % 4), w: 1.6 + k * .05, o: k * .63 })); }
+    for (let g = 0; g < 4; g++) { const cx = (g - 1.5) * 18, cz = -30 - g * 55, cy = -6 - g * 2; for (let k = 0; k < 30; k++) movers.push(mk('sardine', { cx, cy, cz, r: 2 + (k % 5) * .6, w: 1.2 + (k % 7) * .04, o: k * .41, h: (k % 6 - 2.5) * .5 })); }
+    S.creatures = movers;
+    camera.position.set(0, 4, 18); camera.lookAt(0, 2, -60);
+  }
+  sim(0);
+}
+function sim(dt) {
+  T += dt; S.t = T;
+  for (const c of S.creatures) {
+    c.px = c.x; c.py = c.y; c.pz = c.z;
+    if (c.cx !== undefined) {           // 鸟群 / 鱼群：绕圈
+      const a = T * c.w * .5 + c.o; c.x = c.cx + Math.cos(a) * c.r * 2; c.z = c.cz + Math.sin(a) * c.r * 2; c.y = c.cy + (c.h || 0) + Math.sin(a * 2) * .5;
+      c.yaw = Math.atan2(-Math.sin(a), Math.cos(a)); c.phase = undefined;
+    } else if (c.spin) c.yaw = T * .6 + c.id;
+    if (c.fixed) continue;
+  }
+}
+
+// ---------- 小图模式：把 12 张 portrait 画到一张 2D 画布上（截图只抓第一张画布）----------
+let pc = null;
+function drawPortraits() {
+  if (!pc) { pc = document.createElement('canvas'); wrap.prepend(pc); }
+  const w = wrap.clientWidth, h = wrap.clientHeight; pc.width = w; pc.height = h;
+  const g = pc.getContext('2d');
+  for (let y = 0; y < h; y += 16) for (let x = 0; x < w; x += 16) { g.fillStyle = ((x + y) / 16) & 1 ? '#c9c4bc' : '#e8e4dc'; g.fillRect(x, y, 16, 16); }
+  const cs = Math.floor(Math.min(w / 3, h / 5.2));
+  const ims = SPECIES_IDS.map(sp => { const im = new Image(); im.src = cr.portrait(sp, 128); return im; });
+  const small = SPECIES_IDS.map(sp => { const im = new Image(); im.src = cr.portrait(sp, 48); return im; });
+  return Promise.all([...ims, ...small].map(im => im.decode())).then(() => {
+    ims.forEach((im, i) => g.drawImage(im, (i % 3) * (w / 3) + (w / 3 - cs) / 2, (i / 3 | 0) * cs + 8, cs, cs));
+    small.forEach((im, i) => g.drawImage(im, 8 + i * Math.min(48, (w - 16) / 12), 4 * cs + 24, 48, 48));
+    g.fillStyle = '#123'; g.fillRect(0, 4 * cs + 80, w, h);
+    small.forEach((im, i) => g.drawImage(im, 8 + (i % 6) * 56, 4 * cs + 92 + (i / 6 | 0) * 56, 48, 48));
+  });
+}
+
+// ---------- 循环 ----------
+function resize() { const w = wrap.clientWidth, h = wrap.clientHeight; renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix(); }
+let last = performance.now(), upd = 0, updN = 0, fpsN = 0, fpsT = 0, fps = 0;
+function render(dt = 0) {
+  const t0 = performance.now();
+  cr.update(S, 1, dt || 1 / 60, T);
+  upd += performance.now() - t0; updN++;
+  sky.position.copy(camera.position);
+  renderer.render(scene, camera);
+  const st = cr.stats(), ri = renderer.info.render;
+  info.textContent = `${MODE} ${BG}  ${fps} fps\n生物 ${S.creatures.length}  calls ${ri.calls}  tris ${ri.triangles}\n生物自己 calls ${st.calls} tris ${st.tris}  update ${(upd / updN).toFixed(2)}ms`;
+}
+function frame(now) {
+  requestAnimationFrame(frame);
+  if (window.__pause) { last = now; return; }
+  const dt = Math.min(.05, (now - last) / 1000); last = now;
+  fpsN++; fpsT += dt; if (fpsT > .5) { fps = Math.round(fpsN / fpsT); fpsN = fpsT = 0; }
+  sim(dt); render(dt);
+}
+for (const b of document.querySelectorAll('#ui button')) b.onclick = () => {
+  if (b.dataset.b) setBg(b.dataset.b);
+  if (b.dataset.m) { if (pc) { pc.remove(); pc = null; } if (b.dataset.m === 'portrait') drawPortraits(); else build(b.dataset.m, Q.get('page') || 'all'); }
+};
+resize(); addEventListener('resize', resize);
+setBg(BG); build(MODE === 'portrait' ? 'gallery' : MODE, Q.get('page') || 'all');
+requestAnimationFrame(frame);
+
+// 测试接口：导演脚本用
+window.__cr = {
+  cr, S, renderer, camera,
+  set(mode, bg, page = 'all') { if (bg) setBg(bg); if (pc) { pc.remove(); pc = null; } if (mode === 'portrait') return drawPortraits(); build(mode, page); render(); },
+  step(n = 1, dt = 1 / 30) { for (let i = 0; i < n; i++) { sim(dt); cr.update(S, 1, dt, T); } render(dt); },
+  render, info() { renderer.render(scene, camera); return { calls: renderer.info.render.calls, tris: renderer.info.render.triangles, cr: cr.stats(), updMs: upd / Math.max(1, updN) }; },
+  hideSky(b) { sky.visible = !b; },
+  ready: true,
+};
+</script>
+</body>
+</html>

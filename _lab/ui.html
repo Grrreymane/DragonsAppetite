@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>界面试验</title>
+<style>
+/* 试验页用：先找正式的字体子集（../fonts/），没有就用 .cache/ui/fonts 里临时裁的 */
+@font-face{ font-family:"ZCOOL QingKe HuangYou"; src:url(../fonts/qingke.woff2) format("woff2"), url(../.cache/ui/fonts/qingke.woff2) format("woff2"); font-display:swap; }
+@font-face{ font-family:"Fusion Pixel"; src:url(../fonts/pixel.woff2) format("woff2"), url(../.cache/ui/fonts/pixel.woff2) format("woff2"); font-display:swap; }
+html,body{margin:0;background:#0b0e1c;overflow:hidden;touch-action:none;-webkit-user-select:none;user-select:none;font-family:"PingFang SC","Microsoft YaHei",system-ui,sans-serif}
+#wrap{position:fixed;top:0;bottom:0;left:50%;transform:translateX(-50%);width:min(100vw,calc(100vh * 9 / 16));overflow:hidden;background:#9cc4e4}
+#wrap canvas{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none}
+#bar{position:fixed;left:0;top:0;z-index:99;display:none;flex-wrap:wrap;gap:4px;max-width:180px;padding:6px}
+#bar button{font:12px sans-serif;padding:4px 6px}
+#log{position:fixed;right:0;top:0;z-index:99;color:#fff;font:11px monospace;max-width:220px;display:none}
+</style>
+<script type="importmap">{"imports":{"three":"../lib/three.module.min.js"}}</script>
+<link rel="stylesheet" href="../src/ui/style.css">
+</head>
+<body>
+<div id="wrap"><canvas id="cv"></canvas><div id="ui"></div></div>
+<div id="bar"></div><div id="log"></div>
+<script type="module">
+import { createUI } from '../src/ui/ui.js';
+import { SPECIES, SPECIES_IDS } from '../src/config/species.js';
+import { DRAGONS, GOALS, STAGE_NAMES } from '../src/config/dragons.js';
+
+const wrap = document.getElementById('wrap'), cv = document.getElementById('cv'), cx = cv.getContext('2d');
+const qs = new URLSearchParams(location.search);
+const log = t => { const l = document.getElementById('log'); l.textContent = t; };
+
+// ---------- 假的生物小图（真游戏里由 view/creatures.js 现场渲染） ----------
+const pcache = {};
+function portrait(sp) {
+  if (pcache[sp]) return pcache[sp];
+  const d = SPECIES[sp], c = document.createElement('canvas'); c.width = c.height = 96; const g = c.getContext('2d');
+  const hex = n => '#' + n.toString(16).padStart(6, '0');
+  g.lineWidth = 5; g.strokeStyle = '#1a2233'; g.lineJoin = 'round';
+  const body = hex(d.colors.body), belly = hex(d.colors.belly), acc = hex(d.colors.accent);
+  if (d.hab === 'air' && !/jelly/.test(sp)) {
+    g.fillStyle = acc; g.beginPath(); g.moveTo(40, 46); g.lineTo(20, 14); g.lineTo(62, 40); g.closePath(); g.stroke(); g.fill();
+    g.fillStyle = body; g.beginPath(); g.ellipse(48, 54, 30, 16, -.15, 0, 7); g.stroke(); g.fill();
+    g.fillStyle = belly; g.beginPath(); g.ellipse(50, 60, 20, 8, -.15, 0, 7); g.fill();
+    g.fillStyle = '#f0a020'; g.beginPath(); g.moveTo(16, 50); g.lineTo(4, 54); g.lineTo(16, 58); g.closePath(); g.stroke(); g.fill();
+    g.fillStyle = '#111'; g.beginPath(); g.arc(26, 50, 3.5, 0, 7); g.fill();
+  } else if (/jelly/.test(sp)) {
+    g.fillStyle = body; g.beginPath(); g.arc(48, 46, 28, Math.PI, 0); g.lineTo(76, 54); g.lineTo(20, 54); g.closePath(); g.stroke(); g.fill();
+    g.strokeStyle = acc; g.lineWidth = 4; for (let i = 0; i < 5; i++) { g.beginPath(); g.moveTo(26 + i * 11, 56); g.quadraticCurveTo(22 + i * 11, 72, 28 + i * 11, 88); g.stroke(); }
+  } else {
+    g.fillStyle = acc; g.beginPath(); g.moveTo(76, 48); g.lineTo(94, 30); g.lineTo(94, 66); g.closePath(); g.stroke(); g.fill();
+    g.fillStyle = body; g.beginPath(); g.ellipse(46, 48, 34, sp === 'manta' ? 26 : sp === 'turtle' ? 22 : 16, 0, 0, 7); g.stroke(); g.fill();
+    g.fillStyle = belly; g.beginPath(); g.ellipse(46, 56, 26, 7, 0, 0, 7); g.fill();
+    g.fillStyle = '#111'; g.beginPath(); g.arc(24, 44, 3.5, 0, 7); g.fill();
+  }
+  return (pcache[sp] = c.toDataURL());
+}
+
+// ---------- 假镜头：在龙身后 14 米、高 3 米，朝龙的方向看 ----------
+const cam = { x: 0, y: 0, z: 0, yaw: 0 };
+let W = 360, H = 640;
+function project(x, y, z) {
+  const F = H * .95, s = Math.sin(cam.yaw), c = Math.cos(cam.yaw);
+  const dx = x - cam.x, dy = y - cam.y, dz = z - cam.z;
+  const fz = dx * s + dz * c, rx = -(dx * c - dz * s);
+  const px = W / 2 + rx / fz * F, py = H * .42 - dy / fz * F;     // 和 three 的 project 一样：背后的点会翻过来
+  return { x: px, y: py, visible: fz > .5 && px >= 0 && px <= W && py >= 0 && py <= H };
+}
+
+// ---------- 假的 sim 状态 ----------
+let S, events = [], paused = false, nid = 1;
+function makeS(kind, stage, pts) {
+  const fire = kind === 'fire';
+  S = {
+    t: 0, kind, stage, pts, cfg: DRAGONS[kind].stages[stage],
+    hero: { x: 0, y: fire ? 60 : -8, z: 0, px: 0, py: 0, pz: 0, yaw: 0, pitch: 0, bank: 0, speed: 18, len: 5, medium: fire ? 'air' : 'water',
+      crossT: 0, crossMax: 0, firing: false, dashT: 0, dashCd: 0, dashCdMax: 3.7, invuln: 0, shield: 0 },
+    creatures: [], goal: null, combo: { n: 0, t: 0 }, codex: {}, stats: { eaten: 0, time: 0 },
+  };
+  for (const id of SPECIES_IDS) S.codex[id] = { n: 0, gold: 0 };
+  setGoal(0);
+}
+function setGoal(i) { const g = GOALS[S.kind][S.stage][i % 3]; S.goalI = i; S.goal = { ...g, have: 0, done: false, icon: g.sp || g.type }; }
+// 生物：相对龙的位置（右 / 上 / 前），随时间慢慢漂
+const plan = [];
+function addGroup(sp, n, r, u, f, spread) { for (let i = 0; i < n; i++) plan.push({ id: nid++, sp, r: r + (i % 4) * spread, u: u + ((i * 7) % 5) * spread * .4, f: f + Math.floor(i / 4) * spread, ph: i * 1.7 }); }
+function scene(kind) {
+  plan.length = 0;
+  if (kind === 'fire') {
+    addGroup('sparrow', 8, -16, -2, 34, 2.2);
+    addGroup('lavafinch', 4, 6, 2, 22, 2.5);
+    addGroup('roc', 1, 70, 6, 40, 0);
+    addGroup('cloudjelly', 2, -8, 22, 70, 6);
+    addGroup('sardine', 6, -60, -70, 30, 2);
+    addGroup('gull', 3, 30, -40, -40, 4);
+  } else {
+    addGroup('sardine', 10, -10, 1, 26, 1.6);
+    addGroup('squid', 2, 5, -2, 18, 3);
+    addGroup('turtle', 1, 60, -10, 30, 0);
+    addGroup('shark', 1, -14, -3, -30, 0);
+    addGroup('gull', 3, 4, 14, 60, 3);
+    addGroup('manta', 1, 0, -30, 80, 0);
+  }
+}
+function tick(dt) {
+  S.t += dt; S.stats.time += dt;
+  const h = S.hero; h.px = h.x; h.py = h.y; h.pz = h.z;
+  h.yaw = .35 * Math.sin(S.t * .25);
+  h.x += Math.sin(h.yaw) * 18 * dt; h.z += Math.cos(h.yaw) * 18 * dt;
+  const s = Math.sin(h.yaw), c = Math.cos(h.yaw), et = S.cfg.eatTier, ct = S.cfg.cookTier;
+  S.creatures = plan.map(p => {
+    const d = SPECIES[p.sp], r = p.r + Math.sin(S.t * .7 + p.ph) * 2, u = p.u + Math.sin(S.t * 1.1 + p.ph) * 1, f = p.f + Math.cos(S.t * .5 + p.ph) * 3;
+    const o = { id: p.id, sp: p.sp, x: h.x + s * f - c * r, y: h.y + u, z: h.z + c * f + s * r, size: d.len, phase: 0, flap: 1, gold: false, cooked: 0, stun: 0, roast: 0,
+      alert: 0, chasing: false, flee: false, edible: d.who.includes(S.kind) && d.tier <= et, edibleCooked: d.who.includes(S.kind) && d.tier <= ct };
+    if (d.predator === S.kind && S.stage === 0) { o.alert = .5 + .5 * Math.sin(S.t * .8); o.chasing = o.alert > .7; }
+    return o;
+  });
+  cam.yaw = h.yaw; cam.x = h.x - s * 14; cam.y = h.y + 3; cam.z = h.z - c * 14;
+  // 事件：每 1.3 秒吃一口
+  S.combo.t = Math.max(0, S.combo.t - dt); if (!S.combo.t) S.combo.n = 0;
+  S.eatT = (S.eatT || 0) + dt;
+  if (S.eatT > 1.3) {
+    S.eatT = 0; S.combo.n++; S.combo.t = 1.5; S.pts += 3; S.stats.eaten++;
+    events.push({ type: 'eat', sp: 'sparrow', pts: 3, combo: S.combo.n });
+    const g = S.goal;
+    if (g.done) setGoal(S.goalI + 1);
+    else if (++g.have >= g.n) { g.have = g.n; g.done = true; events.push({ type: 'goal', idx: S.goalI }); }
+  }
+  if (S.pts >= 200 && S.stage < 2) S.stage = 2; else if (S.pts >= 40 && S.stage < 1) S.stage = 1;
+  if (S.pts > 240) S.pts = 0, S.stage = 0;
+  S.cfg = DRAGONS[S.kind].stages[S.stage];
+  // 跨界：每 9 秒跨一次界，最长 2.5 秒
+  const cyc = S.t % 9;
+  if (cyc > 5 && cyc < 7.5) { h.crossMax = 2.5; h.crossT = cyc - 5; h.medium = S.kind === 'fire' ? 'water' : 'air'; }
+  else { h.crossMax = 0; h.crossT = 0; h.medium = S.kind === 'fire' ? 'air' : 'water'; }
+  h.dashCd = Math.max(0, (h.dashCd || 0) - dt); if (S.kind === 'sea' && !h.dashCd && S.t % 5 < dt) h.dashCd = h.dashCdMax;
+}
+
+// ---------- 背景（代替 3D 画面） ----------
+function draw() {
+  const r = wrap.getBoundingClientRect(); W = r.width; H = r.height;
+  if (cv.width !== W || cv.height !== H) { cv.width = W; cv.height = H; }
+  const under = S && S.hero.y < 0, hy = H * .42;
+  if (under) { const g = cx.createLinearGradient(0, 0, 0, H); g.addColorStop(0, '#5fc9d6'); g.addColorStop(1, '#0f3f66'); cx.fillStyle = g; cx.fillRect(0, 0, W, H); }
+  else {
+    let g = cx.createLinearGradient(0, 0, 0, hy); g.addColorStop(0, '#6fa8dc'); g.addColorStop(1, '#d6ecf6'); cx.fillStyle = g; cx.fillRect(0, 0, W, hy);
+    g = cx.createLinearGradient(0, hy, 0, H); g.addColorStop(0, '#5fb8c8'); g.addColorStop(1, '#1d5f84'); cx.fillStyle = g; cx.fillRect(0, hy, W, H - hy);
+  }
+  if (!S) return;
+  const F = H * .95;
+  const list = S.creatures.map(c => ({ c, p: project(c.x, c.y, c.z), fz: (c.x - cam.x) * Math.sin(cam.yaw) + (c.z - cam.z) * Math.cos(cam.yaw) })).filter(o => o.fz > .5).sort((a, b) => b.fz - a.fz);
+  for (const { c, p, fz } of list) {
+    const rr = Math.max(2.5, c.size / fz * F * .5);
+    cx.fillStyle = '#' + SPECIES[c.sp].colors.body.toString(16).padStart(6, '0'); cx.strokeStyle = '#1a2233'; cx.lineWidth = 1.5;
+    cx.beginPath(); cx.ellipse(p.x, p.y, rr * 1.4, rr, 0, 0, 7); cx.fill(); cx.stroke();
+  }
+  const hp = project(S.hero.x, S.hero.y, S.hero.z);
+  cx.fillStyle = S.kind === 'fire' ? '#c0442a' : '#1d4a6e'; cx.strokeStyle = '#1a1020'; cx.lineWidth = 3;
+  cx.beginPath(); cx.ellipse(hp.x, hp.y, 34, 12, 0, 0, 7); cx.fill(); cx.stroke();
+  if (S.kind === 'fire') { cx.beginPath(); cx.moveTo(hp.x - 6, hp.y); cx.lineTo(hp.x - 60, hp.y - 26); cx.lineTo(hp.x - 30, hp.y + 4); cx.moveTo(hp.x + 6, hp.y); cx.lineTo(hp.x + 60, hp.y - 26); cx.lineTo(hp.x + 30, hp.y + 4); cx.fill(); cx.stroke(); }
+}
+
+// ---------- 界面 ----------
+const api = {
+  project, portrait,
+  onPick: k => { log('pick ' + k); go(k === 'sea' ? 'hud-sea' : 'hud'); },
+  onAction: on => { log('action ' + on); if (S) S.hero.firing = on && S.kind === 'fire'; },
+  onPause: () => { log('pause'); ui.showPause(); paused = true; },
+  onResume: () => { log('resume'); ui.hidePause(); paused = false; },
+  onSwitch: () => { log('switch'); ui.hidePause(); ui.hideHUD(); ui.showTitle(save); },
+  onToggleMute: () => { save.mute = !save.mute; ui.setMute(save.mute); log('mute ' + save.mute); },
+  onToggleLeft: () => { save.left = !save.left; ui.setLeft(save.left); log('left ' + save.left); },
+  onCodex: () => { log('codex'); ui.showCodex(save); },
+  getSave: () => save,
+};
+const save = { v: 1, pick: 'fire', mute: false, left: false, fire: { stage: 1, pts: 80, eaten: 60 }, sea: { stage: 0, pts: 0, eaten: 0 },
+  codex: { sparrow: { n: 12, gold: 1 }, gull: { n: 3, gold: 0 }, flyfish: { n: 2, gold: 0 }, sardine: { n: 30, gold: 2 }, lavafinch: { n: 4, gold: 0 }, squid: { n: 1, gold: 0 }, roc: { n: 1, gold: 0 } } };
+const ui = createUI(document.getElementById('ui'), api);
+
+function clearAll() { ui.hideTitle(); ui.hideHUD(); ui.hidePause(); ui.hideCodex(); ui.hideResult(); ui.hint(null); ui.setLoading(1); ui.setTemp(false); ui.setLeft(false); paused = false; }
+function run(n, dt = 1 / 30) { for (let i = 0; i < n; i++) { tick(dt); ui.update(S, dt, events); events = []; } draw(); }
+function hudPose(kind, stage, pts, goalI, have) {
+  makeS(kind, stage, pts); scene(kind); setGoal(goalI); S.goal.have = have; ui.showHUD(kind); ui.setTemp(true); run(40);
+}
+// 各个画面（截图脚本用 LAB.go(name)）
+function go(name) {
+  clearAll(); paused = true; S = null;
+  if (name === 'load') { ui.setLoading(.45); draw(); return; }
+  if (name === 'title') { draw(); ui.showTitle(save); return; }
+  if (name === 'title-new') { draw(); ui.showTitle({ pick: 'sea', codex: {} }); return; }
+  if (name === 'hud') { hudPose('fire', 0, 26, 0, 2); S.combo.n = 4; S.combo.t = 1.2; run(1); ui.hint('drag'); }
+  if (name === 'hud-cross') { hudPose('fire', 0, 34, 2, 0); S.t = 7.2; run(1); S.hero.crossT = 2.0; ui.update(S, 0, []); ui.hint('plunge'); }
+  if (name === 'hud-sea') { hudPose('sea', 1, 120, 0, 1); S.hero.dashCd = 1.6; run(1); ui.hint('dash'); events.push({ type: 'codex', sp: 'turtle' }); run(6); }
+  if (name === 'hud-adult') { hudPose('fire', 2, 230, 2, 6); Object.assign(S.codex, save.codex); S.pts++; S.combo.n = 9; S.combo.t = 1; run(1); }
+  if (name === 'hud-left') { hudPose('fire', 1, 120, 1, 3); ui.setLeft(true); S.hero.firing = true; S.goal.have = S.goal.n; S.goal.done = true; run(2); ui.hint('fire'); }
+  if (name === 'pause') { hudPose('fire', 0, 26, 0, 2); ui.showPause(); }
+  if (name === 'codex') { hudPose('sea', 0, 10, 0, 1); ui.showPause(); ui.showCodex(save); }
+  if (name === 'result') { hudPose('fire', 2, 200, 0, 0); ui.showResult({ kind: 'fire', timeSec: 312, eaten: 132, codexN: 7, codexMax: 12, stageName: STAGE_NAMES[2] }, () => log('continue')); }
+  if (name === 'result-sea') { hudPose('sea', 2, 200, 0, 0); ui.showResult({ kind: 'sea', timeSec: 3725, eaten: 1024, codexN: 12, codexMax: 12, stageName: STAGE_NAMES[2] }, () => log('continue')); }
+  if (name === 'toast') { hudPose('sea', 1, 41, 0, 0); ui.toast(STAGE_NAMES[1]); }
+  if (name === 'live') { hudPose(qs.get('kind') || 'fire', 0, 0, 0, 0); ui.hint('drag'); paused = false; }
+}
+let last = performance.now();
+function loop(now) {
+  const dt = Math.min(.05, (now - last) / 1000); last = now;
+  if (S && !paused) { tick(dt); ui.update(S, dt, events); events = []; }
+  draw(); requestAnimationFrame(loop);
+}
+window.LAB = { ui, go, run, get S() { return S; }, save, drawCard: () => ui._result.drawCard() };
+const names = ['load', 'title', 'title-new', 'hud', 'hud-cross', 'hud-sea', 'hud-adult', 'hud-left', 'pause', 'codex', 'result', 'result-sea', 'toast', 'live'];
+if (qs.has('bar')) { const b = document.getElementById('bar'); b.style.display = 'flex'; document.getElementById('log').style.display = 'block'; for (const n of names) { const e = document.createElement('button'); e.textContent = n; e.onclick = () => go(n); b.appendChild(e); } }
+go(qs.get('s') || 'live');
+requestAnimationFrame(loop);
+window.__labReady = true;
+</script>
+</body>
+</html>

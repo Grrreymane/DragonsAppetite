@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>模型检查</title>
+<style>
+html,body{margin:0;height:100%;background:#ece6dc;overflow:hidden;font-family:"PingFang SC","Microsoft YaHei",system-ui,sans-serif;-webkit-text-size-adjust:100%;text-size-adjust:100%}
+#wrap{position:fixed;inset:0}
+#wrap canvas{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none}
+#info{position:absolute;left:14px;top:calc(12px + env(safe-area-inset-top));font-size:13px;line-height:1.6;color:#3a322c;background:rgba(255,255,255,.6);padding:8px 12px;border-radius:10px;pointer-events:none;white-space:pre}
+#ui{position:absolute;left:0;right:0;bottom:0;display:flex;gap:8px;justify-content:center;flex-wrap:wrap;padding:10px 10px calc(14px + env(safe-area-inset-bottom))}
+button{border:0;border-radius:9px;padding:9px 13px;font:700 14px/1 inherit;font-family:inherit;background:rgba(255,255,255,.7);color:#3a322c;cursor:pointer}
+button.on{background:#b9452f;color:#fff}
+#ref{position:absolute;right:12px;top:calc(12px + env(safe-area-inset-top));width:min(42vw,480px);border-radius:10px;box-shadow:0 6px 24px rgba(0,0,0,.18);display:none}
+#ref.show{display:block}
+</style>
+<script type="importmap">{ "imports": { "three": "../lib/three.module.min.js" } }</script>
+</head>
+<body>
+<div id="wrap"><div id="info">加载中…</div><img id="ref" src="../ref/fire-adult.png" alt=""><div id="ui"><button id="bRef">参考图</button><button id="bWire">线框</button><button id="bSpin" class="on">自动转</button></div></div>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from '../lib/jsm/loaders/GLTFLoader.js';
+
+const name = new URLSearchParams(location.search).get('m') || 'fire_adult';
+const wrap = document.getElementById('wrap'), info = document.getElementById('info');
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+wrap.prepend(renderer.domElement);
+const scene = new THREE.Scene(); scene.background = new THREE.Color(0xece6dc);
+const camera = new THREE.PerspectiveCamera(32, 1, .01, 200);
+scene.add(new THREE.HemisphereLight(0xfff3e4, 0xb59a80, 1.3));
+const sun = new THREE.DirectionalLight(0xfff0dc, 2.4); sun.position.set(4, 7, 5); sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048);
+Object.assign(sun.shadow.camera, { left: -3, right: 3, top: 3, bottom: -3, near: .1, far: 20 }); sun.shadow.normalBias = .02; scene.add(sun);
+const rim = new THREE.DirectionalLight(0xffb27a, .9); rim.position.set(-5, 3, -3); scene.add(rim);
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(40, 40), new THREE.ShadowMaterial({ opacity: .2 })); ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; scene.add(ground);
+
+const cam = { az: 1.2, el: .15, dist: 4.5, target: new THREE.Vector3(0, .7, 0), spin: true };
+let model = null, mixer = null, wire = false;
+new GLTFLoader().load(`../models/${name}.glb?v=${Date.now()}`, g => {
+  model = g.scene;
+  // 统一大小：身体最高处 = 1.6
+  model.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(model, true), size = box.getSize(new THREE.Vector3()), k = 1.6 / size.y;
+  model.scale.setScalar(k); model.updateMatrixWorld(true); box.setFromObject(model, true);
+  model.position.y -= box.min.y; model.position.x -= (box.min.x + box.max.x) / 2; model.position.z -= (box.min.z + box.max.z) / 2;
+  scene.add(model);
+  let tris = 0, meshes = 0, bones = 0; const tex = new Set();
+  model.traverse(o => {
+    if (o.isMesh) {
+      meshes++; o.castShadow = o.receiveShadow = true;
+      tris += (o.geometry.index ? o.geometry.index.count : o.geometry.attributes.position.count) / 3;
+      for (const m of [].concat(o.material)) for (const k of ['map', 'normalMap', 'roughnessMap', 'metalnessMap', 'emissiveMap']) if (m[k]?.image) tex.add(`${k} ${m[k].image.width}×${m[k].image.height}`);
+    }
+    if (o.isBone) bones++;
+  });
+  if (g.animations.length) {
+    mixer = new THREE.AnimationMixer(model); let cur = null;
+    const play = clip => { const a = mixer.clipAction(clip); a.reset().fadeIn(.35).play(); if (cur && cur !== a) cur.fadeOut(.35); cur = a; ui.querySelectorAll('.anim').forEach(b => b.classList.toggle('on', b.textContent === clip.name)); };
+    const ui = document.getElementById('ui');
+    for (const clip of g.animations) { const b = document.createElement('button'); b.className = 'anim'; b.textContent = clip.name; b.onclick = () => play(clip); ui.prepend(b); }
+    play(g.animations.find(c => c.name === 'Fly') || g.animations[0]);
+  }
+  model.updateMatrixWorld(true); const sz = new THREE.Box3().setFromObject(model, true).getSize(new THREE.Vector3());
+  cam.target.set(0, sz.y * .45, 0); cam.dist = sz.length() * 1.5; cam.az = .35;
+  info.textContent = `${name}.glb\n三角面：${Math.round(tris).toLocaleString()}\n网格：${meshes}　骨骼：${bones}　动画：${g.animations.length}\n贴图：${[...tex].join('、') || '无'}`;
+}, undefined, () => { info.textContent = `还没有 models/${name}.glb\n先运行：python tools/tripo.py gen ref/fire-adult.png ${name}`; });
+
+const ptrs = new Map();
+const cv = renderer.domElement;
+cv.addEventListener('pointerdown', e => { cv.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY }); cam.spin = false; document.getElementById('bSpin').classList.remove('on'); });
+cv.addEventListener('pointermove', e => { const p = ptrs.get(e.pointerId); if (!p) return; cam.az -= (e.clientX - p.x) * .006; cam.el = Math.max(-.1, Math.min(1.3, cam.el + (e.clientY - p.y) * .004)); p.x = e.clientX; p.y = e.clientY; });
+cv.addEventListener('pointerup', e => ptrs.delete(e.pointerId));
+cv.addEventListener('wheel', e => { e.preventDefault(); cam.dist *= Math.pow(1.0012, e.deltaY); }, { passive: false });
+document.getElementById('bRef').onclick = e => { e.target.classList.toggle('on'); document.getElementById('ref').classList.toggle('show'); };
+document.getElementById('bWire').onclick = e => { wire = !wire; e.target.classList.toggle('on', wire); model?.traverse(o => { if (o.isMesh) for (const m of [].concat(o.material)) m.wireframe = wire; }); };
+document.getElementById('bSpin').onclick = e => { cam.spin = !cam.spin; e.target.classList.toggle('on', cam.spin); };
+
+let last = performance.now();
+function frame(now) {
+  requestAnimationFrame(frame);
+  const dt = Math.min(.05, (now - last) / 1000); last = now;
+  const w = wrap.clientWidth, h = wrap.clientHeight;
+  if (w && h && (renderer.domElement.width !== Math.round(w * renderer.getPixelRatio()))) { renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix(); }
+  if (cam.spin) cam.az += dt * .3;
+  mixer?.update(dt);
+  camera.position.set(cam.target.x + Math.sin(cam.az) * Math.cos(cam.el) * cam.dist, cam.target.y + Math.sin(cam.el) * cam.dist, cam.target.z + Math.cos(cam.az) * Math.cos(cam.el) * cam.dist);
+  camera.lookAt(cam.target);
+  renderer.render(scene, camera);
+}
+requestAnimationFrame(frame);
+window.__ml = { cam, get mixer() { return mixer; } };
+</script>
+</body>
+</html>

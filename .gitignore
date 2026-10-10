@@ -1,0 +1,18 @@
+# 密钥 / 测试
+.tripo_key
+_test.html
+_bot.js
+**/__rec.html
+# 中间文件、大的美术源文件（不上线）
+.cache/
+renders/
+ref/
+output/
+*.mp4
+blender/*.blend
+blender/*.blend1
+models/*_rig.glb
+models/fire_adult.glb
+models/*_preview.webp
+tools/__pycache__/
+node_modules/

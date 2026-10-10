@@ -1,0 +1,49 @@
+{
+  "file": "models/fire_teen_anim.glb",
+  "kind": "fire",
+  "stage": "teen",
+  "length": 0.998,
+  "pivot": [
+    0.165,
+    0.0,
+    -0.042
+  ],
+  "mouth": [
+    0.495,
+    0.0,
+    0.056
+  ],
+  "headBone": "head",
+  "neckBones": [
+    "neck1",
+    "neck2"
+  ],
+  "tailBones": [
+    "tail1",
+    "tail2",
+    "tail3",
+    "tail4",
+    "tail5",
+    "tail6"
+  ],
+  "wingBones": {
+    "L": [
+      "wing1.L",
+      "wing2.L",
+      "fing1.L"
+    ],
+    "R": [
+      "wing1.R",
+      "wing2.R",
+      "fing1.R"
+    ]
+  },
+  "actions": {
+    "Fly": 3.0,
+    "Glide": 2.0,
+    "Idle": 3.0
+  },
+  "tris": 6382,
+  "bones": 38,
+  "bytes": 825248
+}

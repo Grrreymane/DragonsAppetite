@@ -1,0 +1,52 @@
+{
+  "file": "models/sea_adult_anim.glb",
+  "kind": "sea",
+  "stage": "adult",
+  "length": 0.998,
+  "pivot": [
+    0.13,
+    0,
+    0.005
+  ],
+  "mouth": [
+    0.497,
+    0,
+    -0.012
+  ],
+  "headBone": "head",
+  "neckBones": [
+    "neck1",
+    "neck2",
+    "neck3"
+  ],
+  "tailBones": [
+    "tail1",
+    "tail2",
+    "tail3",
+    "tail4",
+    "tail5",
+    "tail6",
+    "tail7",
+    "tail8",
+    "tail9",
+    "tail10",
+    "fan"
+  ],
+  "spineBones": [
+    "hips",
+    "spine1",
+    "spine2",
+    "spine3",
+    "chest"
+  ],
+  "actions": {
+    "Swim": 1.5,
+    "Dash": 0.75,
+    "Idle": 3.0,
+    "Glide": 2.0
+  },
+  "tris": 7957,
+  "bones": 36,
+  "bytes": 1018832,
+  "notes": ""
+}
