@@ -1,10 +1,14 @@
 # 读顶点，按区域分段求中心线，帮助放骨头（坐标：+X 朝前，+Y 朝左，+Z 朝上）
-import bpy, sys, mathutils, statistics as st
+# blender -b --factory-startup -P analyze.py -- <in.glb> [rot_z_deg=0]
+#   rot_z_deg：先绕 Z 转多少度让头朝 +X（火龙 0；海龙 90）。下面的分段阈值是按火龙成龙定的，别的体型要改（海龙用 sea_analyze.py / sea_measure.py）
+import bpy, sys, math, mathutils, statistics as st
 argv = sys.argv[sys.argv.index('--') + 1:]
+ROT = float(argv[1]) if len(argv) > 1 else 0.0
 bpy.ops.wm.read_factory_settings(use_empty=True)
 bpy.ops.import_scene.gltf(filepath=argv[0])
 o = [o for o in bpy.context.scene.objects if o.type == 'MESH'][0]
-V = [o.matrix_world @ v.co for v in o.data.vertices]
+R = mathutils.Matrix.Rotation(math.radians(ROT), 4, 'Z')
+V = [R @ o.matrix_world @ v.co for v in o.data.vertices]
 print('verts', len(V))
 def band(filt, key, lo, hi, step, label):
     print('==', label)

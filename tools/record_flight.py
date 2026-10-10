@@ -1,4 +1,5 @@
-"""录一段试飞视频（逐帧，固定 30fps），同时把帧存成 PNG，方便拼图检查。
+"""录一段试飞视频（逐帧，固定 30fps），同时把帧存成 JPEG（.cache/flight/frames/NNNN.jpg），方便拼图检查。
+只录原型页 _lab/flight.html（钩子 __fl / __flReady）。正式游戏 index.html 用 tools/rec3d.py 录。
 
     python tools/record_flight.py --size 540x960 --out .cache/flight/flight.mp4
 

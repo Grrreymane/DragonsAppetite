@@ -11,6 +11,7 @@
 页面里的报错（error / unhandledrejection / console.error）会自动打印成 "ERR ..."。
 录视频时页面地址带 ?rec=1（游戏据此打开 preserveDrawingBuffer）。可以用 --query 追加参数，例如 --query "seed=3&stage=1"。
 --sheet 0.5   每 0.5 秒抽一帧拼成联系表（<out>_sheet.jpg），方便一眼看完整段。
+--dom         用 Chrome 调试端口截整页（含 DOM 界面 / HUD），__frame / __shot 都带界面；慢一些
 """
 import argparse, functools, http.server, pathlib, subprocess, sys, tempfile, threading, time, urllib.parse
 sys.path.insert(0, 'D:/Minigame/_workflow/tools')
@@ -27,8 +28,9 @@ HOOKS = r"""
   const cw = console.warn.bind(console); console.warn = (...a) => { log('WARN ' + a.map(String).join(' ')); cw(...a); };
   const cv = () => document.querySelector('canvas');
   window.__log = log;
-  window.__frame = async () => { const b = await new Promise(r => cv().toBlob(r, 'image/jpeg', .9)); await post('/__frame', b); };
-  window.__shot = async name => { const b = await new Promise(r => cv().toBlob(r, 'image/png')); await post('/__shot?name=' + encodeURIComponent(name), b); };
+  const DOM = location.search.includes('__dom=1');
+  window.__frame = async () => { if (DOM) { await new Promise(r => requestAnimationFrame(r)); await post('/__domframe', ''); return; } const b = await new Promise(r => cv().toBlob(r, 'image/jpeg', .9)); await post('/__frame', b); };
+  window.__shot = async name => { if (DOM) { await new Promise(r => requestAnimationFrame(r)); await post('/__domshot?name=' + encodeURIComponent(name), ''); return; } const b = await new Promise(r => cv().toBlob(r, 'image/png')); await post('/__shot?name=' + encodeURIComponent(name), b); };
   window.__done = () => post('/__done', '');
 })();
 </script>
@@ -40,6 +42,7 @@ def main():
     ap.add_argument('--size', default='540x960'); ap.add_argument('--out', default='.cache/rec/out.mp4')
     ap.add_argument('--query', default=''); ap.add_argument('--fps', type=int, default=30)
     ap.add_argument('--sheet', type=float, default=0); ap.add_argument('--timeout', type=int, default=900)
+    ap.add_argument('--dom', action='store_true')
     a = ap.parse_args()
     import imageio_ffmpeg
     ff = imageio_ffmpeg.get_ffmpeg_exe()
@@ -60,7 +63,10 @@ def main():
         enc = subprocess.Popen([ff, '-y', '-loglevel', 'error', '-f', 'image2pipe', '-c:v', 'mjpeg', '-framerate', str(a.fps), '-i', '-',
                                 '-vf', 'scale=trunc(iw/2)*2:trunc(ih/2)*2', '-c:v', 'libx264', '-crf', '21', '-pix_fmt', 'yuv420p',
                                 '-movflags', '+faststart', str(out)], stdin=subprocess.PIPE)
-    done = threading.Event(); st = {'n': 0, 'err': 0}
+    done = threading.Event(); st = {'n': 0, 'err': 0, 'cdp': None}; lock = threading.Lock()
+    def cdp_shot(fmt, path):
+        with lock:
+            p = st['cdp']; p.stdin.write((fmt + '|' + path + '\n').encode()); p.stdin.flush(); return p.stdout.readline().decode().strip()
     rec_name = '/' + page_path.rsplit('/', 1)[0] + '/__rec.html' if '/' in page_path else '/__rec.html'
     class H(http.server.SimpleHTTPRequestHandler):
         def log_message(self, *x): pass
@@ -77,6 +83,13 @@ def main():
             if p.path == '/__frame':
                 if enc: enc.stdin.write(body)
                 (shots_dir / f'{st["n"]:05d}.jpg').write_bytes(body); st['n'] += 1
+            elif p.path == '/__domframe':
+                f = shots_dir / f'{st["n"]:05d}.jpg'; cdp_shot('jpeg', str(f)); b = f.read_bytes()
+                if enc: enc.stdin.write(b)
+                st['n'] += 1
+            elif p.path == '/__domshot':
+                name = urllib.parse.parse_qs(p.query).get('name', ['shot'])[0]
+                cdp_shot('png', str(shots_dir / (name + '.png'))); print('shot', shots_dir / (name + '.png'), flush=True)
             elif p.path == '/__shot':
                 name = urllib.parse.parse_qs(p.query).get('name', ['shot'])[0]
                 (shots_dir / (name + '.png')).write_bytes(body); print('shot', shots_dir / (name + '.png'), flush=True)
@@ -88,13 +101,19 @@ def main():
     srv = http.server.ThreadingHTTPServer(('127.0.0.1', 0), functools.partial(H, directory=str(root)))
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     w, h = a.size.split('x')
-    q = 'rec=1' + ('&' + a.query if a.query else '')
+    q = 'rec=1' + ('&' + a.query if a.query else '') + ('&__dom=1' if a.dom else '')
+    import socket
+    sk = socket.socket(); sk.bind(('127.0.0.1', 0)); dport = sk.getsockname()[1]; sk.close()
     url = f'http://127.0.0.1:{srv.server_port}{rec_name}?{q}&t={int(time.time())}'
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as prof:
         ch = subprocess.Popen([browser(), '--headless=new', '--hide-scrollbars', '--mute-audio', '--enable-gpu', '--ignore-gpu-blocklist',
                                '--use-angle=d3d11', '--autoplay-policy=no-user-gesture-required', '--force-device-scale-factor=1',
-                               f'--user-data-dir={prof}', f'--window-size={w},{h}', url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                               f'--user-data-dir={prof}', f'--window-size={w},{h}'] + ([f'--remote-debugging-port={dport}'] if a.dom else []) + [url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        if a.dom:
+            st['cdp'] = subprocess.Popen(['node', str(root / 'tools' / 'cdp_shot.mjs'), str(dport)], stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+            print('cdp', st['cdp'].stdout.readline().decode().strip(), flush=True)
         ok = done.wait(a.timeout); ch.kill(); ch.wait()
+        if st['cdp']: st['cdp'].kill()
     srv.shutdown()
     if enc: enc.stdin.close(); enc.wait()
     if video and a.sheet > 0 and st['n']:

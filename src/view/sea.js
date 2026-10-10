@@ -248,10 +248,10 @@ export function createSea(ctx) {
       if (!fog && k > 0) fog = scene.fog = ownFog = new THREE.Fog(uwC.clone(), 8, 120);
       if (fog && 'near' in fog) {
         // 颜色先变（入水那一下不会亮一下），远近按 0.25 秒慢慢收
-        const kc = under ? Math.min(1, ke * 2.2) : ke;
+        const kc = under ? Math.min(1, k * 2.5) : ke, kr = under ? Math.min(1, k * 1.5) : ke;
         fog.color.copy(air.color).lerp(uwC, kc);
-        fog.near = air.near + (8 - dk * 2 - air.near) * ke;
-        fog.far = air.far + (120 - dk * 15 - air.far) * Math.pow(ke, .5);
+        fog.near = air.near + (8 - dk * 2 - air.near) * kr;
+        fog.far = 1 / (1 / air.far + (1 / (120 - dk * 15) - 1 / air.far) * kr);   // 按「能见度」插值，入水头几帧就收拢
         last.color.copy(fog.color); last.near = fog.near; last.far = fog.far;
         if (fog === ownFog && k === 0) { scene.fog = null; ownFog = null; }
         bgC.copy(fog.color);
@@ -262,6 +262,8 @@ export function createSea(ctx) {
       writeShadows(S, alpha, wt);
       bed.update(S, cam, wt, k, under, uwC, dt);
     },
+    // 画质：0 低档（海底的石头 / 海藻不画描边），1 以上正常
+    setQuality(q) { bed.setQuality(q); },
     dispose() {
       scene.remove(group); bed.dispose();
       for (const r of rings) { r.geometry.dispose(); r.material.dispose(); }
@@ -272,7 +274,7 @@ export function createSea(ctx) {
 
   // ---- 影子：鱼影（海面上，天上看得到）、龙影、鸟影（海面下侧，水下看得到）；最多 16 个 ----
   const cand = [], clusters = [];
-  function lerpP(o, a) { return [o.px + (o.x - o.px) * a, o.py + (o.y - o.py) * a, o.pz + (o.z - o.pz) * a]; }
+  function lerpP(o, a) { return o.px === undefined ? [o.x, o.y, o.z] : [o.px + (o.x - o.px) * a, o.py + (o.y - o.py) * a, o.pz + (o.z - o.pz) * a]; }
   function writeShadows(S, alpha, wt) {
     let n = 0;
     const cam = camera.position, put = (x, z, a, b, sy, cy, k, kind) => { if (n < MAXSH && k > .01) { shA[n].set(x, z, a, b); shB[n].set(sy, cy, k, kind); n++; } };
@@ -321,7 +323,7 @@ export function createSea(ctx) {
     let m = 0;
     if (S && S.spots) {
       const list = S.spots.map(s => [s, (s.x - cam.x) ** 2 + (s.z - cam.z) ** 2]).filter(a => a[1] < 900 * 900).sort((a, b) => a[1] - b[1]);
-      for (const [s] of list) { if (m >= MAXSPOT) break; spots[m++].set(s.x, s.z, 6, s.k === undefined ? 1 : s.k); }
+      for (const [s] of list) { if (m >= MAXSPOT) break; spots[m++].set(s.x, s.z, 7, s.k === undefined ? 1 : s.k); }   // 白沫圈半径约 6
     }
     U.uSpotN.value = m;
   }

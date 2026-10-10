@@ -2,11 +2,11 @@
 // 颜色按区域：翠岛海沙地 + 海藻林、火山海黑石 + 微弱的暖色热泉、外海蓝灰深沟。焦散按 _lab/shade.js 的 patch() 做法。
 // 只有镜头在水下（或很低，提前建好）时才更新 / 显示。
 import * as THREE from 'three';
-import { seabedY, zoneAt } from '../sim/world.js';
+import { seabedY, zoneAt, groundAt } from '../sim/world.js';
 import { GRAD as GRAD0, outlineMat as outline0, toonMat as toon0 } from './toon.js';
 
 const CH = 40, CELL = 5, NC = CH / CELL, NK = 8, VPC = (NC + 1) ** 2, NSLOT = NK * NK;
-const KELP_MAX = 420, ROCK_MAX = 160, VENT_MAX = 24;
+const KELP_MAX = 240, ROCK_MAX = 160, VENT_MAX = 24;
 const mod = (a, n) => ((a % n) + n) % n;
 const hash = (i, j, s) => {
   let h = Math.imul(i | 0, 374761393) ^ Math.imul(j | 0, 668265263) ^ Math.imul(s | 0, 1274126177);
@@ -21,10 +21,10 @@ const PAL = {
 const ROCK_C = { green: C(0x8a8478), volcano: C(0x2e282c), open: C(0x5a6676) };
 
 // 远处（105–150 米）强制融进雾色：入水那 0.25 秒雾还没收拢时，也看不到这块海底的边
-const FAR_FADE = '#include <fog_fragment>
+const FAR_FADE = `#include <fog_fragment>
 #ifdef USE_FOG
  gl_FragColor.rgb = mix(gl_FragColor.rgb, fogColor, smoothstep(105.0, 150.0, vFogDepth));
-#endif';
+#endif`;
 function farFade(mat, key) {
   const prev = mat.onBeforeCompile;
   mat.onBeforeCompile = (sh, r) => { if (prev) prev.call(mat, sh, r); sh.fragmentShader = sh.fragmentShader.replace('#include <fog_fragment>', FAR_FADE); };
@@ -41,8 +41,10 @@ float causF(vec2 p, float t){
 `;
 const BED_MAIN = `
   { float dd = clamp(-vWP.y / 70.0, 0.0, 1.0);
-    float cs = smoothstep(0.28, 0.42, causF(vWP.xz, uT)) * 0.7 + smoothstep(0.5, 0.65, causF(vWP.xz * 1.9 + 7.0, uT * 1.3)) * 0.3;   // 卡通焦散：硬边光纹
-    gl_FragColor.rgb += vec3(0.6, 0.85, 0.9) * cs * (1.0 - smoothstep(8.0, 75.0, -vWP.y)) * 0.32;   // 越深焦散越淡，深沟里没有
+    float cs = smoothstep(0.36, 0.46, causF(vWP.xz, uT)) * 0.7 + smoothstep(0.5, 0.62, causF(vWP.xz * 1.9 + 7.0, uT * 1.3)) * 0.3;   // 卡通焦散：硬边光纹
+    vec3 nW = normalize(cross(dFdx(vWP), dFdy(vWP)));
+    cs *= smoothstep(0.45, 0.85, abs(nW.y));                        // 光从上面来：陡坡上没有焦散
+    gl_FragColor.rgb += vec3(0.6, 0.85, 0.9) * cs * (1.0 - smoothstep(8.0, 75.0, -vWP.y)) * 0.26;   // 越深焦散越淡，深沟里没有
     gl_FragColor.rgb = mix(gl_FragColor.rgb, uTint, 0.15 + dd * 0.35);
     gl_FragColor.rgb += vec3(1.0, 0.42, 0.12) * vGlow * (0.42 + 0.14 * sin(uT * 1.5 + vWP.x * 0.2)); }
 `;
@@ -63,7 +65,7 @@ const KELP_V = `
 
 // 海藻：菱形截面的细长叶片，6 节，往上变窄、带一点弯；底色深橄榄 → 叶尖黄绿
 function kelpGeo() {
-  const SEG = 6, pos = [], col = [], idx = [], ring = [[.5, 0], [0, .13], [-.5, 0], [0, -.13]];
+  const SEG = 5, pos = [], col = [], idx = [], ring = [[.5, 0], [0, .13], [-.5, 0], [0, -.13]];
   const c0 = C(0x3a6a2a), c1 = C(0xa6c24c);
   for (let s = 0; s <= SEG; s++) {
     const t = s / SEG, w = (1 - t * .7) * (.8 + .2 * Math.sin(t * 9)), bend = Math.sin(t * 5.5) * .22 * t, c = c0.clone().lerp(c1, t);
@@ -162,7 +164,11 @@ export function createSeabed(ctx) {
   const _c = new THREE.Color();
   function buildChunk(slot, ci, cj) {
     const x0 = ci * CH, z0 = cj * CH, base = slot * VPC;
-    for (let j = 0; j <= NC; j++) for (let i = 0; i <= NC; i++) H[j * (NC + 1) + i] = Math.min(seabedY(x0 + i * CELL, z0 + j * CELL), -2.5);
+    // 岛的水下坡由 islands.js 自己画：这里在岛坡上把海底往下让 3 米，两层不打架（台阶藏在岛坡下面）
+    for (let j = 0; j <= NC; j++) for (let i = 0; i <= NC; i++) {
+      const x = x0 + i * CELL, z = z0 + j * CELL, y = seabedY(x, z), g = groundAt(x, z);
+      H[j * (NC + 1) + i] = Math.min(g > -900 && g >= y - .01 ? y - 3 : y, -2.5);
+    }
     const vents = [];
     for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) { const v = ventOf(ci + a, cj + b); if (v) vents.push(v); }
     const P = posA.array, Cc = colA.array, G = glowA.array;
@@ -193,7 +199,7 @@ export function createSeabed(ctx) {
     }
     // 海藻：翠岛海、水深 14 以上的地方，成片长（低频噪声定疏密）
     const dens = .5 + .5 * Math.sin(x0 * .0123 + 1.1) * Math.sin(z0 * .0097 + .4);
-    const ncl = Math.floor(dens * 4 + hash(ci, cj, 12) * 1.5);
+    const ncl = Math.floor(dens * 2.6 + hash(ci, cj, 12) * 1.2);
     for (let k = 0; k < ncl; k++) {
       const cx = x0 + 4 + hash(ci, cj, 100 + k) * (CH - 8), cz = z0 + 4 + hash(ci, cj, 120 + k) * (CH - 8);
       if (zoneAt(cx, cz) !== 'green') continue;
@@ -220,7 +226,7 @@ export function createSeabed(ctx) {
     instAt = { x: cam.x, z: cam.z };
     const near = (o, r) => { const d = (o.x - cam.x) ** 2 + (o.z - cam.z) ** 2; return d < r * r ? d : -1; };
     list.length = 0;
-    for (const s of slots) if (s) for (const k of s.kelps) { const d = near(k, 135); if (d >= 0) list.push([d, k]); }
+    for (const s of slots) if (s) for (const k of s.kelps) { const d = near(k, 125); if (d >= 0) list.push([d, k]); }
     list.sort((a, b) => a[0] - b[0]);
     let n = 0;
     for (const [, k] of list) {
@@ -228,7 +234,7 @@ export function createSeabed(ctx) {
       _m.compose(_p.set(k.x, k.y, k.z), _q.identity(), _s.set(k.s, k.h, k.s)); kelp.setMatrixAt(n, _m);
       kelp.setColorAt(n, _kc.copy(KC0).lerp(KC1, k.t)); n++;
     }
-    kelp.count = n; kelpH.count = Math.min(n, 110);
+    kelp.count = n; kelpH.count = Math.min(n, 90);
     n = 0;
     for (const s of slots) if (s) for (const r of s.rocks) {
       if (n >= ROCK_MAX || near(r, 150) < 0) continue;
@@ -252,6 +258,7 @@ export function createSeabed(ctx) {
   return {
     group,
     get ready() { return built >= NSLOT; },
+    setQuality(q) { kelpH.visible = rockH.visible = ventH.visible = q >= 1; },
     update(S, cam, wt, k, under, uwC, dt) {
       uT.value = wt; uKT.value = wt; uTint.value.copy(uwC);
       capMat.color.setRGB(1, .45 + .08 * Math.sin(wt * 1.5), .18);
@@ -266,7 +273,7 @@ export function createSeabed(ctx) {
       }
       if (todo.length) {
         todo.sort((a, b) => a[0] - b[0]);
-        const n = (vis && todo.length > 16) || built < NSLOT ? todo.length : 4;   // 平时每帧最多建 4 块（约 0.5 毫秒）
+        const n = vis && (todo.length > 16 || built < NSLOT) ? todo.length : vis ? 4 : 8;   // 平时每帧最多建 4 块（约 0.5 毫秒）；低空预建每帧 8 块
         for (let i = 0; i < Math.min(n, todo.length); i++) { const [, slot, ci, cj] = todo[i]; if (!slots[slot]) built++; buildChunk(slot, ci, cj); }
         posA.needsUpdate = colA.needsUpdate = glowA.needsUpdate = true;
         rebuildInst(cam);

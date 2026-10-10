@@ -6,16 +6,18 @@
 //         提示音（目标 / 图鉴 / 预警）→ cue ┼→ 水下低通 → 总音量 → 压限器 → 软削波（|x| < 0.91）→ 扬声器
 //         两首曲子 → music ┘            ↖ 混响（音乐和部分音效的送出）
 // 水下：世界声（音效 + 音乐 + 混响）过 900 Hz 低通；提示音只降到 2500 Hz，免得目标完成的铃声被闷没了。
+// 手机喇叭 700 Hz 以下基本出不来：低频的「咚」都要带一层 300~900 Hz 的中频身体（_lab/audio.html 用 700 Hz 高通模拟手机检查）。
 
 const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
 const mtof = m => 440 * Math.pow(2, (m - 69) / 12);
-export const VOL = { master: .9, sfx: .85, cue: .8, music: .36 };   // 默认音量：音乐比音效小
-const MAXV = 24;                                                   // 同时发声的一次性音效上限
+export const VOL = { master: 1.1, sfx: .85, cue: .8, music: .5 };   // 默认音量：音乐比音效小
+const MAXV = 24, MAXV_LOW = 16;                                     // 同时发声的一次性音效上限；水花 / 气泡 / 扇翅 / 光点只能占 16 个
 
 // 同名音效的最小间隔（秒）：一帧里来好几个就往后错开一点，排太远就丢
 const GAP = { flap: .1, eat: .045, splash: .07, orb: .045, bump: .25, alert: .45, crossWarn: .14, enterWater: .25, exitWater: .25,
   bite: .3, cook: .08, stun: .08, dash: .2, goal: .5, codex: .3, evolve: 2, shield: .5, bubble: .05, tap: .04 };
-const PRIO = { evolve: 1, goal: 1, codex: 1, bite: 1, alert: 1 };  // 满员也照样响
+const PRIO = { evolve: 1, goal: 1, codex: 1, bite: 1, alert: 1, eat: 1, cook: 1, stun: 1 };   // 满员也照样响（「吃得脆」是核心手感）
+const LOW = { splash: 1, bubble: 1, flap: 1, orb: 1 };                                       // 背景性的小声音：先让位
 
 // ---------- 曲子 ----------
 // 和弦：每两小节一个；pad = 铺底长音，arp = 琶音能用的音（低 → 高）。全在 C 五声音阶（C D E G A）里，怎么叠都不打架
@@ -78,9 +80,9 @@ export function buildEngine(ac) {
       for (let i = 0; i < n; i++) d[p + i] += (rnd() * 2 - 1) * a * Math.exp(-i / (n * .22)) * Math.min(1, i / (SR * .001));   // 1 毫秒起音，不扎耳
     }
   });
-  const IR = mkBuf(2.2, 2, d => {
-    let lp = 0;
-    for (let i = 0; i < d.length; i++) { const t = i / SR; lp += ((rnd() * 2 - 1) - lp) * (.08 + .55 * Math.exp(-t * 1.5)); d[i] = lp * Math.exp(-t * 2.8) * Math.min(1, t / .01); }
+  const IR = mkBuf(1.4, 2, d => {   // 1.4 秒的尾巴（低端手机卷积省一点），最后 0.3 秒淡到 0
+    let lp = 0; const n = d.length;
+    for (let i = 0; i < n; i++) { const t = i / SR; lp += ((rnd() * 2 - 1) - lp) * (.08 + .55 * Math.exp(-t * 1.5)); d[i] = lp * Math.exp(-t * 3) * Math.min(1, t / .01, (1.4 - t) / .3); }
   });
   const WARM = ac.createPeriodicWave(new Float32Array(8), new Float32Array([0, 1, .45, .22, .1, .05, .025, .01]));
 
@@ -198,15 +200,17 @@ export function buildEngine(ac) {
       noise(v, t, .006, .16 + .1 * s, .45, 'bandpass', 2400, 650 / Math.sqrt(s), 1.3);
       fin(v);
     },
-    alert(t, o) {        // 天敌「!」：两声柔和的低音「嘟-嘟」，第二声低一点
+    alert(t, o) {        // 天敌「!」：两声柔和的「嘟-嘟」（C5 → G4），带 2 倍泛音，手机喇叭也听得见
       const v = V(t, 1, .1, cue, o.pan || 0);
-      tone(v, 'sine', 262, 0, t, .015, .16, .27); tone(v, 'triangle', 262, 0, t, .015, .1, .06);
-      tone(v, 'sine', 196, 0, t + .19, .015, .2, .27); tone(v, 'triangle', 196, 0, t + .19, .015, .12, .06);
+      for (const [f, tt, d] of [[523.25, t, .16], [392, t + .19, .2]]) {
+        tone(v, 'sine', f, f * .985, tt, .015, d, .22, d); tone(v, 'sine', f * 2, 0, tt, .012, d * .6, .08); tone(v, 'triangle', f, 0, tt, .015, d * .7, .1);
+      }
       fin(v);
     },
-    bite(t, o) {         // 被咬：软软的「噗」，掉光点时加几粒往下走的小音
+    bite(t, o) {         // 被咬：软软的「噗」（低频 + 中频身体，手机上也有），掉光点时加几粒往下走的小音
       const v = V(t, 1, .05);
-      tone(v, 'sine', 150, 50, t, .006, .3, .5, .2); noise(v, t, .004, .12, .25, 'lowpass', 500, 200, 0);
+      tone(v, 'sine', 150, 50, t, .006, .3, .4, .2); tone(v, 'triangle', 340, 150, t, .005, .2, .22, .14);
+      noise(v, t, .004, .14, .3, 'bandpass', 900, 450, 1.2);
       for (let i = 0; i < Math.min(o.lost || 0, 4); i++) tone(v, 'sine', mtof(84 - i * 3), 0, t + .1 + i * .06, .003, .14, .06);
       fin(v);
     },
@@ -232,9 +236,10 @@ export function buildEngine(ac) {
       [60, 67, 76, 79].forEach(m => tone(v, 'sine', mtof(m), 0, t + 1.5, .5, 1.8, .06));
       fin(v);
     },
-    bump(t) {            // 撞岛：软「咚」
+    bump(t) {            // 撞岛：软「咚」（低频 + 中频身体）
       const v = V(t, 1, .03);
-      tone(v, 'sine', 170, 70, t, .004, .2, .45, .12); noise(v, t, .003, .08, .22, 'lowpass', 600, 250, 0);
+      tone(v, 'sine', 170, 70, t, .004, .2, .36, .12); tone(v, 'triangle', 330, 160, t, .004, .16, .22, .1);
+      noise(v, t, .003, .1, .3, 'bandpass', 850, 400, 1.2);
       fin(v);
     },
     crossWarn(t) {       // 跨界快到时间：轻轻的木鱼「嗒」（音高放低，水下也听得见）
@@ -266,17 +271,22 @@ export function buildEngine(ac) {
     const now = ac.currentTime; t = t == null ? now + .01 : t;
     const gap = GAP[name] || .03, l = last[name] ?? -9;
     if (t < l + gap) { if (l + gap - t > .2) { E.dropped++; return false; } t = l + gap; }
-    if (E.voices >= MAXV && !PRIO[name]) { E.dropped++; return false; }
+    if (!PRIO[name] && E.voices >= (LOW[name] ? MAXV_LOW : MAXV)) { E.dropped++; return false; }
     last[name] = t; f(t, o); return true;
   };
 
-  // ---- 循环声：风 / 喷火 / 水下底噪（一直开着，只调增益，不再新建节点）----
-  const loop = (buf, to) => { const s = ac.createBufferSource(); s.buffer = buf; s.loop = true; s.connect(to); s.start(0, rnd() * buf.duration); return s; };
+  // ---- 循环声：风 / 水下底噪一直开着，只调增益；喷火那一串（3 个循环噪声 + 3 个滤波）按下才搭，停了 2 秒拆掉 ----
+  const loop = (buf, to, t = 0) => { const s = ac.createBufferSource(); s.buffer = buf; s.loop = true; s.connect(to); s.start(t, rnd() * buf.duration); return s; };
   const windG = G(0, sfx), windG2 = G(0, sfx), windB1 = BQ('bandpass', 400, .9, windG), windB2 = BQ('bandpass', 1200, 3, windG2);
   const wsrc = loop(WHITE, windB1); wsrc.connect(windB2);
   const fireG = G(0, sfx); fireG.connect(G(.25, sfxVerb));
-  const fireLp = BQ('lowpass', 900, 1, G(.55, fireG)), fireRum = BQ('bandpass', 150, .5, G(.7, fireG)), fireHp = BQ('highpass', 1600, 0, G(.45, fireG));
-  loop(WHITE, fireLp); loop(BROWN, fireRum); loop(CRACK, fireHp);
+  let fire = null;   // { lp, parts, off: 停火的时刻（-1 = 正在喷）}
+  const fireUp = t => {
+    const part = (buf, f, k) => { const g = G(k, fireG); f.connect(g); return [loop(buf, f, t), f, g]; };   // 噪声 → 滤波 → 比例
+    const lp = BQ('lowpass', 900, 1);
+    return { lp, off: -1, parts: [part(WHITE, lp, .55), part(BROWN, BQ('bandpass', 150, .5), .7), part(CRACK, BQ('highpass', 1600, 0), .45)] };
+  };
+  const fireDown = (f, t) => { for (const p of f.parts) { p[0].onended = () => { for (const n of p) try { n.disconnect(); } catch (e) {} }; p[0].stop(t); } };
   const ambG = G(0, sfx), ambMod = G(.7, ambG), ambLp = BQ('lowpass', 380, 2, ambMod);
   loop(BROWN, ambLp);
   const ambLfo = ac.createOscillator(); ambLfo.frequency.value = .12; ambLfo.connect(G(.3, ambMod.gain)); ambLfo.start(0);
@@ -288,10 +298,13 @@ export function buildEngine(ac) {
     set(windG2.gain, .1 * w * w * k * (L.water ? .3 : 1), t, .12);
     set(windB2.frequency, (800 + 1500 * w + 250 * (L.gust ?? .5)) * wat, t, .15);
     const fk = L.fire ? (L.fireK ?? 1) : 0;
+    if (fk) { if (!fire) fire = fireUp(t); fire.off = -1; set(fire.lp.frequency, 650 + 550 * (L.flick ?? .5), t, .04); }   // 不喷火时不再每帧排闪烁
+    else if (fire) { if (fire.off < 0) fire.off = t; else if (t - fire.off > 2) { fireDown(fire, t); fire = null; } }
     set(fireG.gain, .4 * fk, t, fk ? .05 : .12);
-    set(fireLp.frequency, 650 + 550 * (L.flick ?? .5), t, .04);
     set(ambG.gain, .2 * clamp(L.amb || 0, 0, 1), t, .3);
   };
+  E.fireOn = () => !!fire;                                                          // 测试用：喷火那串节点在不在
+  E.levels = () => ({ wind: windG.gain.value + windG2.gain.value, fire: fireG.gain.value, amb: ambG.gain.value });   // 测试用：循环声现在的增益
 
   // ---- 音乐：前瞻排程，两首曲子各走各的拍子，只在「开着」时才建节点 ----
   // 一个乐器 = 一个增益，干声进曲子的 out，按比例送混响
@@ -325,7 +338,7 @@ export function buildEngine(ac) {
   function softPluck(dest, m, t, amp, dec) {
     const o = ac.createOscillator(), f = BQ('lowpass', 1100, 1), g = ac.createGain();
     o.type = 'triangle'; o.frequency.value = mtof(m);
-    f.frequency.setValueAtTime(1300, t); f.frequency.exponentialRampToValueAtTime(380, t + dec * .5);
+    f.frequency.setValueAtTime(1500, t); f.frequency.exponentialRampToValueAtTime(700, t + dec * .5);   // 留住 500~900 Hz：海龙大半时间在 900 Hz 低通下面，手机上也要听得见
     g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(amp, t + .02); g.gain.setTargetAtTime(0, t + .02, dec / 5);
     o.connect(f); f.connect(g); g.connect(dest); o.start(t); o.stop(t + dec + .05); o.onended = () => g.disconnect();
   }
@@ -338,17 +351,18 @@ export function buildEngine(ac) {
     const g = G(1, dest), part = (r, a, dd) => { const o = ac.createOscillator(), e = ac.createGain(); o.frequency.value = mtof(m) * r; env(e.gain, t, .004, dd, a); o.connect(e); e.connect(g); o.start(t); o.stop(t + dd + .05); return o; };
     part(2.76, amp * .3, d * .4); part(1, amp, d).onended = () => g.disconnect();
   }
-  // 鲸歌：正弦 + 三角波沿路径慢慢滑，4.5 Hz 的颤音，带通
+  // 鲸歌：正弦 + 三角波 + 高八度的正弦（手机喇叭靠它）沿路径慢慢滑，4.5 Hz 的颤音，带通
   function whale(dest, path, t, amp) {
-    const o = ac.createOscillator(), o2 = ac.createOscillator(), lfo = ac.createOscillator(), ld = G(14), f = BQ('bandpass', 520, .7), g = ac.createGain(), m2 = G(.25, f);
-    o.type = 'sine'; o2.type = 'triangle'; lfo.frequency.value = 4.5;
-    lfo.connect(ld); ld.connect(o.detune); ld.connect(o2.detune);
+    const o = ac.createOscillator(), o2 = ac.createOscillator(), o3 = ac.createOscillator(), lfo = ac.createOscillator(), ld = G(14), f = BQ('bandpass', 560, .7), g = ac.createGain(), m2 = G(.25, f), m3 = G(.35, f);
+    o.type = 'sine'; o2.type = 'triangle'; o3.type = 'sine'; lfo.frequency.value = 4.5;
+    lfo.connect(ld); ld.connect(o.detune); ld.connect(o2.detune); ld.connect(o3.detune);
     let tt = t;
-    for (const x of [o, o2]) x.frequency.setValueAtTime(mtof(path[0][0]), t);
-    for (let i = 1; i < path.length; i++) { tt += path[i][1]; for (const x of [o, o2]) x.frequency.exponentialRampToValueAtTime(mtof(path[i][0]), tt); }
+    const at = (i, f0, x) => x.frequency[i ? 'exponentialRampToValueAtTime' : 'setValueAtTime'](f0 * (x === o3 ? 2 : 1), i ? tt : t);
+    for (const x of [o, o2, o3]) at(0, mtof(path[0][0]), x);
+    for (let i = 1; i < path.length; i++) { tt += path[i][1]; for (const x of [o, o2, o3]) at(i, mtof(path[i][0]), x); }
     g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(amp, t + .9); g.gain.setValueAtTime(amp, tt - 1); g.gain.linearRampToValueAtTime(0, tt + .4);
-    o.connect(f); o2.connect(m2); f.connect(g); g.connect(dest);
-    for (const x of [o, o2, lfo]) { x.start(t); x.stop(tt + .5); }
+    o.connect(f); o2.connect(m2); o3.connect(m3); f.connect(g); g.connect(dest);
+    for (const x of [o, o2, o3, lfo]) { x.start(t); x.stop(tt + .5); }
     o.onended = () => g.disconnect();
   }
   // 一个八分音符的格子：天空曲 / 海洋曲
@@ -384,12 +398,13 @@ export function buildEngine(ac) {
   E.musicOn = true;
   E.musicTick = until => { tick(T.sky, until); tick(T.sea, until); };
   // m：0 = 天空曲，1 = 海洋曲（等功率交叉）；tgt：正在往哪边走
-  E.setMix = (m, tgt, t) => {
-    const on = E.musicOn ? 1 : 0, ws = Math.cos(m * Math.PI / 2) * on, wa = Math.sin(m * Math.PI / 2) * on;
-    for (const [tr, w, want] of [[T.sky, ws, tgt < 1], [T.sea, wa, tgt > 0]]) {
-      const was = tr.on; tr.on = !!on && (w > .002 || want); if (tr.on && !was) tr.need = true;
-      tr.w = w; set(tr.out.gain, w, t, .06); set(tr.wet.gain, w, t, .06);
-    }
+  const mixOne = (tr, w, want, t) => {
+    const was = tr.on; tr.on = E.musicOn && (w > .002 || want); if (tr.on && !was) tr.need = true;
+    tr.w = w; set(tr.out.gain, w, t, .06); set(tr.wet.gain, w, t, .06);
+  };
+  E.setMix = (m, tgt, t) => {   // 每帧 + 定时器都会调：不建数组
+    const on = E.musicOn ? 1 : 0;
+    mixOne(T.sky, Math.cos(m * Math.PI / 2) * on, tgt < 1, t); mixOne(T.sea, Math.sin(m * Math.PI / 2) * on, tgt > 0, t);
   };
   E.startMusic = t => { for (const tr of [T.sky, T.sea]) { tr.next = t; tr.step = 0; } };
   return E;
@@ -408,17 +423,23 @@ export async function renderOffline(dur, setup, sr = 44100) {
 // 游戏里用的外壳：第一次触摸时建 AudioContext，按 S 和事件出声
 // ======================================================================
 export function createAudio(opt = {}) {
-  let ac = null, E = null, muted = !!opt.muted, unlocked = false, timer = 0, muteT = 0;
-  const st = { mix: 0, tgt: 0, time: 0, orbN: 0, orbT: -9, bubT: 1 };
+  let ac = null, E = null, muted = !!opt.muted, unlocked = false, timer = 0, muteT = 0, musicOn = opt.music !== false;
+  const st = { mix: 0, tgt: 0, hold: 0, time: 0, orbN: 0, orbT: -9, cueT: -9, bubT: 1, S: undefined, simT: 0, idle: 0,
+    L: { wind: 0, windK: 0, water: false, gust: .5, fire: 0, fireK: 1, flick: .5, amb: 0 } };
   const PITCH = [1.3, 1.1, .92];   // 扇翅音高：幼龙尖一点，成龙低沉
   const hidden = () => typeof document !== 'undefined' && document.hidden;
   const resume = () => { const p = ac.resume(); if (p && p.catch) p.catch(() => {}); }, suspend = () => { const p = ac.suspend(); if (p && p.catch) p.catch(() => {}); };   // 老 webkit 不一定返回 Promise
+  // 只在「真手势」里建 / 恢复：触屏的 pointerdown 不算用户手势（Chrome 会报 not allowed to start），等紧跟着的 pointerup / touchend / click
+  // 没有 navigator.userActivation 的老浏览器照旧（靠每次 unlock 时放一下空缓冲兜底）；opt.gesture = false 关掉这道检查（无头测试用）
+  const noGesture = () => opt.gesture !== false && typeof navigator !== 'undefined' && navigator.userActivation && !navigator.userActivation.isActive;
+  const kick = () => { try { const s = ac.createBufferSource(); s.buffer = ac.createBuffer(1, 1, 22050); s.connect(ac.destination); s.start(0); } catch (e) {} };   // 老 iOS 要在手势里真放一下
 
   function ensure() {
     if (ac) return true;
     const A = typeof window !== 'undefined' && (window.AudioContext || window.webkitAudioContext); if (!A) return false;
     try { ac = new A({ latencyHint: 'interactive' }); } catch (e) { try { ac = new A(); } catch (e2) { return false; } }
     E = buildEngine(ac);
+    E.musicOn = musicOn;   // 解锁前调过 setMusic 的也记得
     E.setMaster(muted ? 0 : 1, 0);
     E.startMusic(ac.currentTime + .15);
     return true;
@@ -426,14 +447,10 @@ export function createAudio(opt = {}) {
   // 音乐的前瞻排程放在定时器里：主循环暂停时曲子也不断
   const tick = () => { if (ac && ac.state === 'running') { E.setMix(st.mix, st.tgt, ac.currentTime); E.musicTick(ac.currentTime + .6); } };
   function unlock() {
-    if (!ensure()) return;
-    if (!unlocked) {
-      unlocked = true;
-      try { const s = ac.createBufferSource(); s.buffer = ac.createBuffer(1, 1, 22050); s.connect(ac.destination); s.start(0); } catch (e) {}   // 老 iOS 要在手势里真放一下
-      timer = setInterval(tick, 150);
-    }
+    if (noGesture() || !ensure()) return;
+    if (!unlocked) { unlocked = true; kick(); timer = setInterval(tick, 150); }
     if (muted) { if (ac.state === 'running') suspend(); }   // 静音状态下在手势里建出来的会直接是 running，挂起省电
-    else if (!hidden() && ac.state !== 'running') resume();
+    else if (!hidden() && ac.state !== 'running') { kick(); resume(); }
   }
   function setMute(b) {
     muted = !!b;
@@ -451,8 +468,8 @@ export function createAudio(opt = {}) {
     });
     addEventListener('pagehide', () => { if (ac) suspend(); });
     addEventListener('pageshow', () => { if (ac && unlocked && !muted && !hidden()) resume(); });
-    // 兜底：任何一次手势都试着解锁 / 恢复（iOS 被电话打断后 state = 'interrupted'）
-    if (opt.autoUnlock !== false) for (const ev of ['pointerdown', 'touchend', 'click', 'keydown']) addEventListener(ev, unlock, { capture: true, passive: true });
+    // 兜底：任何一次真手势都试着解锁 / 恢复（iOS 被电话打断后 state = 'interrupted'）。不听 pointerdown：触屏按下不算手势
+    if (opt.autoUnlock !== false) for (const ev of ['pointerup', 'touchend', 'click', 'keydown']) addEventListener(ev, unlock, { capture: true, passive: true });
   }
 
   // 声源方位：相对龙头朝向的左右（-1..1）和远近衰减
@@ -469,7 +486,7 @@ export function createAudio(opt = {}) {
       case 'splash': { const w = where(e, h); if (w.k > .16) E.play('splash', { size: e.size, k: w.k, pan: w.pan }); break; }
       case 'alert': { const c = S && S.creatures.find(c => c.id === e.id); E.play('alert', { pan: c ? where(c, h).pan : 0 }); break; }
       case 'orb': st.orbN = t - st.orbT < .7 ? st.orbN + 1 : 0; st.orbT = t; E.play('orb', { n: st.orbN }); break;
-      case 'goal': case 'codex': E.play(e.type, e, t + .14); break;   // 晚一点，别和「咔」叠在一起
+      case 'goal': case 'codex': { const at = Math.max(t + .14, st.cueT + .4); st.cueT = at; E.play(e.type, e, at); break; }   // 晚一点，别和「咔」叠在一起；同一口里两个铃错开 0.4 秒
       default: E.play(e.type, e);
     }
   }
@@ -480,10 +497,20 @@ export function createAudio(opt = {}) {
     dt = clamp(dt || 0, 0, .1); st.time += dt;
     const now = ac.currentTime, u = clamp(under || 0, 0, 1);
     E.setUnder(u, now);
-    const tgt = st.tgt = u > .5 ? 1 : 0; st.mix += clamp(tgt - st.mix, -dt / 1.5, dt / 1.5);   // 两首曲子 1.5 秒交叉
-    E.setMix(st.mix, tgt, now);
-    const h = S && S.hero, c = S && S.cfg || {};
-    const L = { wind: 0, fire: 0, amb: u };
+    // sim 还在走吗：S.t 在最近 0.15 秒（真时间）里变过才算。暂停 / 结算 / 换龙回标题时 S 还在但冻住了 → 风和火停掉
+    // （不能逐帧比：90 / 120 Hz 屏上有的帧本来就没走 sim）
+    if (S !== st.S) { st.S = S; st.simT = S ? S.t : 0; st.idle = 0; }
+    else if (S && S.t !== st.simT) { st.simT = S.t; st.idle = 0; }
+    else st.idle += dt;
+    const live = !!S && st.idle < .15;
+    // 换曲有迟滞：在水下待满 1 秒才换海洋曲，出水 0.5 秒才换回天空曲（火龙扎一下水不来回切歌；900 Hz 低通马上就有）。开局头 0.5 秒直接换
+    const want = u > .5 ? 1 : 0;
+    if (want === st.tgt) st.hold = 0;
+    else if ((st.hold += dt) >= (want ? 1 : .5) || live && S.t < .5) { st.tgt = want; st.hold = 0; }
+    st.mix += clamp(st.tgt - st.mix, -dt / 1.5, dt / 1.5);   // 两首曲子 1.5 秒交叉
+    E.setMix(st.mix, st.tgt, now);
+    const h = live && S.hero, c = live && S.cfg || {}, L = st.L;
+    L.wind = 0; L.fire = 0; L.amb = u; L.windK = 0; L.water = false;
     if (h) {
       const base = c.level || c.cruise || 20, top = c.dive || c.dash || 45;
       const tm = st.time;
@@ -502,7 +529,7 @@ export function createAudio(opt = {}) {
     unlock, setMute, update,
     get muted() { return muted; },
     play(name, o) { if (E && ac.state === 'running') E.play(name, o || {}); },     // 额外：界面音效等（'tap'）
-    setMusic(on) { if (E) E.musicOn = !!on; },
+    setMusic(on) { musicOn = !!on; if (E) E.musicOn = musicOn; },                  // 解锁前调也算数
     get ctx() { return ac; }, get engine() { return E; },
   };
 }

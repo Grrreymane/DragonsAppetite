@@ -194,8 +194,8 @@ function stepEvolve(dt) {
   if (!evo) return 1;
   evo.t += dt;
   const glow = evo.t < .6 ? evo.t / .6 : evo.t < 1.6 ? 1 : Math.max(0, 1 - (evo.t - 1.6) / .9);
-  dragon.flash.value = .3 * glow;
-  if (evo.t < 2.2 && Math.random() < .6) P.emit('gold', S.hero.x + (Math.random() - .5) * S.hero.len, S.hero.y + (Math.random() - .5) * S.hero.len * .5, S.hero.z + (Math.random() - .5) * S.hero.len, 0, 3 + Math.random() * 3, 0, 1.2, .5 + Math.random() * .4, { drag: .5 });
+  dragon.flash.value = .14 * glow;
+  if (evo.t < 2.2 && Math.random() < .7) P.emit('gold', S.hero.x + (Math.random() - .5) * S.hero.len, S.hero.y + (Math.random() - .5) * S.hero.len * .5, S.hero.z + (Math.random() - .5) * S.hero.len, 0, 2 + Math.random() * 3, 0, 1.3, (.12 + Math.random() * .12) * Math.max(1, S.hero.len / 6), { drag: .5, grow: .8 });
   if (!evo.swapped && evo.t > .6) {
     evo.swapped = true;
     evo.ready.then(r => { dragon.build(r.loaded, S.hero.len, r.bones); temp = r.temp; ui.setTemp && ui.setTemp(temp); }).catch(() => { });

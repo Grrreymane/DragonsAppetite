@@ -1,16 +1,18 @@
 # 渲染转台视频的帧（Cycles + 阴影捕捉，透明背景，之后再铺米色底）
-# blender -b fire_adult_rig.blend -P turntable.py -- <动作名> <帧目录> <秒数> <宽> <高> [地面高度] [采样]
+# blender -b fire_adult_rig.blend -P turntable.py -- <动作名> <帧目录> <秒数> <宽> <高> [地面高度|none] [采样]
+#   地面高度 = 脚底的 z（火龙成龙站立 -0.235）；写 none 不放地面（海龙游泳姿势用）
+#   骨架取场景里第一个 ARMATURE（火龙叫 DragonRig，海龙叫 SeaRig）
 import bpy, sys, os, math
 from mathutils import Vector
 
 argv = sys.argv[sys.argv.index('--') + 1:]
 ACT, OUT, SECS, W, H = argv[0], argv[1], float(argv[2]), int(argv[3]), int(argv[4])
-GROUND = float(argv[5]) if len(argv) > 5 else -0.235
+GROUND = None if len(argv) > 5 and argv[5].lower() == 'none' else float(argv[5]) if len(argv) > 5 else -0.235
 SAMPLES = int(argv[6]) if len(argv) > 6 else 32
 os.makedirs(OUT, exist_ok=True)
 sc = bpy.context.scene; FPS = 24
 sc.render.fps = FPS
-arm = bpy.data.objects['DragonRig']
+arm = next(o for o in bpy.data.objects if o.type == 'ARMATURE')
 
 # 只留这个动作，让它循环到整段视频
 total = int(SECS * FPS)
@@ -49,9 +51,10 @@ rim_d = bpy.data.lights.new('rim', 'SUN'); rim_d.energy = 1.4; rim_d.color = (1,
 rim = bpy.data.objects.new('rim', rim_d); sc.collection.objects.link(rim); rim.rotation_euler = (math.radians(60), 0, math.radians(160))
 rim_d.use_shadow = False
 
-# 地面：只留阴影
-bpy.ops.mesh.primitive_plane_add(size=20, location=(0, 0, GROUND))
-ground = bpy.context.active_object; ground.is_shadow_catcher = True
+# 地面：只留阴影（GROUND = None 时不放）
+if GROUND is not None:
+    bpy.ops.mesh.primitive_plane_add(size=20, location=(0, 0, GROUND))
+    ground = bpy.context.active_object; ground.is_shadow_catcher = True
 
 # 镜头绕龙转一圈
 piv = bpy.data.objects.new('pivot', None); sc.collection.objects.link(piv)

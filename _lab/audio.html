@@ -55,7 +55,7 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const S = { t: 0, kind: 'fire', stage: 2, cfg: DRAGONS.fire.stages[2],
   hero: { x: 0, y: 30, z: 0, yaw: 0, pitch: 0, speed: 22, medium: 'air', firing: false, tuck: 0 },
   creatures: [{ id: 7, sp: 'roc', x: -40, y: 50, z: 30 }], combo: { n: 0, t: 0 } };
-const A = createAudio();
+const A = createAudio({ gesture: !/[?&]nogesture/.test(location.search) });   // 无头自检没有真手势：?nogesture 关掉手势检查
 window.__A = A;
 let pending = [], under = 0, autoflap = false, flapT = 0, comboT = 0;
 const ev = e => pending.push(e);
@@ -99,6 +99,7 @@ let lastT = performance.now();
 function frame(now) {
   const dt = Math.min(.1, (now - lastT) / 1000); lastT = now;
   const h = S.hero;
+  S.t += dt;   // 假装 sim 在走（audio 看 S.t 判断是不是暂停了）
   h.speed = +$('speed').value; h.pitch = +$('pitch').value; under = +$('under').value;
   h.medium = under > .5 ? 'water' : 'air';
   comboT -= dt;

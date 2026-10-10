@@ -1,12 +1,19 @@
 # 导入 glb，打印包围盒，渲染 侧视 / 顶视 / 正视 三张正交图（用来定关节位置）
-# blender -b --factory-startup -P render_views.py -- <in.glb> <out_dir>
-import bpy, sys, os, mathutils
+# blender -b --factory-startup -P render_views.py -- <in.glb> <out_dir> [rot_z_deg=0]
+#   rot_z_deg：导入后先绕 Z 转多少度，让头朝 +X（火龙 0；海龙 90，和 rigs/<name>.json 的 import_rot_z_deg 一致）
+import bpy, sys, os, math, mathutils
 
 argv = sys.argv[sys.argv.index('--') + 1:]
 src, out = argv[0], argv[1]
+ROT = float(argv[2]) if len(argv) > 2 else 0.0
 os.makedirs(out, exist_ok=True)
 bpy.ops.wm.read_factory_settings(use_empty=True)
 bpy.ops.import_scene.gltf(filepath=src)
+if ROT:
+    R = mathutils.Matrix.Rotation(math.radians(ROT), 4, 'Z')
+    for o in [o for o in bpy.context.scene.objects if o.parent is None]: o.matrix_world = R @ o.matrix_world
+    bpy.context.view_layer.update()
+    print('ROT_Z', ROT)
 meshes = [o for o in bpy.context.scene.objects if o.type == 'MESH']
 lo = mathutils.Vector((1e9,) * 3); hi = -lo
 for o in meshes:
