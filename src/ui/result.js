@@ -49,7 +49,7 @@ export function createResult(root, api) {
       const blob = await new Promise(r => cv.toBlob(r, 'image/png'));
       const file = blob && typeof File === 'function' ? new File([blob], 'dragon.png', { type: 'image/png' }) : null;
       if (file && navigator.canShare && navigator.canShare({ files: [file] }) && navigator.share) {
-        try { await navigator.share({ files: [file], title: '龙游天海' }); } catch (_) { /* 用户取消 */ }
+        try { await navigator.share({ files: [file], title: '小龙大胃王' }); } catch (_) { /* 用户取消 */ }
       } else if (blob) {
         const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'dragon.png';
         document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
@@ -80,7 +80,7 @@ export function createResult(root, api) {
 // 竖版分享卡 720×1280
 async function drawCard(info, shot) {
   const W = 720, H = 1280, sea = info.kind === 'sea';
-  try { await Promise.all([document.fonts.load(`96px ${FT}`, '龙游天海成少年！'), document.fonts.load(`48px ${FP}`, '用时吃了图鉴0123456789:/')]); } catch (_) { /* 字体没好就用系统字 */ }
+  try { await Promise.all([document.fonts.load(`96px ${FT}`, '小龙大胃王成少年！'), document.fonts.load(`48px ${FP}`, '用时吃了图鉴0123456789:/')]); } catch (_) { /* 字体没好就用系统字 */ }
   const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
   const x = cv.getContext('2d');
   const g = x.createLinearGradient(0, 0, 0, H);
@@ -93,7 +93,7 @@ async function drawCard(info, shot) {
     for (let a = 0; a < 16; a++) x.fillText(s, X + Math.cos(a / 16 * 6.283) * r, Y + Math.sin(a / 16 * 6.283) * r);
     x.fillText(s, X, Y + r + 3); x.fillStyle = fill; x.fillText(s, X, Y);
   };
-  txt('龙游天海', W / 2, 112, `96px ${FT}`, '#fff');
+  txt('小龙大胃王', W / 2, 112, `96px ${FT}`, '#fff');
   // 照片框
   const fx = 60, fy = 200, fw = 600, fh = 640, rr = 36;
   const rrect = () => { x.beginPath(); x.moveTo(fx + rr, fy); x.arcTo(fx + fw, fy, fx + fw, fy + fh, rr); x.arcTo(fx + fw, fy + fh, fx, fy + fh, rr); x.arcTo(fx, fy + fh, fx, fy, rr); x.arcTo(fx, fy, fx + fw, fy, rr); x.closePath(); };

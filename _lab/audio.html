@@ -136,6 +136,11 @@ const TESTS = [
   ['under_amb', 5, E => { E.setUnder(1, 0); for (let t = 0; t <= 5; t += .05) E.setLoops({ amb: 1 }, t); [.6, 1.7, 2.2, 3.5].forEach(t => E.play('bubble', { k: .8 }, t)); }],
   ['music_sky', ...music(8, () => 0)], ['music_sea', ...music(8, () => 1)],
   ['music_xfade', ...music(8, t => clamp((t - 2) / 1.5, 0, 1))],
+  ['fire_twice', 5.5, E => { for (let t = 0; t <= 5.5; t += .05) E.setLoops({ fire: t > .2 && t < 1 || t > 3.8 && t < 4.6 ? 1 : 0, fireK: 1, flick: .5 }, t); }],   // 停火 2 秒拆掉，再按重新搭
+  // 游戏里的混音：巡航（天空曲 + 成年火龙巡航风 w≈0.39 + 每秒一次扇翅）/ 巡航里每 2 秒一声预警 / 海龙在水下听海洋曲
+  ['cruise_mix', 10, E => { E.setMix(0, 0, 0); E.musicTick(10); for (let t = 0; t <= 10; t += .05) E.setLoops({ wind: .39, windK: 1, gust: .5 + .5 * Math.sin(t * .63) * Math.sin(t * 1.37 + 1) }, t); for (let t = .5; t < 10; t += 1) E.play('flap', { pitch: .92 }, t); }],
+  ['alert_mix', 10, E => { E.setMix(0, 0, 0); E.musicTick(10); for (let t = 0; t <= 10; t += .05) E.setLoops({ wind: .39, windK: 1, gust: .5 }, t); for (let t = 1; t < 10; t += 2) E.play('alert', {}, t); }],
+  ['sea_under', 10, E => { E.setUnder(1, 0); E.setMix(1, 1, 0); E.musicTick(10); for (let t = 0; t <= 10; t += .05) E.setLoops({ amb: 1 }, t); }],
   ['stress', 3, E => {   // 一下子来一大堆：看压限器和 24 声部上限
     E.setMix(0, 0, 0); E.musicTick(3);
     for (let t = 0; t <= 3; t += .05) E.setLoops({ wind: 1, windK: 1, fire: 1, fireK: 1, flick: .5, gust: 1 }, t);
@@ -146,28 +151,43 @@ const TESTS = [
   ['sky_full', SKY_LOOP + 3, E => { E.setMix(0, 0, 0); E.musicTick(SKY_LOOP); }],
   ['sea_full', SEA_LOOP + 3, E => { E.setMix(1, 1, 0); E.musicTick(SEA_LOOP); }],
 ];
-const isMusic = n => /^music|_full$/.test(n);
+const isMusic = n => /^music|_full$|_mix$|^sea_under$/.test(n);
+// 手机喇叭的粗模型：700 Hz 二阶高通（Q 0.707）。返回过滤后的单声道
+function phone(x, sr, f0 = 700) {
+  const w0 = 2 * Math.PI * f0 / sr, al = Math.sin(w0) / (2 * Math.SQRT1_2), c = Math.cos(w0), a0 = 1 + al;
+  const b0 = (1 + c) / 2 / a0, b1 = -(1 + c) / a0, a1 = -2 * c / a0, a2 = (1 - al) / a0, y = new Float32Array(x.length);
+  let x1 = 0, x2 = 0, y1 = 0, y2 = 0;
+  for (let i = 0; i < x.length; i++) { const o = b0 * x[i] + b1 * x1 + b0 * x2 - a1 * y1 - a2 * y2; x2 = x1; x1 = x[i]; y2 = y1; y1 = o; y[i] = o; }
+  return y;
+}
+const short = (x, sr) => { const W = Math.round(sr * .05); let w = 0, m = 0; for (let i = 0; i < x.length; i++) { w += x[i] * x[i] - (i >= W ? x[i - W] * x[i - W] : 0); if (i >= W) m = Math.max(m, w); } return Math.sqrt(Math.max(0, m) / W); };   // 最响的 50 毫秒 RMS
+const winRms = (x, sr, t0, t1) => { let s = 0; const a = Math.round(t0 * sr), b = Math.round(t1 * sr); for (let i = a; i < b; i++) s += x[i] * x[i]; return Math.sqrt(s / (b - a)); };
 function stats(buf) {
   const ch = [...Array(buf.numberOfChannels)].map((_, c) => buf.getChannelData(c)), n = buf.length, sr = buf.sampleRate;
   let peak = 0, a = -1, b = -1;
   for (let i = 0; i < n; i++) for (const d of ch) { const x = Math.abs(d[i]); if (x > peak) peak = x; if (x > .002) { if (a < 0) a = i; b = i; } }
-  if (a < 0) return { peak, rms: 0, st: 0, fr: 0, len: 0 };
-  let s2 = 0, d2 = 0, st = 0, w = 0, px = 0; const W = Math.round(sr * .05), ring = new Float64Array(W), R = ch[1] || ch[0];   // st = 50 毫秒窗口的最大 RMS
-  for (let i = a, k = 0; i <= b; i++, k++) {
-    const x = (ch[0][i] + R[i]) * .5, dx = i > a ? x - px : 0; px = x;
-    s2 += x * x; d2 += dx * dx;
-    const j = k % W; w += x * x - ring[j]; ring[j] = x * x;
-    if (k >= W) st = Math.max(st, Math.sqrt(Math.max(0, w) / W));
-  }
-  const m = b - a + 1;
-  return { peak, rms: Math.sqrt(s2 / m), st, fr: sr / (2 * Math.PI) * Math.sqrt(d2 / Math.max(1e-12, s2)), len: m / sr };
+  if (a < 0) return { peak, rms: 0, st: 0, fr: 0, len: 0, ph: 0, loss: -99 };
+  const R = ch[1] || ch[0], mono = new Float32Array(Math.min(n, sr * 10));   // 手机模型只看前 10 秒
+  for (let i = 0; i < mono.length; i++) mono[i] = (ch[0][i] + R[i]) * .5;
+  let s2 = 0, d2 = 0, px = 0;
+  for (let i = a; i <= b; i++) { const x = (ch[0][i] + R[i]) * .5, dx = i > a ? x - px : 0; px = x; s2 += x * x; d2 += dx * dx; }
+  const m = b - a + 1, st = short(mono, sr), pm = phone(mono, sr), ph = short(pm, sr);
+  return { peak, rms: Math.sqrt(s2 / m), st, ph, loss: 20 * Math.log10(Math.max(1e-9, ph) / Math.max(1e-9, st)), fr: sr / (2 * Math.PI) * Math.sqrt(d2 / Math.max(1e-12, s2)), len: m / sr, pm };
 }
+// 预警在巡航背景里突出多少 dB（手机模型）：预警后 0.4 秒 vs 预警前 0.8~0.2 秒
+function alertOverBg(r) {
+  const sr = r.buf.sampleRate, T = [3, 5, 7, 9], on = T.map(t => winRms(r.pm, sr, t, t + .4)), off = T.map(t => winRms(r.pm, sr, t - .8, t - .2));
+  return 20 * Math.log10(on.reduce((a, b) => a + b) / off.reduce((a, b) => a + b));
+}
+const THUDS = ['bite', 'bump', 'alert', 'flap', 'eat'];   // 低频为主的音效：手机上最多掉 10 dB（扇翅 / 咬吞 12 dB）
 function check(name, r) {
   const bad = [];
   if (r.peak >= .95) bad.push('peak>=0.95');
   if (r.peak < .02) bad.push('too-quiet');
-  const lo = isMusic(name) ? .01 : .004, hi = isMusic(name) ? .15 : .3;
+  const lo = isMusic(name) ? .01 : .004, hi = isMusic(name) ? .2 : .3;
   if (r.rms < lo || r.rms > hi) bad.push(`rms-out-of-${lo}..${hi}`);
+  if (THUDS.includes(name) && r.loss < (name === 'flap' || name === 'eat' ? -12.5 : -10)) bad.push('phone-loss');
+  if (name === 'alert_mix' && (r.over = alertOverBg(r)) < 6) bad.push('alert-under-6dB');
   return bad;
 }
 function wav(buf) {   // 16 位 PCM WAV

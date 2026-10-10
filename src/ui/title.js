@@ -37,7 +37,7 @@ export function createTitle(root, api) {
   const el = blocker(h('div', 'd-title d-full'));
   el.hidden = true;
   el.innerHTML = `${BACKDROP}<div class="d-tin">
-    <h1 class="d-logo"><span>龙游</span><span>天海</span></h1>
+    <h1 class="d-logo"><span>小龙</span><span>大胃王</span></h1>
     <div class="d-cards"></div>
     <div class="d-tbot"></div>
   </div>`;
@@ -99,7 +99,7 @@ function tapCard(c, fn) {
 export function createLoading(root) {
   const el = blocker(h('div', 'd-load d-full'));
   el.hidden = true;
-  el.innerHTML = `${BACKDROP}<div class="d-lin"><h1 class="d-logo sm"><span>龙游</span><span>天海</span></h1>
+  el.innerHTML = `${BACKDROP}<div class="d-lin"><h1 class="d-logo sm"><span>小龙</span><span>大胃王</span></h1>
     <div class="d-lbar"><u></u></div><div class="d-ltxt">加载中</div><div class="d-lslow" hidden><span>网络慢</span></div></div>`;
   const bar = el.querySelector('.d-lbar u'), txt = el.querySelector('.d-ltxt'), slow = el.querySelector('.d-lslow');
   slow.appendChild(button('retry', '重试', 'd-btn', () => location.reload()));

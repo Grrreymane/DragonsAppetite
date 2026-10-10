@@ -11,13 +11,14 @@
 <script type="importmap">{ "imports": { "three": "../lib/three.module.min.js" } }</script>
 </head>
 <body>
-<div id="t">龙游天海</div><div id="s">火龙翱翔天空 · 海龙遨游大海</div>
+<div id="t">小龙大胃王</div><div id="s">Dragon's Appetite</div>
 <script type="module">
 // 封面（1920×1080）：天空 + 海 + 岛 + 两条成龙。python tools/rec3d.py --page _lab/cover.html --director tools/scenarios/cover.js --size 1920x1080 --out .cache/cover
 import * as THREE from 'three';
 import { GRAD, outlineMat, toonMat } from '../src/view/toon.js';
 import { createSky } from '../src/view/sky.js';
 import { createIslands } from '../src/view/islands.js';
+import { createClouds } from '../src/view/clouds.js';
 import { createDragonView, loadModel } from '../src/view/dragon.js';
 const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
 renderer.setPixelRatio(1); renderer.setSize(innerWidth, innerHeight); renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -26,6 +27,7 @@ const scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera(42, innerW
 const ctx = { THREE, scene, camera, renderer, GRAD, outlineMat, toonMat };
 const sky = createSky(ctx); ctx.sky = sky.sky;
 const isl = createIslands(ctx);
+const clouds = createClouds(ctx);
 let sea = null;
 try { const m = await import('../src/view/sea.js'); sea = m.createSea(ctx); } catch (e) { }
 camera.position.set(-8, 46, -48); camera.lookAt(10, 40, 40);
@@ -37,7 +39,7 @@ pose(fire, 'Fly', .3); pose(seaD, 'Glide', .4);
 fire.root.position.set(-9, 50, 8); fire.root.rotation.set(-.12, Math.PI - .6, .22, 'YXZ');
 seaD.root.position.set(13, 37, 16); seaD.root.rotation.set(-.55, Math.PI + .75, -.1, 'YXZ'); seaD.glow.value = .8;
 const fake = { creatures: [], spots: [], orbs: [], hero: { x: 0, y: 40, z: 0, len: 10, yaw: 0, medium: 'air' }, t: 3, kind: 'fire' };
-for (let i = 0; i < 3; i++) { sea && sea.update(fake, 1, 1 / 30, 3, camera); isl.update(camera, 3, 1 / 30); sky.update(camera); }
+for (let i = 0; i < 3; i++) { sea && sea.update(fake, 1, 1 / 30, 3, camera); isl.update(camera, 3, 1 / 30); clouds.update(camera, 3, 1 / 30, isl.smokePoints()); sky.update(camera); }
 renderer.render(scene, camera);
 window.__coverReady = true; window.__render = () => renderer.render(scene, camera);
 </script>

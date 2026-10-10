@@ -60,7 +60,7 @@ export function fallbackUI(root, api) {
   const el = document.createElement('div');
   el.style.cssText = 'position:absolute;inset:0;pointer-events:none;color:#fff;font:16px/1.4 var(--px-font);text-shadow:0 1px 3px #000';
   el.innerHTML = `<div id="fbT" style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;pointer-events:auto;background:rgba(10,20,40,.35)">
-    <b style="font:40px var(--title-font)">龙游天海</b>
+    <b style="font:40px var(--title-font)">小龙大胃王</b>
     <button data-k="fire" style="font:20px var(--title-font);padding:12px 28px;border-radius:14px;border:0;background:#e2552a;color:#fff">火龙</button>
     <button data-k="sea" style="font:20px var(--title-font);padding:12px 28px;border-radius:14px;border:0;background:#1f8a9a;color:#fff">海龙</button></div>
     <div id="fbH" style="display:none;position:absolute;top:calc(12px + env(safe-area-inset-top));left:12px;right:12px"><div id="fbBar" style="height:10px;border-radius:5px;background:rgba(0,0,0,.35);overflow:hidden"><i style="display:block;height:100%;width:0;background:#ffd04a"></i></div><div id="fbG" style="margin-top:6px"></div></div>

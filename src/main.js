@@ -1,4 +1,4 @@
-// 龙游天海 · 主程序：启动、状态机（标题 / 游戏 / 暂停 / 结算）、主循环（sim 固定步长 1/60 + 渲染插值）、把各模块接起来。
+// 小龙大胃王 · 主程序：启动、状态机（标题 / 游戏 / 暂停 / 结算）、主循环（sim 固定步长 1/60 + 渲染插值）、把各模块接起来。
 import * as THREE from 'three';
 import { createSim, step, DT, setStage, goalTarget, nearestEdible, cookableNow } from './sim/sim.js';
 import { DRAGONS, STAGE_PTS, STAGE_NAMES } from './config/dragons.js';
@@ -7,6 +7,7 @@ import { waveH, zoneAt } from './sim/world.js';
 import { GRAD, outlineMat, toonMat } from './view/toon.js';
 import { createSky } from './view/sky.js';
 import { createIslands } from './view/islands.js';
+import { createClouds } from './view/clouds.js';
 import { createParticles } from './view/particles.js';
 import { createDragonView, loadModel } from './view/dragon.js';
 import { createCamera } from './view/camera.js';
@@ -32,6 +33,7 @@ const camera = new THREE.PerspectiveCamera(62, .5, .3, 3000);
 const ctx = { THREE, scene, camera, renderer, GRAD, outlineMat, toonMat };
 const sky = createSky(ctx); ctx.sky = sky.sky;
 const isl = createIslands(ctx);
+const clouds = createClouds(ctx);
 const P = createParticles(ctx);
 const dragon = createDragonView(ctx);
 const cam = createCamera(camera);
@@ -58,6 +60,8 @@ const [mkCreatures, mkSea, mkUI, mkAudio] = await Promise.all([
 const creatures = mkCreatures(ctx);
 const sea = mkSea(ctx);
 const audio = mkAudio();
+// 模块可以返回 ready（Promise）：例如岛的精模要先下载完
+await Promise.all([isl, sky, sea, creatures].map(m => m && m.ready ? m.ready.catch(e => console.warn('模块准备失败', e && e.message)) : null));
 
 // ---------- 存档 / 状态 ----------
 const save = loadSave();
@@ -304,6 +308,7 @@ function advance(dtReal) {
   const under = sea.underwater || 0;
   creatures.setUnderwater && creatures.setUnderwater(under);
   isl.update(camera, T, dtReal);
+  clouds.update(camera, T, dtReal, isl.smokePoints());
   sky.update(camera);
   P.update(dtReal);
   if (S && (state === 'play' || state === 'pause')) ui.update(S, dtReal, frameEvents);

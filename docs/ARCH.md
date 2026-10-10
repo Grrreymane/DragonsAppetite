@@ -129,6 +129,22 @@ DOM 界面，放在 `#ui` 层里（index.html 已有 `<div id="wrap"><canvas/>�
 
 `createAudio()` → `{ unlock(), setMute(b), muted, update(S, dt, events, under) }`：全部 WebAudio 合成（无音频文件），三条总线（总 / 音效 / 音乐），切后台 suspend。under = 镜头在水下程度 0..1（所有声音过低通 + 换海洋曲）。
 
+## v2 新增（docs/V2_PLAN.md）
+
+sim 新字段：
+```js
+S.hero.lock                     // 自动瞄准锁定的生物 id（0 = 没锁）
+S.hero.skill = { id, cd, cdMax, t }   // 成龙的第二技能：id 'roar' | 'vortex'；cd 冷却剩余；t 正在生效的剩余秒；不是成龙时 S.hero.skill = null
+S.abilities                     // 已解锁的能力 id 列表（config/dragons.js ABILITIES 的键），例如 ['bite','flame','plunge']
+S.nextAbilities                 // 下一阶段会解锁的能力 id 列表（成龙时为 []）
+c.feared                        // 生物被威压吓呆（不会逃）
+c.skillHit                      // 生物被龙吼 / 漩涡影响（吃到时算 skill 目标）
+```
+新事件：`unlock {abilities:[...]}`（进化时，界面弹「新能力」卡）、`skill {id}`（放出龙吼 / 漩涡）、`lunge {id}`（扑咬，头往前探）、`locked {id}`（锁定了一只新猎物）、`blocked {ability}`（想扎水 / 跃出但还没学会，界面提示「长大后学会」）。
+新输入：`input.skillTap`（第二技能按钮）。
+
+ui 新接口：`api.onSkill()`（第二技能按钮按下）；`ui.showAbility(list)`（list = [{id, zh, desc, icon}]，进化后弹出约 2.5 秒，不挡操作）；`ui.update` 里读 `S.hero.lock`（锁定圈）、`S.hero.skill`（技能按钮 + 冷却）、`S.nextAbilities`（成长条旁的下一阶段能力图标）。
+
 ## 调试钩子
 
 `window.__dg = { S, step(n), input, setStage(stage), give(pts), teleport(x,y,z), render(), ready }`，`?debug` 显示 fps / 绘制调用 / 三角面，`?rec` 打开 preserveDrawingBuffer，`?seed=`、`?kind=fire|sea`、`?stage=0|1|2`、`?autostart`（跳过标题直接开局）。
