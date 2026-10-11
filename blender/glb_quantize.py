@@ -116,7 +116,8 @@ def quantize(src, dst):
         for c in keep:
             smp = an['samplers'][c['sampler']]; ai = smp['output']
             # CUBICSPLINE 的输出里夹着切线（in-tangent / value / out-tangent），不能当四元数归一，原样保留
-            if c['target']['path'] == 'rotation' and smp.get('interpolation', 'LINEAR') != 'CUBICSPLINE'                     and acc[ai]['componentType'] == FLOAT and ai not in view_of_acc:
+            if (c['target']['path'] == 'rotation' and smp.get('interpolation', 'LINEAR') != 'CUBICSPLINE'
+                    and acc[ai]['componentType'] == FLOAT and ai not in view_of_acc):
                 q = acc_array(j, binc, ai).astype(np.float64)
                 q /= np.linalg.norm(q, axis=1, keepdims=True)
                 put(ai, np.round(q * 32767).astype(np.int16), SHORT, True, None)

@@ -40,5 +40,5 @@ Stylized painterly fantasy game environment concept, portrait 9:16 view from abo
 - 烟（clouds.js）：每个火山口 9 团，往上飘、变大、变淡，顺风偏；刚冒出来的偏暖（熔岩映的）。
 - 卷云（sky.js）：9 片贴在天空球上（方位角大致均匀，无限远，慢慢转，一半左右翻），偏白、透明度 0.48~0.62。
 - 地平线云带（clouds.js）：18 张积云（cu2 扁云带为主，夹 cu3 / cu1）围一圈，离镜头 1300 米跟着镜头走，蒙 38%~60% 的地平线雾色；和云、烟同一次绘制。
-- 水面的花纹不用图：`src/view/sea-noise.js` 启动时算一张 256² 的可平铺噪声图（Voronoi + 梯度噪声）。
+- 水面的花纹不用图：`src/view/sea-noise.js` 启动时算一张 256² 的可平铺梯度噪声图（只用来扭弯、断开白线）；浪尖白线是短浪高度的等高线（公式算，不查图），白沫多少用 `python tools/skysea_foam.py <帧目录>` 量（低空约占下三分之一的 1~3%）。
 - 换图：重新生成 → `python tools/skysea_key.py <图> .cache/art/skysea/cut <前缀>` → 改 `tools/skysea_atlas.py` 的 ITEMS → `python tools/skysea_atlas.py`。

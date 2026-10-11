@@ -45,7 +45,7 @@ const svgOf = name => P[name] || P[ALIAS[name]] || '';
 // ---------- 画的图标图集（tools/ui_icons.py 生成；它会改写下面 v / names 两行，别手改顺序） ----------
 // v = 图集内容的哈希，加在网址后面：换了图集，旧缓存不会配上新顺序
 export const SHEET = {
-  v: 'c387b0a8',
+  v: '7a6f177d',
   cell: 192, cols: 6, rows: 5,
   names: ['bite', 'fire', 'plunge', 'roar', 'dash', 'breach', 'vortex', 'gulp', 'lock', 'menu', 'sound', 'mute', 'book', 'dragon', 'share', 'hand', 'back', 'clock', 'head_fire0', 'head_fire1', 'head_fire2', 'head_sea0', 'head_sea1', 'head_sea2', 'bite_sea', 'gulp_sea', 'star'],
 };

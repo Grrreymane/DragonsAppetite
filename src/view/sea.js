@@ -1,11 +1,11 @@
 // 海：近密远疏 3 圈海面（浪 = sim/world.js 的 WAVE_GLSL，和 JS 的 waveH 同一个公式）、
 // 从下面看的亮青色海面（斯涅尔窗）、水下雾随深度变、水下光柱、鱼影 / 鸟影 / 龙影、觅食点的翻腾白沫。海底见 sea-bed.js
 // 卡通水面：
-//   底色 = 浪高的平滑深浅 + 迎着太阳的浪面亮一档、背阳面暗一档（卡通明暗，硬边）；
-//   天光反射按视线角分两档（近处深、远处亮，边随浪起伏）；太阳方向一条亮带 + 一闪一闪的小星点；
-//   浪尖：查噪声图（sea-noise.js）的 Voronoi 花纹，越靠浪尖白线越粗 = 一片片花边似的白沫，远处淡成一层浅色；
-//   岛边：两档浅水色 + 贴岸的硬边白沫 + 花边白沫 + 往岸上推的浪线（sea-shore.js 的岸线场）；
-//   觅食点：翻腾的花边白沫 + 断开的、往外扩的波纹 + 一颗颗冒出来又消掉的水花。
+//   底色 = 浪高的平滑深浅；短浪朝着太阳的一面亮一档（硬边），长浪只给柔和的明暗；远处换成亮一点的青蓝；
+//   天光反射：近处按视线角分两档，远处平滑、只反射地平线的颜色；太阳方向一条亮带 + 一闪一闪的小星点；
+//   浪尖：顺着短浪浪尖的一截截白线（短浪高度的等高线，宽度按米算），前坡粗、后坡细；碎浪上再加几条小白线；
+//   岛边：两档浅水色 + 贴岸约 1.2 米的硬边白线 + 花边白沫 + 往岸上推的浪线（sea-shore.js 的岸线场）；
+//   觅食点：浅色的乱水 + 几条弯弯的翻腾白线 + 断开的、往外扩的波纹 + 几颗冒出来又消掉的水花。
 // 远处的雾按视线方向染冷暖（three 的雾代码块已被 sky.js 改过，和天空地平线接上）。
 import * as THREE from 'three';
 import { WAVE_GLSL, waveH } from '../sim/world.js';
@@ -86,8 +86,26 @@ void main(){
   #include <fog_vertex>
 }`;
 
+// 浪的分量（和 sim/world.js 的 waveH 同一个公式）：[kx, kz, w, 振幅]。前两项 = 长浪（105~140 米），后两项 = 短浪（23~44 米）
+const WV = [[.045, 0, 1.1, 1], [0, .06, -.85, .8], [.1, .1, 1.7, .35], [.21, -.17, 2.3, .15]];
+const WV_OK = [[3.1, -7.2, 1.3], [-120, 45, 17.9], [801.5, 333, 63.2]].every(([x, z, t]) => Math.abs(WV.reduce((s, [a, b, w, k]) => s + Math.sin(x * a + z * b + t * w) * k, 0) - waveH(x, z, t)) < 1e-6);
+if (!WV_OK) console.warn('sea.js：waveH 改过了，WV 表要跟着改（先用差分顶上）');
+const fl = v => (+v).toFixed(5);
+// 浪的坡度（直接用公式求导，比 3 次 waveH 省）：gL = 长浪、gS = 短浪、hS = 短浪的高度。px = 一个像素多少米：比像素细的浪渐弱（远处不闪）
+const WGRAD_GLSL = `
+void waveGrad(vec2 p, float t, float px, out vec2 gL, out vec2 gS, out float hS){
+  gL = vec2(0.0); gS = vec2(0.0); hS = 0.0; float a, c;
+${WV_OK ? WV.map(([kx, kz, w, amp], i) => {
+    const lam = 2 * Math.PI / Math.hypot(kx, kz);
+    return `  a = p.x * ${fl(kx)} + p.y * ${fl(kz)} + t * ${fl(w)}; c = cos(a) * ${fl(amp)} * (1.0 - smoothstep(${fl(lam * .12)}, ${fl(lam * .4)}, px));
+  ${i < 2 ? 'gL' : 'gS'} += c * vec2(${fl(kx)}, ${fl(kz)});${i < 2 ? '' : ` hS += sin(a) * ${fl(amp)};`}`;
+  }).join('\n') : `  float e = max(px, 0.4), h0 = waveH(p, t);
+  gL = vec2(waveH(p + vec2(e, 0.0), t) - h0, waveH(p + vec2(0.0, e), t) - h0) / e * 0.5; gS = gL; hS = h0 * 0.2;`}
+}`;
+const KC = .02;   // 觅食点翻腾白线的噪声（一圈约 3 米）
+
 const FRAG = `uniform float uT, uUnder, uDepth;
-uniform vec3 uCam, deepC, shallowC, deepV, shallowV, deepO, shallowO, aquaC, aquaC2, foamC, sunD, sunC, shC;
+uniform vec3 uCam, deepC, shallowC, deepV, shallowV, deepO, shallowO, farC, aquaC, aquaC2, foamC, sunD, sunC, shC;
 uniform vec3 skyUp, skyWarm, skyCool;
 uniform vec3 sunW, uwWin, uwTir, uwSun, uwShC;
 uniform vec4 uHole;
@@ -97,15 +115,17 @@ uniform vec4 uSpot[${MAXSPOT}]; uniform int uSpotN;
 varying vec3 vW; varying float vSk; varying vec2 vZone;
 #include <fog_pars_fragment>
 ${WAVE_GLSL}
+${WGRAD_GLSL}
 ${SKY_TINT_GLSL}
 float hash12(vec2 p){ vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
-// 抗锯齿的台阶 / 细线（按屏幕像素算边宽：远近都是干净的硬边）
+// 抗锯齿的台阶（按屏幕像素算边宽：远近都是干净的硬边）
 float aastep(float th, float x){ float w = fwidth(x) * 0.7 + 1e-5; return smoothstep(th - w, th + w, x); }
-float aaline(float x, float th, float hw){ float w = fwidth(x) * 0.9 + 1e-5; return 1.0 - smoothstep(hw, hw + w, abs(x - th)); }
 // 分支 / 循环里用的版本：边宽 w 由外面算好传进来（循环里求导不可靠）
 float stepW(float th, float x, float w){ return smoothstep(th - w, th + w, x); }
-// 影子：uShA = (x, z, 长半径, 宽半径)，uShB = (朝向 sin, cos, 浓度, 种类 0 鱼 / 1 龙 / 2 鸟)
-float shadowAt(vec2 p, bool under){
+// 细线：d = 到线中心的距离（米），w = 半宽（米），aa = 一个像素（米）。线细过一个像素就不再变细、改成变淡（远处不闪）
+float lineM(float d, float w, float aa){ float we = max(w, aa * 0.8); return (1.0 - smoothstep(we - aa * 0.5, we + aa * 0.5, d)) * (w / we); }
+// 影子：uShA = (x, z, 长半径, 宽半径)，uShB = (朝向 sin, cos, 浓度, 种类 0 鱼 / 1 龙 / 2 鸟)。dap = 一点噪声（鱼群的影子打散成几团）
+float shadowAt(vec2 p, bool under, float dap){
   float s = 0.0;
   for (int i = 0; i < ${MAXSH}; i++) {
     if (i >= uShN) break;
@@ -114,48 +134,55 @@ float shadowAt(vec2 p, bool under){
     vec2 d = p - A.xy; float rr = max(A.z, A.w) * 1.3;
     if (dot(d, d) > rr * rr) continue;
     vec2 l = vec2(dot(d, B.xy), dot(d, vec2(B.y, -B.x)));
-    float e, soft;
-    if (B.w < 0.5) { e = length(l / vec2(A.z, A.w)); soft = 0.45; }                      // 鱼 / 鱼群：顺着身子的椭圆
-    else if (B.w < 1.5) { e = length(d) / A.z; soft = 0.22; }                           // 龙：边比较清楚的圆
+    float e, soft, k = B.z;
+    if (B.w < 0.5) {                                                    // 鱼 / 鱼群：顺着身子的椭圆；大的（鱼群）打散成几团、淡一点
+      e = length(l / vec2(A.z, A.w)); soft = 0.45; k *= 0.64;
+      float big = smoothstep(2.5, 5.0, A.z);
+      e *= mix(1.0, 0.7 + dap * 0.75, big); k *= mix(1.0, smoothstep(0.32, 0.5, dap), big * 0.7);
+    }
+    else if (B.w < 1.5) { e = length(d) / A.z; soft = 0.22; }           // 龙：边比较清楚的圆
     else { l.x += abs(l.y) * 0.35; e = min(length(l / vec2(A.z * 0.22, A.w)), length(l / vec2(A.z * 0.55, A.z * 0.17))); soft = 0.25; } // 鸟：翅膀 + 身子
-    s = max(s, (1.0 - smoothstep(1.0 - soft, 1.0, e)) * B.z);
+    s = max(s, (1.0 - smoothstep(1.0 - soft, 1.0, e)) * k);
   }
   return s;
 }
-// 觅食点：x = 白沫（翻腾的花边 + 断开的波纹 + 水花），y = 乱水（浅色）。dpx / dpy = 屏幕上一个像素对应的世界位移（查图用）
-vec2 spotFx(vec2 p, float dist, float gpx, vec2 dpx, vec2 dpy){
+// 觅食点：x = 白沫（几条翻腾的白线 + 断开的波纹 + 几颗水花），y = 乱水（浅色）。wv = 中块噪声（让白线弯起来），dpx / dpy = 一个像素的世界位移
+vec2 spotFx(vec2 p, float dist, float gpx, vec2 wv, vec2 dpx, vec2 dpy){
   vec2 f = vec2(0.0);
   for (int i = 0; i < ${MAXSPOT}; i++) {
     if (i >= uSpotN) break;
     vec4 s = uSpot[i]; vec2 d = p - s.xy; float r = length(d), R = s.z;
     if (r > R * 2.4 + 3.0) continue;
     float sd = fract(s.x * 0.0131 + s.y * 0.0173) * 7.0;                    // 每个点的花纹错开
-    float core = 1.0 - smoothstep(R * 0.45, R * 1.05, r);
-    // 翻腾：两层花纹朝不同方向快速流动，取细线；越靠中心线越粗
-    const float K1 = 0.085, K2 = 0.13;
-    float l1 = textureGrad(uNoise, d * K1 + vec2(uT * 0.11, -uT * 0.08) + sd, dpx * K1, dpy * K1).r;
-    float l2 = textureGrad(uNoise, d * K2 - vec2(uT * 0.13, uT * 0.07) - sd, dpx * K2, dpy * K2).r;
-    float aw = gpx * K2 * 12.0 + 0.02;
-    float churn = (1.0 - stepW(0.05 + 0.2 * core, min(l1, l2), aw)) * core;
-    // 水花：花纹图 A 通道（离细胞中心的距离）取圆点；每秒换一批位置，每颗冒出来再缩回去（不闪）
-    float ph = uT * 0.9 + sd, cyc = floor(ph), u = fract(ph);
-    vec2 jo = vec2(hash12(vec2(cyc, sd)), hash12(vec2(sd, cyc + 3.1)));
-    const float K3 = 0.11;
-    float dots = textureGrad(uNoise, d * K3 + jo, dpx * K3, dpy * K3).a;
-    float blob = (1.0 - stepW(0.2 * sin(u * 3.14159), dots, gpx * K3 * 10.0 + 0.02)) * (1.0 - smoothstep(R * 0.3, R * 0.85, r));
-    // 波纹：往外扩的三圈，半径按角度抖 ±2.5 米，再按角度断开成几段
-    vec2 dir = d / max(r, 1e-3);                                          // 按方向查图（绕一圈是连续的，没有接缝）
-    float jit = (textureGrad(uNoise, dir * 0.3 + vec2(sd, uT * 0.02), vec2(0.0), vec2(0.0)).b - 0.5) * 5.0;
+    float core = 1.0 - smoothstep(R * 0.35, R * 1.0, r);
+    // 翻腾：转着的噪声的等高线（多查两次图求坡度，宽度按米算），再用一张大块噪声挖掉一半 = 几条弯弯的白线
+    float ang = uT * 0.5 + r * 0.12 + sd;
+    vec2 q = mat2(cos(ang), sin(ang), -sin(ang), cos(ang)) * d * ${fl(KC)} + wv * 0.15 + sd;
+    float b0 = textureGrad(uNoise, q, dpx * ${fl(KC)}, dpy * ${fl(KC)}).b;
+    float gb = length(vec2(textureGrad(uNoise, q + vec2(0.008, 0.0), dpx * ${fl(KC)}, dpy * ${fl(KC)}).b - b0, textureGrad(uNoise, q + vec2(0.0, 0.008), dpx * ${fl(KC)}, dpy * ${fl(KC)}).b - b0)) * ${fl(KC / .008)};
+    float brk = smoothstep(0.44, 0.58, textureGrad(uNoise, d * 0.045 + vec2(sd * 0.37, uT * 0.04), dpx * 0.045, dpy * 0.045).g);
+    float churn = lineM(abs(b0 - 0.5) / max(gb, 0.01), (0.05 + 0.13 * core) * brk, gpx) * smoothstep(0.03, 0.07, gb) * core;
+    // 水花：4 颗，各自错开冒出来再缩回去（每颗约 1.2 秒，不闪）
+    float blob = 0.0;
+    for (int j = 0; j < 4; j++) {
+      float ph = uT * 0.8 + float(j) * 0.25 + sd, cyc = floor(ph), u = fract(ph);
+      vec2 o = (vec2(hash12(vec2(cyc, sd + float(j))), hash12(vec2(sd * 1.7 + float(j), cyc + 3.1))) - 0.5) * R * 1.2;
+      float rad = (0.3 + 0.25 * hash12(vec2(cyc + 0.5, float(j) + 9.0))) * sin(u * 3.14159);
+      blob = max(blob, 1.0 - smoothstep(rad - gpx * 0.6, rad + gpx * 0.6, length(d - o)));
+    }
+    // 波纹：往外扩的三圈，半径按角度抖 ±1 米（3~4 个起伏），再按角度断开成几段
+    vec2 dir = d / max(r, 1e-3);
+    float jit = (textureGrad(uNoise, dir * 0.04 + vec2(sd, uT * 0.02), vec2(0.0), vec2(0.0)).b - 0.5) * 3.2;
     float rings = 0.0;
     for (int k = 0; k < 3; k++) {
       float rp = fract(uT * 0.3 + float(k) / 3.0 + sd * 0.1);
-      float rr = mix(R * 0.75, R * 2.25, rp);
-      float dash = step(0.42, textureGrad(uNoise, dir * 0.45 + vec2(float(k) * 0.37 + sd, rp * 0.25), vec2(0.0), vec2(0.0)).g);
-      float hw = 0.16 + 0.22 * (1.0 - rp);
-      rings = max(rings, (1.0 - smoothstep(hw, hw + gpx * 1.2, abs(r + jit * (0.4 + rp) - rr))) * dash * smoothstep(0.0, 0.12, rp) * (1.0 - rp));
+      float rr = mix(R * 0.8, R * 2.2, rp);
+      float dash = smoothstep(0.4, 0.46, textureGrad(uNoise, dir * 0.45 + vec2(float(k) * 0.37 + sd, rp * 0.25), vec2(0.0), vec2(0.0)).g);
+      float hw = 0.08 + 0.14 * (1.0 - rp);
+      rings = max(rings, lineM(abs(r + jit * (0.5 + 0.5 * rp) - rr), hw, gpx) * dash * smoothstep(0.0, 0.12, rp) * (1.0 - rp));
     }
-    float far = (1.0 - smoothstep(0.0, R * 1.2, r)) * smoothstep(70.0, 220.0, dist) * 0.7;
-    f = max(f, vec2(max(max(max(churn, blob), rings * 0.9), far), 1.0 - smoothstep(R * 0.9, R * 1.6, r)) * s.w);
+    float far = (1.0 - smoothstep(0.0, R * 1.2, r)) * smoothstep(70.0, 220.0, dist) * 0.5;
+    f = max(f, vec2(max(max(max(churn, blob * core), rings * 0.85), far), 1.0 - smoothstep(R * 0.9, R * 1.6, r)) * s.w);
   }
   return f;
 }
@@ -163,26 +190,30 @@ void main(){
   if (uHole.z > 0.0 && max(abs(vW.x - uHole.x), abs(vW.z - uHole.y)) < uHole.z) discard;   // 内圈已经画了
   vec2 p = vW.xz;
   float dist = length(p - uCam.xz);
-  float amp = 1.0 - 0.7 * smoothstep(180.0, 800.0, dist);           // 远处浪渐弱
-  float e = clamp(dist * 0.012, 0.4, 8.0);                           // 远处差分步长变大 = 滤掉细浪，不闪
-  float h0 = waveH(p, uT);
-  vec2 gr = vec2(waveH(p + vec2(e, 0.0), uT) - h0, waveH(p + vec2(0.0, e), uT) - h0) / e * amp;   // 浪的坡度
-  vec3 N = normalize(vec3(-gr.x, 1.0, -gr.y));
-  float h = h0 * amp;
-  vec2 dpx = dFdx(p), dpy = dFdy(p);
   float gpx = length(fwidth(p)) + 1e-4;                                // 一个像素多少米
+  float amp = 1.0 - 0.7 * smoothstep(180.0, 800.0, dist);           // 远处浪渐弱
   // ---- 查噪声图（都在分支外面：求导 / mip 才可靠）----
   vec4 nL = texture2D(uNoise, p * 0.0035 + vec2(uT * 0.0012, 0.0));    // 大块（约 290 米一周期）
   vec4 nM = texture2D(uNoise, p * 0.021 - vec2(0.0, uT * 0.006));      // 中块（约 48 米）
-  // 白沫的花纹：扭过的平滑噪声取等高线 = 一条条弯弯绕绕的细线（不是网格、不是一块块的斑）
-  vec2 warp = (nM.gb - 0.5) * 0.3;
-  float fn = texture2D(uNoise, p * 0.017 + vec2(uT * 0.005, uT * 0.003) + warp).b;
-  float lace = abs(fn - 0.5) * 2.0;                                    // 0 = 线的中心（噪声 = 0.5 的等高线，一圈圈约 4 米）
-  float laceW = fwidth(lace);
-  // 散在海面上的细长白线（顺着风向拉长的等高线，只留一小部分）：浪谷里也有一点花纹，海面不空
-  vec2 wq = vec2(dot(p, vec2(0.8, 0.6)), dot(p, vec2(-0.6, 0.8)) * 2.4) * 0.011 + vec2(uT * 0.004, 0.0) + warp * 0.6;
-  float st = abs(texture2D(uNoise, wq + 0.53).b - 0.5) * 2.0;
-  float stW = fwidth(st);
+  // 明暗和浪尖白线用的坡度在挪过的位置上算（±5 米）：亮暗带和白线弯弯的，不是一条条直直的斜纹（几何上的浪不挪，看不出来）
+  vec2 gL, gS; float hS;
+  vec2 pw = p + (nM.gb - 0.5) * vec2(7.0, 3.0) + (nL.gb - 0.5) * 16.0;
+  waveGrad(pw, uT, gpx, gL, gS, hS);
+  // 只用来分亮暗的两道碎浪（13 / 8.5 米，不进几何、不进物理）：近处的亮暗块小一点、密一点，不是一两大块
+  //   hC = 碎浪的高度（-1..1），浪尖上也画小白线
+  const vec2 K1 = vec2(-0.145, -0.461), K2 = vec2(-0.591, -0.443);
+  float c1 = dot(pw, K1) - uT * 2.18, c2 = dot(pw, K2) - uT * 2.69;
+  vec2 gC = cos(c1) * 0.062 * K1 * (1.0 - smoothstep(1.6, 5.2, gpx)) + cos(c2) * 0.04 * K2 * (1.0 - smoothstep(1.0, 3.4, gpx));
+  float hC = sin(c1) * 0.6 + sin(c2) * 0.4;
+  gL *= amp; gS *= amp;
+  vec2 gr = gL + gS;                                                   // 浪的坡度
+  vec3 N = normalize(vec3(-gr.x, 1.0, -gr.y));
+  float h0 = waveH(p, uT), h = h0 * amp;
+  vec2 dpx = dFdx(p), dpy = dFdy(p);
+  // 白线断开的地方：两张跟着短浪一起走的噪声（G 通道，一截约 3~7 米），取中间一段 = 一截截两头尖的白线
+  vec2 pa = p * 0.035 + fract(uT * 0.3);                                // 0.3 = 8.5 米/秒 × 0.035（短浪往 -x -z 走）
+  float dashA = smoothstep(0.4, 0.6, texture2D(uNoise, pa + vec2(0.31, 0.77)).g);
+  float dashB = smoothstep(0.46, 0.64, texture2D(uNoise, pa * 1.3 + vec2(0.62, 0.15)).g);
   // 岸线场：R = 窄（岸边白沫），G = 宽（浅水色带）
   vec2 sf = vec2(0.0);
   vec2 suv = vec2(0.5 + (p.x - uShoreR.x) / uShoreR.z, 0.5 - (p.y - uShoreR.y) / uShoreR.z);
@@ -193,39 +224,46 @@ void main(){
   float wob = (nM.b - 0.5) * 0.05 + (nL.g - 0.5) * 0.04;
   float fs = sf.r + wob * 0.6;
   float fsW = fwidth(fs), sgW = fwidth(sf.g + wob);
-  float hf = h + (nM.g - 0.5) * 0.9;                                    // 浪尖判断：浪高 + 一点噪声（白沫不排成直线）
   bool under = vSk > 0.01 ? uUnder > 0.5 : !gl_FrontFacing;
-  vec2 sp = spotFx(p, dist, gpx, dpx, dpy);
+  vec2 sp = spotFx(p, dist, gpx, nM.gb - 0.5, dpx, dpy);
   vec3 c;
   if (!under) {
     vec3 V = normalize(cameraPosition - vW);
     float nearK = 1.0 - smoothstep(240.0, 480.0, dist);                 // 近处的卡通明暗，远处收掉（远了一格比像素还小，会闪）
-    // 1) 底色：浪谷深、浪尖浅（平滑），区域定色
+    // 1) 底色：浪谷深、浪尖浅（平滑），区域定色；远处换成亮一点的青蓝（和地平线的暖雾混起来不发灰）
     vec3 dc = mix(mix(deepC, deepV, vZone.x), deepO, vZone.y), sc = mix(mix(shallowC, shallowV, vZone.x), shallowO, vZone.y);
-    c = mix(dc, sc, clamp(h * 0.16 + 0.42 + (nL.g - 0.5) * 0.12, 0.0, 1.0));
-    // 2) 卡通明暗：迎着太阳的浪面亮一档、背阳的暗一档（硬边）
+    c = mix(dc, sc, clamp(h * 0.16 * (1.0 - 0.75 * smoothstep(120.0, 420.0, dist)) + 0.42 + (nL.g - 0.5) * 0.05, 0.0, 1.0));   // 远处浪高的深浅收掉（不然挤成一条条横纹）
+    c = mix(c, farC, smoothstep(120.0, 600.0, dist) * 0.85);
+    // 2) 卡通明暗：短浪（23~44 米）朝着太阳的一面亮一档、背阳的暗一点（硬边，一条条 10~25 米宽）；长浪只给柔和的明暗
     vec2 sxz = normalize(sunD.xz);
-    float lit = -dot(gr, sxz) + (nM.b - 0.5) * 0.012;
-    c = mix(c, mix(c, sc * 1.08, 0.32), aastep(0.05, lit) * nearK);
-    c *= 1.0 - 0.05 * aastep(0.06, -lit) * nearK;
+    float nearS = 1.0 - smoothstep(130.0, 320.0, dist);                // 硬边只画到 130~320 米（再远一条条挤成横纹）
+    float litS = -dot(gS + gC * amp, sxz) + (nM.g - 0.5) * 0.03, litL = -dot(gL, sxz);
+    nearS *= 1.0 - smoothstep(0.003, 0.008, fwidth(litS));            // 斜着看、亮暗带挤得比十几个像素还窄时也收掉（横纹）
+    c = mix(c, mix(c, sc * 1.1, 0.38), mix(smoothstep(-0.03, 0.04, litS) * 0.5, aastep(0.006, litS), nearS) * nearK);
+    c *= 1.0 - 0.07 * aastep(0.014, -litS) * nearS;
+    c *= 1.0 + clamp(litL * 1.3, -0.07, 0.07) * nearS;
     // 3) 岛边：两档浅水色（宽距离场 G）
     c = mix(c, aquaC, stepW(0.05, sf.g + wob, sgW * 0.7 + 1e-4) * 0.6);
     c = mix(c, aquaC2, stepW(0.17, sf.g + wob, sgW * 0.7 + 1e-4) * 0.62);
-    // 4) 天光反射：按视线角分两档（近处深、远处亮，边随浪起伏），颜色取天空在反射方向上的颜色
-    vec3 Nf = normalize(vec3(-gr.x * 0.7, 1.0, -gr.y * 0.7));
+    // 4) 天光反射：近处按视线角分两档（边随浪起伏），远处换成平滑的（两档在远处会变成一条条横纹）；
+    //    远处只反射地平线的颜色（加上天顶的蓝会和青、暖雾混成发灰的颜色）
+    //    两档的边只跟着短浪抖（跟着长浪会变成一两大块滑来滑去的硬边）
+    vec3 Nf = normalize(vec3(-gr * mix(0.7, 0.2, smoothstep(120.0, 450.0, dist)), 1.0).xzy), Nq = normalize(vec3(-(gS + gL * 0.25) * 0.8, 1.0).xzy);
     vec3 R = reflect(-V, Nf);
-    vec3 skyR = mix(skyHorizon(R, sunD, skyWarm, skyCool), skyUp, smoothstep(0.02, 0.45, R.y));
-    float fr = pow(1.0 - max(dot(Nf, V), 0.0), 4.0);
-    float frq = 0.45 * aastep(0.2, fr) + 0.3 * aastep(0.45, fr);
-    c = mix(c, skyR, mix(min(fr * 0.7, 0.55), frq, 0.65) * 0.8 * mix(0.6, 1.0, smoothstep(8.0, 70.0, dist)));   // 镜头贴水时脚下别反射成一片白
+    vec3 skyR = mix(skyHorizon(R, sunD, skyWarm, skyCool), skyUp, smoothstep(0.03, 0.45, R.y) * mix(0.3, 1.0, nearK));
+    float fr = pow(1.0 - max(dot(Nf, V), 0.0), 4.0), fq = pow(1.0 - max(dot(Nq, V), 0.0), 4.0);
+    float frq = 0.45 * aastep(0.2, fq) + 0.3 * aastep(0.45, fq);
+    float rk = mix(min(fr * 0.7, 0.5), frq, 0.65 * (1.0 - smoothstep(90.0, 220.0, dist)) * (1.0 - smoothstep(0.02, 0.06, fwidth(fq)))) * 0.8;
+    rk *= mix(0.6, 1.0, smoothstep(8.0, 70.0, dist)) * (1.0 - 0.65 * smoothstep(120.0, 420.0, dist));   // 镜头贴水时脚下别反射成一片白；远处少反射一点（青和暖雾混成灰）
+    c = mix(c, skyR, rk);
     // 5) 近处的小涟漪（只影响光照，不改几何）：掠水时水面不是一片平
-    vec3 Nr = N;
+    vec3 Nr = normalize(vec3(-gr * mix(1.0, 0.3, smoothstep(120.0, 450.0, dist)), 1.0).xzy);   // 远处的浪坡压平：太阳亮带不碎成一条条横纹
     if (dist < 160.0) {
       vec2 rp = p * 0.55;
       vec2 dn = vec2(cos(rp.x + uT * 1.9 + sin(rp.y * 0.7 + uT * 0.5) * 1.4), cos(rp.y * 1.15 - uT * 1.6 + sin(rp.x * 0.8) * 1.4));
       Nr = normalize(N + vec3(dn.x, 0.0, dn.y) * 0.04 * (1.0 - smoothstep(30.0, 160.0, dist)));
     }
-    // 6) 太阳：反射方向上一条柔和的亮带 + 带里的小星点（每颗约 5 秒亮一次，慢慢亮慢慢灭）
+    // 6) 太阳：反射方向上一条柔和的亮带 + 带里的小星点（每颗约 5 秒亮一次，慢慢亮慢慢暗）
     vec3 Hs = normalize(sunD + V);
     float lane = pow(max(dot(Nr, Hs), 0.0), 70.0);
     c += sunC * (pow(max(dot(Nr, Hs), 0.0), 700.0) * 0.55 + lane * 0.12);
@@ -240,27 +278,38 @@ void main(){
       c += vec3(1.0, 0.97, 0.88) * star * smoothstep(0.75, 0.95, tw) * smoothstep(0.15, 0.55, laneB) * 1.3 * (1.0 - smoothstep(70.0, 160.0, dist));
     }
     #endif
-    // 7) 浪尖白沫：越靠浪尖，花纹的白线越粗（= 一片片花边白沫）；远处花纹太细，换成一层浅色
-    float cm = smoothstep(0.8, 1.95, hf);                                // 0 = 不是浪尖，1 = 浪尖最高处
-    float laceK = 1.0 - smoothstep(0.12, 0.28, gpx);                   // 一个像素超过 0.12~0.28 米（噪声图开始被 mip 糊掉）就淡掉：不闪、不糊成白斑
-    float crest = (1.0 - stepW(0.02 + 0.06 * cm * cm * cm, lace, laceW * 0.8 + 1e-4)) * smoothstep(0.0, 0.2, cm) * laceK;   // 浪尖最高处线最粗，也只盖住约三成（噪声多半在 0.5 附近，阈值要小）
+    // 7) 浪尖白沫：一截截顺着浪尖的白线 = 短浪高度的等高线（宽度按米算，粗细均匀），断成一截截、两头尖，跟着浪走；
+    //    浪的前坡（往前走的一面）粗、后坡细；长浪的浪尖上稍多一点（只是多一点，不会一阵有一阵没有）
+    //    线宽 = 到等高线的距离（米）= |F - 0.55| / 坡度（坡度用公式：边干净；挪位置、噪声没算进去，线宽有 ±三成的变化，像手画的）
+    float F = hS * 2.0 * amp + (nM.g - 0.5) * 0.5 + h * 0.05;
+    vec2 gF = gS * 2.0; float gFl = max(length(gF), 0.015), flatK = smoothstep(0.025, 0.055, gFl);   // 平的地方（坡度太小）不画线：不会变成一团、一圈
+    float front = smoothstep(-0.1, 0.4, dot(gF / gFl, vec2(0.7071)));
+    float laceK = 1.0 - smoothstep(0.3, 0.8, gpx);                     // 一个像素超过 0.3~0.8 米就淡掉
+    float d3 = length(vW - cameraPosition), wN = mix(0.4, 1.0, smoothstep(5.0, 35.0, d3));   // 镜头近处线细一点（贴水飞时不成一大块白）
+    float crest = lineM(abs(F - 0.55) / gFl, mix(0.05, 0.65, front) * dashA * wN, gpx) * mix(0.35, 1.0, front) * flatK * laceK;
+    vec2 gHC = cos(c1) * 0.6 * K1 + cos(c2) * 0.4 * K2;
+    float gCl = max(length(gHC), 0.015), frontC = smoothstep(-0.1, 0.4, -dot(gHC / gCl, vec2(-0.6314, -0.7755)));   // 碎浪也只画往前走的一面（不画成小圈）
+    crest = max(crest, lineM(abs(hC - 0.78) / gCl, 0.28 * dashB * frontC * wN, gpx) * smoothstep(0.03, 0.07, gCl) * mix(0.5, 1.0, smoothstep(-0.3, 0.4, F)) * laceK);   // 碎浪上的小白线（大浪尖附近多）
     #ifndef LOW
-    float streak = (1.0 - stepW(0.03, st, stW * 0.8 + 1e-4)) * smoothstep(0.6, 0.7, nL.b) * laceK * (1.0 - cm);
-    crest = max(crest, streak * 0.7);
+    float streak = lineM(abs(F + 0.35) / gFl, 0.1 * dashB, gpx) * flatK * laceK * 0.6;   // 浪谷那边一条更细更淡的
+    crest = max(crest, streak);
     #endif
-    crest *= 0.9 * smoothstep(3.0, 12.0, length(vW - cameraPosition));   // 镜头贴着水面时，脚下的花纹会变得很大：近处淡掉
-    c = mix(c, foamC, cm * 0.08 * (1.0 - laceK) * (1.0 - smoothstep(250.0, 600.0, dist)));   // 远处：浪尖只亮一点点（不画成一块块的白斑）
-    // 8) 岛边白沫：贴岸一圈硬边 + 近岸的花边白沫 + 两条往岸上推的浪线（越近岸越淡）
-    float shore = stepW(0.37, fs, fsW * 0.7 + 1e-4);
-    shore = max(shore, (1.0 - stepW(0.03 + 0.11 * smoothstep(0.12, 0.4, fs), lace, laceW * 0.8 + 1e-4)) * smoothstep(0.1, 0.24, fs) * laceK);
+    crest *= 0.75 * smoothstep(3.0, 12.0, d3);   // 镜头贴着水面时，脚下的花纹会变得很大：近处淡掉
+    // 8) 岛边白沫：贴岸一条硬边白线（约 1.2 米宽）+ 再往岸上是薄薄一层浅色的水 + 近岸一条断断续续的白线 + 两条往岸上推的浪线
+    float bw = clamp(fsW / gpx * 1.2, 0.015, 0.12);                     // 1.2 米换成岸线场的数值
+    float swash = stepW(0.37 + bw, fs, fsW * 0.7 + 1e-4);
+    float shore = stepW(0.37, fs, fsW * 0.7 + 1e-4) * (1.0 - swash);
+    float fsG = max(fsW / gpx, 1e-3);                                   // 岸线场每米变多少
+    shore = max(shore, lineM(abs(fs - 0.25) / fsG, 0.22 * dashA, gpx) * laceK);   // 近岸一条断断续续的白线
     for (int k = 0; k < 2; k++) {
       float ph = fract(uT * 0.14 + float(k) * 0.5);
       float lv = mix(0.04, 0.33, ph), hw = fsW / gpx * (0.12 + 0.2 * (1.0 - ph));
       shore = max(shore, (1.0 - smoothstep(hw, hw + fsW * 0.9 + 1e-5, abs(fs - lv))) * smoothstep(0.0, 0.2, ph) * (1.0 - smoothstep(0.75, 1.0, ph)) * mix(0.55, 1.0, nM.g));
     }
+    c = mix(c, mix(aquaC2, foamC, 0.4), swash * 0.8);
     // 9) 合起来：觅食点的乱水 → 影子 → 白沫
     c = mix(c, mix(c, aquaC2, 0.6), sp.y * 0.6);
-    c = mix(c, shC, shadowAt(p, false) * 0.55 * smoothstep(0.15, 0.4, V.y));   // 贴着水面斜着看时不画影子（会像一个黑洞）
+    c = mix(c, shC, shadowAt(p, false, nM.b) * 0.55 * smoothstep(0.15, 0.4, V.y));   // 贴着水面斜着看时不画影子（会像一个黑洞）
     float foam = max(max(crest, shore), sp.x);
     c = mix(c, foamC, foam);
   } else {
@@ -276,7 +325,7 @@ void main(){
     c = mix(c, mix(uwWin, vec3(1.0), win * 0.6), rip * 0.35);
     float sg = max(dot(R, sunW), 0.0);
     c += uwSun * (pow(sg, 8.0) * 0.45 + smoothstep(0.965, 0.98, sg) * 0.5) * (0.35 + 0.65 * win);
-    c = mix(c, uwShC, shadowAt(p, true));
+    c = mix(c, uwShC, shadowAt(p, true, nM.b));
     c = mix(c, foamC, sp.x * 0.55 * smoothstep(0.05, 0.25, R.y));       // 远处斜着看的白沫也压成线，淡掉
   }
   gl_FragColor = vec4(c, 1.0);
@@ -299,6 +348,7 @@ export function createSea(ctx) {
     deepC: { value: C(0x0d5a7c) }, shallowC: { value: C(0x2a9db4) },     // 翠岛海：青蓝
     deepV: { value: C(0x0c3a52) }, shallowV: { value: C(0x23748a) },     // 火山海：暗
     deepO: { value: C(0x0a3b6a) }, shallowO: { value: C(0x1f72a8) },     // 外海：深蓝
+    farC: { value: C(0x5bbfd6) },                                         // 远处的海
     aquaC: { value: C(0x2fb4bc) }, aquaC2: { value: C(0x6ad8cc) },      // 岛边浅水：两档
     foamC: { value: C(0xf6fcfc) }, sunD: { value: SUN }, sunC: { value: C(0xfff0d0) }, shC: { value: C(0x0a3348) },
     skyUp: { value: SKY.upper }, skyWarm: { value: SKY.warm }, skyCool: { value: SKY.cool },
@@ -316,6 +366,7 @@ export function createSea(ctx) {
     });
     const m = new THREE.Mesh(ringGeo(N, s, i === 2 ? N / 4 : 0), mat);   // 外圈中间挖掉 12×12 格 = 中圈
     m.frustumCulled = false; m.name = 'seaRing' + i; group.add(m);
+    m.renderOrder = 1;   // 不透明的里面最后画：岛、龙挡住的海面先被深度测试挡掉（海的像素着色最费）
     return m;
   });
 

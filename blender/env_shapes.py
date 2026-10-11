@@ -23,11 +23,11 @@ for f in sorted(BUILD.glob('*.json')):
 
 L = ['// 岛的形状表：blender/env_island.py 从精模量出来、blender/env_shapes.py 汇总（别手改，重新生成）。',
      '// 模型单位：岸线半径 1、海平面 y = 0（y 朝上）。h = n×n 高度图（行 = z 从 -ext 到 ext，列 = x），整数 × q；-9999 = 没有表面。',
-     '// top / bottom：最高 / 最低点；foot：岩基最远半径；crater：火山口烟柱的位置 [x, y, z]；tris：LOD0 / LOD1 三角面。',
+     '// top / bottom：最高 / 最低点；foot：岩基最远半径；cut：Tripo 原模的切口高度（再往下是程序化岩基）；crater：火山口烟柱的位置 [x, y, z]；tris：LOD0 / LOD1 / LOD2 三角面。',
      'export const SHAPES = {']
 for d in shapes:
     L.append(f"  {d['name']}: {{")
-    L.append(f"    kind: '{d['kind']}', file: 'models/env/{d['name']}.glb', n: {d['n']}, ext: {d['ext']}, q: {d['q']}, top: {d['top']}, bottom: {d['bottom']}, foot: {d['foot']},")
+    L.append(f"    kind: '{d['kind']}', file: 'models/env/{d['name']}.glb', n: {d['n']}, ext: {d['ext']}, q: {d['q']}, top: {d['top']}, bottom: {d['bottom']}, foot: {d['foot']}, cut: {d.get('cut', -0.08)},")
     L.append(f"    crater: {json.dumps(d['crater'])}, tris: {json.dumps(d['tris'])},")
     L.append('    h: [')
     n = d['n']

@@ -1,7 +1,7 @@
 // 生物渲染：每种 1 个 InstancedMesh 本体 + 1 个描边（共用几何、实例矩阵和实例属性），
-// 每帧按 S.creatures 写矩阵 / 相位 / 换色 / 状态。画面外的不画；近的排前面，描边只画前 nNear 个（150 米外不画描边，112 米起慢慢收细）。
+// 每帧按 S.creatures 写矩阵 / 相位 / 换色 / 状态。画面外的不画；近的排前面，描边只画前 nNear 个（150 米外不画描边，112 米起慢慢收细；身体在屏幕上不到 6 像素的也不画）。
 // 远处的画大一点（26 米起慢慢放大，75 米外 +35%，200 米外 +60%），手机上远处的鸟群鱼群也认得出；嘴边的大小不变。
-// 状态表现：金色（流光 + 小闪星）、烤熟（橙褐 + 烤痕 + × 眼）、正在被火烤（按烤的进度变橙、边缘透出热光，离开火焰就褪回去）、
+// 状态表现：金色（流光 + 小闪星）、烤熟（橙褐 + 烤痕 + × 眼）、正在被火烤（按烤的进度暖一点、边缘透出红橙热光，本身的颜色不变，离开火焰就褪回去）、
 // 撞晕 / 被龙吼漩涡打中（翻肚皮或晃脑袋 + 螺旋眼 + 头顶转圈的星星，星星在屏幕上最小约 9 像素）、
 // 被威压吓呆（小瞳孔 + 轻轻发抖）。都是慢动作，不闪。
 import * as THREE from 'three';
@@ -15,18 +15,19 @@ const OUT_FAR = 150;                              // 描边可见距离（0.75 �
 const CULL_DEPTH = 8, CULL_HEIGHT = 6;            // 镜头在水上：比 -8 米还深的不画；在水下：比 +6 米还高的不画
 const FOG_UW = new THREE.Color(0x06303c);         // 水下描边往这个深青色偏一点（不用纯黑，也不能淡到看不见）
 const ROAST = new THREE.Color(0xa8531e);          // 烤熟的橙褐
-const HEAT = new THREE.Color(0xf07a2c);           // 正在烤：亮一点的橙（「烫起来了」），烤熟那一刻再变成橙褐
 const GOLD_C = new THREE.Color(GOLD);
 const DAZE_T = 4;                                 // skillHit 是布尔值时：打中后晕多久（秒）
 const PORT_PAD = .07;                             // 小图四周留白（给浅色光边），占边长的比例
-const HEAT_MAX = .55;                           // 正在被火烤：最多变橙多少（烤熟那一刻再跳到烤熟色）
+const HEAT_MAX = .55;                           // 正在被火烤：st.heat 的上限（除以它 = 烤的进度 0..1，传给着色器）
 const TAU = Math.PI * 2, WRAP = Math.PI * 4;      // 着色器里相位只用 0.5 / 1 / 2 倍，按 4π 取模不跳
 const hash01 = n => { let h = Math.imul((n | 0) ^ 0x9e3779b9, 2654435761); h ^= h >>> 15; h = Math.imul(h, 2246822507); return ((h ^ (h >>> 13)) >>> 0) / 4294967296; };
 const clamp01 = x => Math.min(1, Math.max(0, x));
 const smooth = (a, b, x) => { const t = clamp01((x - a) / (b - a)); return t * t * (3 - 2 * t); };
 const FAR_BOOST = .35, FAR_D0 = 26, FAR_D1 = 75, FAR_BOOST2 = .25;   // 显示尺寸随距离放大：26 米内不变，75 米外大 35%，200 米外大 60%
 const NEAR_K0 = .3, NEAR_K1 = .8;                 // 比主角离镜头还近（镜头和主角之间）的：离镜头 0.8 倍主角距离起慢慢缩小，0.3 倍时缩没（不挡龙、不挡界面）
-const STAR_MAX = 12;                              // 头顶的晕星同屏最多几颗
+const farK = dd => 1 + FAR_BOOST * smooth(FAR_D0, FAR_D1, dd) + FAR_BOOST2 * smooth(100, 200, dd);
+const OUT_PX = 6;                                 // 身体在屏幕上小于这么多像素就不画描边（省三角面）
+const STAR_MAX = 40, STAR_BIG = 4;                // 头顶的晕星同屏最多几颗；最近的几只每只 3 颗，别的晕了的每只 1 颗
 
 export function createCreatures(ctx) {
   const { scene, camera, renderer, GRAD, outlineMat } = ctx;
@@ -99,11 +100,12 @@ export function createCreatures(ctx) {
   const state = new Map(); let frameNo = 0, lastS = null, cookTime = .4, pxM = .001;
   const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _q2 = new THREE.Quaternion(), _e = new THREE.Euler(0, 0, 0, 'YXZ'), _p = new THREE.Vector3(), _s = new THREE.Vector3(), _v = new THREE.Vector3();
   const cp = new THREE.Vector3(), _fr = new THREE.Frustum(), _pm = new THREE.Matrix4(), _sph = new THREE.Sphere(), Z = new THREE.Vector3(0, 0, 1);
+  const lastNk = [0, 0];                           // 本帧「镜头前缩小」的两个距离（visScale 用）
   const dizzy = [], shiny = [];                    // 本帧要画晕星 / 闪星的个体：[x, y, z, 尺寸, id, 晕的程度, 状态]
 
   function stateOf(c, time) {
     let st = state.get(c.id);
-    if (!st || st.sp !== c.sp) { st = { sp: c.sp, roll: c.stun > 0 ? 1 : 0, fear: 0, daze: 0, hitT: -1e9, hit: false, f: 0, cookT: c.cookT || 0, heatT: -1e9, heat: 0, sk: 0 }; state.set(c.id, st); }
+    if (!st || st.sp !== c.sp) { st = { sp: c.sp, roll: c.stun > 0 ? 1 : 0, fear: 0, daze: 0, hitT: -1e9, hit: false, f: 0, cookT: c.cookT || 0, heatT: -1e9, heat: 0, sk: 0, sk3: 0 }; state.set(c.id, st); }
     return st;
   }
 
@@ -161,11 +163,10 @@ export function createCreatures(ctx) {
     st.cookT = ck;
     if (fire && !(c.cooked >= 1) && time - st.heatT < .15) st.heat = Math.max(st.heat, clamp01(ck / cookTime) * HEAT_MAX);
     else st.heat = Math.max(0, st.heat - dt * HEAT_MAX);
-    // 换色：烤熟 > 金色 > 正在烤
+    // 换色：烤熟 > 金色（正在烤不换色：只在片元里乘一点暖色 + 边缘热光，保留本身的颜色）
     let col = null, amt = 0;
     if (c.roast > 0) { col = ROAST; amt = .9; }
     else if (c.gold) { col = GOLD_C; amt = 1; }
-    else if (st.heat > .005) { col = HEAT; amt = st.heat * .5; }
     if (col) { C[j] = col.r; C[j + 1] = col.g; C[j + 2] = col.b; C[j + 3] = amt; } else C[j + 3] = 0;
     // 状态 = 眼睛 + 金色 8 + 正在烤的热光（小数部分，0..0.8；金色的也有，烤的进度看得出来）
     const roasted = c.roast > 0;
@@ -181,31 +182,45 @@ export function createCreatures(ctx) {
   const STAR_PX = 3.6, RING_PX = 9, LIFT_PX = 8;
   const _ndc = new THREE.Vector3();
   function drawFx(time, dt, cssW, cssH) {
-    // 晕星：每只 3 颗，在头顶绕圈（世界的「上」，翻肚皮也在上面）。尺寸 = max(按体长, 按屏幕最少几像素)。
-    // 几只晕的挤在一起（漩涡 / 龙吼卷成一团）时只给最近的那只画：按离镜头的远近排，屏幕上和已经有星星的那只隔不到 2 个绕圈半径的就不画；
-    // 同屏最多 STAR_MAX 颗。上一帧有星星的先排（星星不会在几只之间跳来跳去），有 / 没有之间慢慢变大变小（不闪）
+    // 晕星：在头顶绕圈（世界的「上」，翻肚皮也在上面）。尺寸 = max(按体长, 按屏幕最少几像素)。
+    // 最近的 STAR_BIG 只每只 3 颗（绕圈不和别的重叠的才算）；别的晕了的每只 1 颗 —— 龙吼吼中一片的时候，每只都看得出晕了。
+    // 几只挤成一团（漩涡卷在一起）时只给一只画：屏幕上离已经有星星的那只的中心不到一个绕圈半径的就不画。
+    // 同屏最多 STAR_MAX 颗（一个绘制）。上一帧有星星的先排（星星不会在几只之间跳来跳去）；
+    // 第 1 颗（sk）和第 2、3 颗（sk3）各自慢慢变大变小（不闪），1 颗和 3 颗之间也是长出来 / 缩回去
     const S1 = fx.stars, S2 = fx.glints, ks = 1 - Math.exp(-6 * dt); let n = 0;
     for (const d of dizzy) {
       const dist = Math.hypot(d[0] - cp.x, d[1] - cp.y, d[2] - cp.z), pw = dist * pxM;
-      d[7] = Math.max(d[3] * .34, pw * RING_PX); d[8] = pw; d[12] = dist;
+      d[7] = Math.max(d[3] * .34, pw * RING_PX); d[8] = pw; d[12] = dist; d[13] = 0;
       _ndc.set(d[0], d[1], d[2]).project(camera); d[9] = (_ndc.x * .5 + .5) * cssW; d[10] = (-_ndc.y * .5 + .5) * cssH; d[11] = d[7] / Math.max(pw, 1e-6);   // 屏幕位置、绕圈半径（像素）
     }
-    dizzy.sort((a, b) => (b[6].sk > .5) - (a[6].sk > .5) || a[12] - b[12]);
-    let taken = 0; const acc = [];
+    const acc = []; let taken = 0, big = 0;
+    // 先挑 3 颗的（上一帧是 3 颗的先排，再按远近）
+    dizzy.sort((a, b) => (b[6].sk3 > .5) - (a[6].sk3 > .5) || a[12] - b[12]);
     for (const d of dizzy) {
-      let ok = d[5] > .05 && taken + 3 <= STAR_MAX;
-      if (ok) for (const e of acc) { const rr = d[11] + e[11]; if ((d[9] - e[9]) ** 2 + (d[10] - e[10]) ** 2 < rr * rr) { ok = false; break; } }
-      if (ok) { acc.push(d); taken += 3; }
-      d[6].sk += ((ok ? 1 : 0) - d[6].sk) * ks;
+      if (big >= STAR_BIG || taken + 3 > STAR_MAX) break;
+      if (!(d[5] > .05)) continue;
+      let ok = true;
+      for (const e of acc) { const rr = d[11] + e[11]; if ((d[9] - e[9]) ** 2 + (d[10] - e[10]) ** 2 < rr * rr) { ok = false; break; } }
+      if (ok) { acc.push(d); d[13] = 3; taken += 3; big++; }
     }
+    // 再给别的每只 1 颗（上一帧有星星的先排，再按远近）；中心落在别人绕圈里的（挤成一团）不画
+    dizzy.sort((a, b) => (b[6].sk > .5) - (a[6].sk > .5) || a[12] - b[12]);
+    for (const d of dizzy) {
+      if (d[13] || !(d[5] > .05) || taken + 1 > STAR_MAX) continue;
+      let ok = true;
+      for (const e of acc) { const rr = Math.max(d[11], e[11]); if ((d[9] - e[9]) ** 2 + (d[10] - e[10]) ** 2 < rr * rr) { ok = false; break; } }
+      if (ok) { acc.push(d); d[13] = 1; taken++; }
+    }
+    for (const d of dizzy) { const st = d[6]; st.sk += ((d[13] ? 1 : 0) - st.sk) * ks; st.sk3 += ((d[13] === 3 ? 1 : 0) - st.sk3) * ks; }
     for (const [x, y, z, L, id, k, st, ring, pw] of dizzy) {
       if (st.sk < .02) continue;
-      const a0 = time * 2.6 + hash01(id) * TAU, cy = y + Math.max(L * .42, L * .2 + pw * LIFT_PX), sz = Math.max(L * .085, pw * STAR_PX) * (.4 + .6 * k) * st.sk;
+      const a0 = time * 2.6 + hash01(id) * TAU, cy = y + Math.max(L * .42, L * .2 + pw * LIFT_PX), sz = Math.max(L * .085, pw * STAR_PX) * (.4 + .6 * k);
       for (let i = 0; i < 3; i++) {
+        const g = i ? st.sk3 : st.sk; if (g < .02) continue;
         const a = a0 + i * TAU / 3;
         _p.set(x + Math.cos(a) * ring, cy + Math.sin(a * 2 + i) * ring * .12, z + Math.sin(a) * ring);
         _q2.setFromAxisAngle(Z, time * 3 + i * 2); _q.copy(camera.quaternion).multiply(_q2);
-        _s.setScalar(sz);
+        _s.setScalar(sz * g);
         _m.compose(_p, _q, _s); S1.setMatrixAt(n++, _m);
       }
       if (n > 93) break;
@@ -250,7 +265,7 @@ export function createCreatures(ctx) {
     // 主角离镜头多远（插值后的位置）：比主角还近的生物（从镜头旁边飞过、跟在龙后面）慢慢缩没，不挡龙、不挡界面
     const H = S.hero; let dh = 0;
     if (H && Number.isFinite(H.x)) { const hpx = H.px ?? H.x, hpy = H.py ?? H.y, hpz = H.pz ?? H.z; dh = Math.hypot(hpx + (H.x - hpx) * alpha - cp.x, hpy + (H.y - hpy) * alpha - cp.y, hpz + (H.z - hpz) * alpha - cp.z); }
-    const nk0 = NEAR_K0 * dh, nk1 = NEAR_K1 * dh;
+    const nk0 = NEAR_K0 * dh, nk1 = NEAR_K1 * dh; lastNk[0] = nk0; lastNk[1] = nk1;
     for (const c of list) {
       const b = B[c.sp]; if (!b) continue;
       const s0 = c.size ?? b.cfg.len;
@@ -258,12 +273,13 @@ export function createCreatures(ctx) {
       const dx = c.x - cp.x, dy = c.y - cp.y, dz = c.z - cp.z, d2 = dx * dx + dy * dy + dz * dz;
       // 远处的画大一点（手机上远处的鸟群鱼群也认得出）；到嘴边的距离（镜头前 26 米内）保持原样
       const dd = Math.sqrt(d2);
-      let sz = s0 * (1 + FAR_BOOST * smooth(FAR_D0, FAR_D1, dd) + FAR_BOOST2 * smooth(100, 200, dd));
+      let sz = s0 * farK(dd);
       if (dd < nk1) { const f = smooth(nk0, nk1, dd); if (f < .05) continue; sz *= f; }
       const r = sz * b.vis * b.rad;
       if (cull) { const rr = sz * b.vis * .6; if (camUp ? c.y + rr < -CULL_DEPTH : c.y - rr > CULL_HEIGHT) continue; }
       if (!_fr.intersectsSphere(_sph.set(_v.set(c.x, c.y, c.z), r + 1))) continue;    // 画面外
-      if (d2 < far2) { b.near.push(c); b.nearS.push(sz); } else { b.far.push(c); b.farS.push(sz); }   // sim 的对象只读，尺寸另存
+      // 描边：150 米内、而且身体在屏幕上大于 OUT_PX 像素的才画（再小的描边本来就淡成中间调了；着色器在 7.5 → 11 像素之间把描边收没，切换时看不出来）
+      if (d2 < far2 && sz * b.vis > OUT_PX * dd * pxM) { b.near.push(c); b.nearS.push(sz); } else { b.far.push(c); b.farS.push(sz); }   // sim 的对象只读，尺寸另存
     }
     for (const sp in B) {
       const b = B[sp], tot = b.near.length + b.far.length;
@@ -278,6 +294,14 @@ export function createCreatures(ctx) {
     }
     drawFx(time, dt, cssW, cssH);
     if (frameNo % 120 === 0) for (const [id, st] of state) if (frameNo - st.f > 30) state.delete(id);
+  }
+
+  // 生物画出来比 sim 的体长大多少倍（显示放大 × 远处放大 × 镜头前缩小），界面的锁定圈按这个画才套得住：
+  // 屏幕上的半径 ≈ 投影 c.size × 0.5 × visScale(c)。用本帧 update 时的镜头位置（主循环先 update 生物、再更新界面）
+  function visScale(c) {
+    const b = c && B[c.sp]; if (!b) return 1;
+    const dd = Math.hypot(c.x - cp.x, c.y - cp.y, c.z - cp.z);
+    return b.vis * farK(dd) * (dd < lastNk[1] ? smooth(lastNk[0], lastNk[1], dd) : 1);
   }
 
   // 水下：描边颜色往水下雾色偏（k = 0..1）
@@ -397,7 +421,7 @@ export function createCreatures(ctx) {
     res();
   }, 0));
 
-  const api = { update, setUnderwater, portrait, prewarm, prewarmPortraits, stats, ready, root, species: B, fx, cullMedium: true, get underwater() { return uw; } };
+  const api = { update, setUnderwater, portrait, visScale, prewarm, prewarmPortraits, stats, ready, root, species: B, fx, cullMedium: true, get underwater() { return uw; } };
   root.userData.api = api;                         // 调试脚本用：scene.getObjectByName('creatures').userData.api
   return api;
 }

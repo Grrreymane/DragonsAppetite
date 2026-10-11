@@ -12,6 +12,9 @@ if (want('gallery')) for (const bg of ['sky', 'sea']) for (const page of ['0', '
 if (want('states')) for (const bg of ['sky', 'sea']) for (const page of ['0', '1']) {
   C.set('states', bg, page); C.step(8, 1 / 30); await __shot(`states_${bg}_${page}`);
 }
+if (want('heat')) { C.set('heat', 'sky'); C.step(20, 1 / 30); await __shot('heat_sky'); }
+if (want('daze')) { C.set('daze', 'sky'); C.step(30, 1 / 30); await __shot('daze_sky'); __log('DAZE stars ' + C.cr.fx.stars.count);
+  __log('VISSCALE ' + C.S.creatures.filter((c, i) => i % 5 === 0).map(c => c.sp + '@' + Math.round(C.camera.position.distanceTo(c)) + 'm=' + C.cr.visScale(c).toFixed(3)).join(' ')); }
 if (want('all')) { C.set('gallery', 'sky', 'all'); C.step(5, 1 / 30); await __shot('gallery_sky_all'); C.set('gallery', 'sea', 'all'); C.step(5, 1 / 30); await __shot('gallery_sea_all'); }
 if (want('zoo')) for (const bg of ['sky', 'sea']) {
   C.set('zoo', bg); for (let i = 0; i < 3; i++) { C.step(i ? 40 : 2, 1 / 30); await __shot(`zoo_${bg}_${i}`); }

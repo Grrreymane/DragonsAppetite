@@ -20,7 +20,7 @@ html,body{margin:0;height:100%;background:#0b0e1c;overflow:hidden;font-family:"P
 <div id="wrap">
   <div id="info"></div>
   <div id="ui">
-    <button data-m="gallery">图鉴</button><button data-m="states">状态</button><button data-m="zoo">转台</button><button data-m="phases">动作</button><button data-m="flock">鸟群</button><button data-m="game">实景</button><button data-m="portrait">小图</button>
+    <button data-m="gallery">图鉴</button><button data-m="states">状态</button><button data-m="zoo">转台</button><button data-m="phases">动作</button><button data-m="flock">鸟群</button><button data-m="game">实景</button><button data-m="portrait">小图</button><button data-m="heat">火烤</button><button data-m="daze">晕星</button>
     <button data-b="sky">天空</button><button data-b="sea">水下</button>
   </div>
   <div id="err"></div>
@@ -100,6 +100,16 @@ function build(mode, page) {
     list.forEach((sp, r) => VARS2.forEach((v, c) => S.creatures.push(mk(sp, { x: (c - 1.5) * W, y: ((rows - 1) / 2 - r) * H, z: 0, yaw: Math.PI / 2 - .55, pitch: .08, size: 1.9 / ext(sp) / (cr.species[sp].vis || 1), ...v }))));
     const h = rows * H / 2 + .6, D = h / Math.tan(THREE.MathUtils.degToRad(20));
     camera.position.set(0, D * .12, D); camera.lookAt(0, 0, 0);
+  } else if (mode === 'heat') {         // 正在被火烤的进度：每行一种，列 = 0 / 35% / 55% / 70% / 100% / 金色（对比：烤的不能像金色）
+    const L = ['sparrow', 'lavafinch', 'cloudjelly', 'gull', 'jelly', 'squid'], HF = [0, .35, .55, .7, 1, -1], W = 1.6, H = 2.2;
+    L.forEach((sp, r) => HF.forEach((f, c) => S.creatures.push(mk(sp, { x: (c - 2.5) * W, y: (2.5 - r) * H, z: 0, yaw: Math.PI / 2 - .55, pitch: .08, size: 1.4 / ext(sp) / (cr.species[sp].vis || 1), heatF: f >= 0 ? f : undefined, gold: f < 0 }))));
+    const h = Math.max(3 * H + .6, (3 * W + .4) / camera.aspect), D = h / Math.tan(THREE.MathUtils.degToRad(20));
+    camera.position.set(0, D * .12, D); camera.lookAt(0, 0, 0);
+  } else if (mode === 'daze') {         // 龙吼吼中一片：近处一群小雀（散开）、一团挤在一起的（漩涡卷住）、远处几只海鸥，都晕了（看星星怎么分）
+    camera.fov = 62;
+    const grp = (sp, n, cx, cy, cz, r, extra = {}) => { for (let k = 0; k < n; k++) { const a = k * 2.39, rr = r * Math.sqrt((k + .5) / n); S.creatures.push(mk(sp, { x: cx + Math.cos(a) * rr, y: cy + Math.sin(a) * rr * .6, z: cz + Math.sin(a * 1.7) * r * .3, yaw: Math.PI / 2 + Math.sin(k) * .8, skillHit: 1, daze: 3, cooked: 1, ...extra })); } };
+    grp('sparrow', 10, -4, 1, 40, 7); grp('sparrow', 5, 7, -3, 30, .9); grp('gull', 4, 4, 7, 75, 9); grp('lavafinch', 3, -8, -6, 24, 3);
+    camera.position.set(0, 0, 0); camera.lookAt(0, 0, 10);
   } else if (mode === 'zoo') {          // 3 × 4 大图，慢慢转
     SPECIES_IDS.forEach((sp, i) => S.creatures.push(mk(sp, { x: (i % 3 - 1) * 3.3, y: (1.5 - (i / 3 | 0)) * 3.6, z: 0, size: 2.7 / ext(sp) / (cr.species[sp].vis || 1), spin: true })));
     camera.position.set(0, 2.4, 25); camera.lookAt(0, 0, 0);
@@ -107,9 +117,9 @@ function build(mode, page) {
     const sp = SPECIES[page] ? page : Q.get('sp') || 'gull';
     for (let i = 0; i < 12; i++) S.creatures.push(mk(sp, { x: (i % 3 - 1) * 3.3, y: (1.5 - (i / 3 | 0)) * 3.6, z: 0, yaw: Math.PI / 2 - .7, pitch: .15, size: 2.8 / ext(sp) / (cr.species[sp].vis || 1), phase: i / 12 * Math.PI * 2, fixed: true }));
     camera.position.set(0, 3, 25); camera.lookAt(0, 0, 0);
-  } else if (mode === 'flock') {        // 性能：60 小雀 + 120 沙丁鱼，远近都有（一部分在 150 米外，不画描边）
+  } else if (mode === 'flock') {        // 性能：小雀、沙丁鱼都按 species.max 放满（60 + 90；?flock=120 是以前超出上限的 120 条沙丁鱼），远近都有（一部分在 150 米外，不画描边）
     for (let g = 0; g < 6; g++) { const cx = (g - 2.5) * 22, cz = -20 - g * 38, cy = 8 + (g % 3) * 6; for (let k = 0; k < 10; k++) movers.push(mk('sparrow', { cx, cy, cz, r: 3 + (k % 4), w: 1.6 + k * .05, o: k * .63 })); }
-    for (let g = 0; g < 4; g++) { const cx = (g - 1.5) * 18, cz = -30 - g * 55, cy = -6 - g * 2; for (let k = 0; k < 30; k++) movers.push(mk('sardine', { cx, cy, cz, r: 2 + (k % 5) * .6, w: 1.2 + (k % 7) * .04, o: k * .41, h: (k % 6 - 2.5) * .5 })); }
+    for (let g = 0; g < (Q.get('flock') === '120' ? 4 : SPECIES.sardine.max / 30); g++) { const cx = (g - 1.5) * 18, cz = -30 - g * 55, cy = -6 - g * 2; for (let k = 0; k < 30; k++) movers.push(mk('sardine', { cx, cy, cz, r: 2 + (k % 5) * .6, w: 1.2 + (k % 7) * .04, o: k * .41, h: (k % 6 - 2.5) * .5 })); }
     S.creatures = movers;
     camera.position.set(0, 4, 18); camera.lookAt(0, 2, -60);
   } else if (mode === 'game') {         // 实际大小、实际距离，像游戏镜头那样看（fov 62，往 +Z 看）
@@ -139,6 +149,7 @@ function sim(dt) {
       c.yaw = Math.atan2(-Math.sin(a), Math.cos(a)); c.phase = undefined;
     } else if (c.spin) c.yaw = T * .6 + c.id;
     if (c.heat) c.cookT = (c.cookT + dt) % .4;   // 一直在火里烤（到 0.4 秒又从头来，这里不烤熟）
+    if (c.heatF > 0) c.cookT = c.heatF * S.cfg.cookTime + T * 1e-4;   // 烤到固定的进度（cookT 每帧涨一点点：还算「在火里」）
     if (c.fixed) continue;
   }
 }

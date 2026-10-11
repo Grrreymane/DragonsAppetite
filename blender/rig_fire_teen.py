@@ -141,6 +141,20 @@ RING_MIN = 30          # cap open boundary loops with >= this many edges (the tw
 # CLUB_TIP. Concept teen club ~0.13 x length tall, ~0.1 x length long -> ~0.096 tall x 0.052 wide x 0.09 long
 CLUB_CUT, CLUB_MID, CLUB_TIP = 0.004, 0.036, 0.092
 CLUB_H, CLUB_W, CLUB_VM = 0.048, 0.026, 0.32
+# v4 club colours (v3 review: the golden-copper diamond was the brightest, most contrasting spot on the hero in the chase view and pulled the
+#   eye to the rump): dark warm-grey basalt + orange-red lava cracks; upper facets lighter, lower clearly darker (smooth normals, so the
+#   facets are faked in the texture); see club_paint.py
+# v4: left and right no longer share one texture patch (the v3 mirrored unwrap: the chase camera sees both halves at once, so the cracks
+#   formed left-right symmetric 'glyphs'); fewer pixels per facet, but every facet has its own cracks
+CLUB_MIRROR = os.environ.get('FM_CLUBMIRROR') == '1'
+CLUB_PARTS = json.loads(os.environ.get('FM_CLUBPARTS', '[[3, 0], [1, 2]]'))   # two free spots: the bigger gets the two upper facets (the chase camera is above), the smaller the lower two
+#   The review's upper 0.22 / lower 0.13 renders at only 22,11,7 (ACES tone mapping crushes darks and pushes them red); the target is a chase-view
+#   median of ~50-65 / 35-45 / 30-40. Measured (_lab/firemodels.html chase close-up, median inside the projected club vertices): this set ->
+#   baby 53,39,23 / 57,44,33, teen 56,45,39 / 58,45,30 (v3 was 95,57,39 golden copper, the adult 17,6,3). Crack core/glow a bit redder than
+#   the review's too: ACES turns a bright orange-yellow into a pale cream
+CLUB_PALETTE = {'upper': (0.30, 0.275, 0.285), 'lower': (0.20, 0.18, 0.19),
+                'glow': (0.9, 0.28, 0.05), 'core': (1.0, 0.52, 0.14)}
+if os.environ.get('FM_CLUBPAL'): CLUB_PALETTE.update(json.loads(os.environ['FM_CLUBPAL']))   # debug: try colours (JSON, only the keys to change)
 
 print('WELD', FL.weld(mesh))
 print('FILL', FL.fill_rings(mesh, RING_MIN))
@@ -207,7 +221,7 @@ BONES = [(n, tuple(XF[n](Vector(h))) if n in XF else h, tuple(XF[n](Vector(t))) 
 segs = {n: (Vector(h), Vector(t)) for n, h, t, p in BONES}
 # ---------- v3: club rebuilt as a clean upright diamond along tail6; its vertices follow tail6 rigidly ----------
 H6, T6 = segs['tail6']; D6 = (T6 - H6).normalized()
-CLUB = FL.rebuild_club(mesh, H6, D6, CLUB_CUT, CLUB_MID, CLUB_TIP, CLUB_H, CLUB_W, vm=CLUB_VM)
+CLUB = FL.rebuild_club(mesh, H6, D6, CLUB_CUT, CLUB_MID, CLUB_TIP, CLUB_H, CLUB_W, vm=CLUB_VM, mirror=CLUB_MIRROR)
 mesh.vertex_groups['tail6'].add(CLUB['new_verts'], 1.0, 'REPLACE')
 print('CLUB', CLUB)
 BONES = [(n, h, tuple(H6 + D6 * CLUB_TIP) if n == 'tail6' else t, p) for n, h, t, p in BONES]   # tail6 ends at the new tip
@@ -216,7 +230,8 @@ segs = {n: (Vector(h), Vector(t)) for n, h, t, p in BONES}
 FL.limit_normalize(mesh, 4)
 FL.smooth_normals(mesh)
 base_img = next(l.from_node.image for l in next(n for n in mesh.data.materials[0].node_tree.nodes if n.type == 'BSDF_PRINCIPLED').inputs['Base Color'].links)
-print('CLUBTEX', FL.club_texture(mesh, base_img, aspect=2 * math.hypot(CLUB_H, CLUB_W) / CLUB_TIP, seed=11, vm=CLUB_VM))
+print('CLUBTEX', FL.club_texture(mesh, base_img, CLUB['geom'], seed=11, vm=CLUB_VM, palette=CLUB_PALETTE, mirror=CLUB_MIRROR,
+                                      parts=CLUB_PARTS, flip=-1, margin=2))   # margin 2 cells (4 export px): the atlas is nearly full; 18.8 / 13.2 px facets instead of 20.7 / 10.3
 print('TRIS', FL.tris(mesh), 'VERTS', len(mesh.data.vertices), 'TAIL', round(segs['tail1'][0].x - min(v.co.x for v in mesh.data.vertices), 3))
 
 arm_data = bpy.data.armatures.new('DragonRig'); arm = bpy.data.objects.new('DragonRig', arm_data)
@@ -398,6 +413,7 @@ bpy.ops.object.select_all(action='SELECT')
 bpy.ops.export_scene.gltf(filepath=OUT_GLB, export_format='GLB', export_animations=True, export_animation_mode='NLA_TRACKS',
                           export_skins=True, export_image_format='WEBP', export_image_quality=85, export_yup=True)
 size = FL.bake_quantize(OUT_GLB)
+tris = FL.glb_tris(OUT_GLB)   # the manifest gets the exported glb's real count (the glTF exporter drops a degenerate triangle: 6391 -> 6390)
 L = max(xs) - min(xs); span = max(p.y for p in V) - min(p.y for p in V); head_len = xmax - segs['head'][0].x
 tail_len = segs['tail1'][0].x - min(xs)
 if MANIFEST:

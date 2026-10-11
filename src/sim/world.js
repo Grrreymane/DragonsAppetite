@@ -169,8 +169,36 @@ export function buildIslands(seed = 7) {
       for (let k = 0; k < 2; k++) { const a = rnd.range(0, TAU), d = rnd.range(30, 55); add('spire', x + Math.cos(a) * d, z + Math.sin(a) * d, rnd.range(8, 14), rnd.range(30, 70)); }
     } else add(kind, x, z, r, h);
   }
+  volcanoSea(seed);
   for (const is of islands) fitShape(is);
   return islands;
+}
+
+// 火山海里至少 VOLCANO_MIN 座火山（熔岩雀只在火山边上生，火山海也该有火山的样子）。不动主 RNG 的抽取顺序，前 4 座手摆的不动：
+// 先把火山海里最大的非火山岛（不在石柱簇里的）换成火山——尺寸用岛自己的种子在火山的范围里重抽，按间距规则限制半径；
+// 还不够就用另一个 RNG 在火山海里补几座（id 接在后面）
+const VOLCANO_MIN = 4;
+function volcanoSea(seed) {
+  const gap = (a, x, z, r) => islands.every(o => o === a || Math.hypot(wrapP(o.x - x), wrapP(o.z - z)) >= Math.max(150, (o.r + r) * 1.6));
+  const rMax = (a, x, z) => Math.min(70, ...islands.filter(o => o !== a).map(o => Math.hypot(wrapP(o.x - x), wrapP(o.z - z)) / 1.6 - o.r)) / 1.15;
+  const inZone = is => is.id > 3 && zoneAt(is.x, is.z) === 'volcano';
+  let n = islands.filter(is => inZone(is) && is.kind === 'volcano').length;
+  const cand = islands.filter(is => inZone(is) && is.kind !== 'volcano').sort((a, b) => b.r - a.r);
+  for (const is of cand) {
+    if (n >= VOLCANO_MIN) break;
+    const r2 = makeRng(is.seed), lim = rMax(is, is.x, is.z);
+    const r = Math.min(r2.range(40, 70), lim), h = clamp(r * r2.range(.85, 1.3), 55, 100);
+    if (r < 32) continue;                                       // 石柱簇里的、挤在别的岛边上的不换
+    is.kind = 'volcano'; is.r = r; is.h = h; is.prof = islandProfile('volcano', r, h); n++;
+  }
+  const rnd = makeRng(seed * 104729 + 77);
+  for (let tries = 0; n < VOLCANO_MIN && tries < 3000; tries++) {
+    const x = rnd.range(-PERIOD / 2, PERIOD / 2), z = rnd.range(-PERIOD / 2, PERIOD / 2);
+    if (zoneAt(x, z) !== 'volcano' || zoneValue(x, z) < .5 || Math.hypot(x, z - 120) < 400) continue;   // 火山海的里面一点，离出生点远一点
+    const r = rnd.range(42, 66), h = clamp(r * rnd.range(.9, 1.3), 55, 95);
+    if (!gap(null, x, z, r * 1.15)) continue;
+    islands.push({ id: islands.length, kind: 'volcano', x, z, r, h, prof: islandProfile('volcano', r, h), seed: rnd.int(1, 1e9) }); n++;
+  }
 }
 buildIslands();
 
@@ -246,9 +274,20 @@ export function pushOutOfIslands(p, rad, dt) {
           slid = true;
         }
       }
-      if (!slid) { const k = Math.min(coast ? h - COAST + 1 : pen / slope + .5, 6) * clamp(dt * 12, 0, 1); p.x += nx * k; p.z += nz * k; }
+      // 跃出水面的海龙落在岸上（medium = air）：每步最多往外挪 0.3 米，高度不低于岛面 + 半个身子——顺着沙滩滑下去，
+      // 不会从沙子里掉下去、也不会被一下子横着推出去好几十米 / 秒
+      const air = coast && p.medium === 'air';
+      if (!slid) {
+        let k = Math.min(coast ? h - COAST + 1 : pen / slope + .5, 6) * clamp(dt * 12, 0, 1);
+        if (air) {
+          k = Math.min(k, .3);
+          if (p.px !== undefined) { const into = wrapP(p.x - p.px) * nx + wrapP(p.z - p.pz) * nz; if (into < 0) { p.x -= nx * into; p.z -= nz * into; } }   // 往岛里走的那部分扣掉（顺着岸滑）
+        }
+        p.x += nx * k; p.z += nz * k;
+      }
       const h2 = surf(is, wrapP(p.x - is.x), wrapP(p.z - is.z));   // 挪开以后脚下的高度
       if (h2 > -900 && !coast) p.y += Math.max(0, h2 + rad - p.y) * clamp(dt * 8, 0, 1);
+      if (air && h2 > -900) p.y = Math.max(p.y, h2 + rad * .5);
     } else {
       if (p.y < h) p.y = h;                                      // 缓坡：球心不许在岛面以下（龙从山坡上滑过去）
       p.y += (h + rad - p.y) * clamp(dt * 8, 0, 1);

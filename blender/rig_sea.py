@@ -7,8 +7,10 @@
 #   models/<name>_anim.glb   models/<name>.json（游戏清单）   blender/<name>_rig.blend
 #   .cache/check/<name>/  rest_bones_*.png  weights_*.png  swim_top_4phase.png  ...  tex/（调色前后、面标签图）
 #   .cache/art/<name>/tex/base_v2.png（调好的底色，每次重新生成）
-# 步骤：导入 → 按 Tripo 自带法线摆正面朝向 → 焊接 → 补小洞（尾鳍补大洞）→ 邻居投票统一朝向 → 减面 → 骨架 → 权重 → 动作
-#   → 面标签 + blender/sea_tex.py 调色（系统 python）→ 导出 glb → blender/glb_pack.py 压缩 → 清单 → 检查图
+# 步骤：导入 → 按 Tripo 自带法线摆正面朝向 → 焊接 → 补小洞（尾鳍补大洞）→ 邻居投票统一朝向 → 减面（之后再投票一次，不用 recalc）
+#   → 绕序和角法线还相反的面改平面着色 → 骨架 → 权重 → 动作
+#   → 面标签（鳍 / 头冠 / 耳鳍 / 腿 / 头 / 身体）+ blender/sea_tex.py 调色（系统 python）→ 导出 glb → blender/glb_pack.py 压缩 → 清单 → 检查图
+# 调试：.cache/check/<name>/_face_labels.json = 每个面的标签（按面序号）
 # 收腿检查另跑：blender -b blender/<name>_rig.blend -P blender/sea_tuck_check.py
 # 坐标（Blender，import_rot_z 之后）：+X 朝前（头），+Y 朝左，+Z 朝上
 import bpy, sys, os, math, json, subprocess
@@ -71,8 +73,12 @@ def clean_mesh(me):
         if src is None: continue
         u = src[uvl].uv.copy()
         for l in f.loops: l[uvl].uv = u
-    # 朝向：不用 recalc_face_normals（非流形的鳍根处它会翻错一片）。按邻居投票：面的朝向和它几个顶点的平滑法线（导出时就是这个）
-    # 明显相反的翻过来。朝向反了的面，描边壳会被推到表面前面、正好露出背面 → 黑色碎片
+    flipped, left = vote_orient(bm)
+    bm.to_mesh(me); bm.free()
+    print('CLEAN filled', len(filled), 'holes; vote-flipped', flipped, 'faces; faces still against their vertex normals', left)
+def vote_orient(bm):
+    """朝向：不用 recalc_face_normals（非流形的鳍根处它会翻错一片）。按邻居投票：面的朝向和它几个顶点的平滑法线（导出时就是这个）
+    明显相反的翻过来。朝向反了的面，描边壳会被推到表面前面、正好露出背面 → 黑色碎片。返回（翻了几个面, 还剩几个面和顶点法线相反）"""
     flipped = 0
     for it in range(4):
         bm.normal_update()
@@ -82,8 +88,7 @@ def clean_mesh(me):
         flipped += len(bad)
     bm.normal_update()
     left = sum(1 for f in bm.faces if f.normal.dot(sum((v.normal for v in f.verts), Vector())) < 0)
-    bm.to_mesh(me); bm.free()
-    print('CLEAN filled', len(filled), 'holes; vote-flipped', flipped, 'faces; faces still against their vertex normals', left)
+    return flipped, left
 if cfg.get('weld', 2e-5):
     # 先按 Tripo 自带的顶点法线摆正面的朝向（文件里的法线是对的，个别三角形的绕序是反的）
     cn = mesh.data.corner_normals
@@ -114,8 +119,28 @@ if cfg.get('max_tris'):
         with bpy.context.temp_override(object=mesh, active_object=mesh):
             bpy.ops.object.modifier_apply(modifier=dm.name)
         print('DECIMATE', t0, '->', sum(len(p.vertices) - 2 for p in mesh.data.polygons))
-        bm = bmesh.new(); bm.from_mesh(mesh.data); bmesh.ops.recalc_face_normals(bm, faces=bm.faces[:]); bm.to_mesh(mesh.data); bm.free()
-        print('HEALTH after decimate', mesh_health(mesh.data))
+        # 减面以后不能 recalc_face_normals（它会把鳍根附近整片翻错 → 幼龙尾鳍上的黑色大块，v3 review 第 1 条）；
+        # 塌陷减面本身保留朝向，只把塌陷出来的个别反面按邻居投票再翻一遍
+        bm = bmesh.new(); bm.from_mesh(mesh.data); fl, left = vote_orient(bm); bm.to_mesh(mesh.data); bm.free()
+        print('HEALTH after decimate', mesh_health(mesh.data), 'vote-flipped', fl, 'still against vertex normals', left)
+
+# 最后一道：绕序和自己的（导出用的）角法线还是相反的面（邻居投票也定不下来的：几片鳍挤在一起的地方），改成平面着色。
+# 平面着色的面在导出时拆出自己的顶点、法线 = 面法线，描边壳就顺着它的绕序往外推，不会翻到鳍面前面变成黑三角（v3 review 第 3 条：
+# 少年龙尾鳍上的黑三角就是这几个面）；它旁边的平滑面也不再被它拉偏。
+def flat_bad_faces(me, passes=4):
+    tot = 0
+    for _ in range(passes):
+        cn = me.corner_normals
+        bad = [p for p in me.polygons if p.use_smooth and sum((cn[l].vector for l in p.loop_indices), Vector()).dot(p.normal) < 0]
+        if not bad: break
+        for p in bad: p.use_smooth = False
+        tot += len(bad); me.update()
+    cn = me.corner_normals
+    left = sum(1 for p in me.polygons if sum((cn[l].vector for l in p.loop_indices), Vector()).dot(p.normal) < 0)
+    return tot, left
+if cfg.get('flat_bad', True):
+    fb, fl_left = flat_bad_faces(mesh.data)
+    print('FLAT faces against their corner normals:', fb, 'flat-shaded; still against', fl_left)
 
 # ---------- 骨架 ----------
 SPINE = [(n, tuple(h), tuple(t), p) for n, h, t, p in cfg['spine']]
@@ -373,10 +398,10 @@ for m in bpy.data.materials:
         bsdf.inputs['Metallic'].default_value = 0.0; bsdf.inputs['Roughness'].default_value = 0.8
 # 底色调色：按 3D 位置给每个面贴标签（鳍 / 腿 / 头 / 身体），写成 UV 三角形，交给 blender/sea_tex.py（系统 python）
 # 在 1024 上调色 → 换掉 Tripo 原图。每次重绑都重新生成，不依赖手工步骤
-def posed_face_normals(kind='tuck'):
-    """收腿姿势（不带身体波动）下每个面的法线：大臂 / 大腿上哪些面游泳时朝上、朝后、朝外（看得见）"""
+def posed_face_normals(kind='tuck', spec=None):
+    """收腿姿势（不带身体波动）下每个面的法线：大臂 / 大腿上哪些面游泳时朝上、朝后、朝外（看得见）。spec：直接给一个姿势"""
     for tr in arm.animation_data.nla_tracks: tr.mute = True
-    pose(legs_spec(kind, 0.0, 0.0)); bpy.context.view_layer.update()
+    pose(spec if spec is not None else legs_spec(kind, 0.0, 0.0)); bpy.context.view_layer.update()
     ev = mesh.evaluated_get(bpy.context.evaluated_depsgraph_get()); me = ev.to_mesh()
     ns = [(p.normal.copy(), p.center.copy()) for p in me.polygons]; ev.to_mesh_clear()
     for pb in pbs: pb.rotation_quaternion = Quaternion(); pb.location = (0, 0, 0); pb.scale = (1, 1, 1)
@@ -386,6 +411,12 @@ def posed_face_normals(kind='tuck'):
 def face_labels():
     me = mesh.data; uv = me.uv_layers.active.data
     PN = posed_face_normals()
+    # 跃出（Breach）拱背时胸口往下压，肩膀外侧（大臂根）会转到朝上：离中线够远（|y| > breach_leg_y）、Breach 姿势下朝上的大臂 / 大腿根
+    # 也压成藏青（v3 review 第 8 条：少年龙 Breach 从上面看得见 0.6% 的浅色腿）
+    BP = cfg['actions'].get('Breach')
+    PB = posed_face_normals(spec=merge(legs_spec(BP['legs'], 0.0, 0.0, BP.get('tuck_extra', 0)),
+                                       arch_spec(BP['arch'], BP.get('arch_head', 0.5), BP.get('arch_front', 0.5)))) if BP and BP.get('arch') else None
+    breach_y = W.get('breach_leg_y', 1.6 * W['leg_y'])
     sp = sorted([(h[0], h[2]) for n, h, t, p in SPINE] + [(t[0], t[2]) for n, h, t, p in SPINE])
     def spine_z(x):
         if x <= sp[0][0]: return sp[0][1]
@@ -397,22 +428,56 @@ def face_labels():
     LEGS = set(b + s for b in ('farm2', 'fpaw', 'ftoe', 'hleg2', 'hfoot', 'htoe') for s in ('.L', '.R'))
     ROOTS = set(b + s for b in ('farm1', 'hleg1') for s in ('.L', '.R'))
     crest_y, crest_dz = W.get('crest_y', 0.016), W.get('crest_dz', 0.02)
-    out = {'body': [], 'fin': [], 'leg': [], 'head': []}; cnt = {}
+    # 头上的鳍（v3 review 第 2 条：少年龙头冠 / 耳鳍以前落进「头」和藏青，渲染成黑褐色）：头骨轮廓（rigs json 的 head_fin，
+    # 从侧视 / 俯视网格图量的：skull_top = 头顶高度随 x，skull_half = 头的半宽随 x）以外伸出去的部分。
+    #   往两边伸出去（|y| > 半宽 + margin）= 耳鳍 → 奶白（铜色边不动）；往上伸出去（z > 头顶 + margin）= 头冠 → 海青（铜色尖不动）
+    #   往两边的还要够薄（往里打射线 < thin，鳍是薄片），免得把脖子侧面算进去；头顶往下 base 以内、比 thin_crest 薄的也算头冠（刺根）
+    HF = W.get('head_fin')
+    from mathutils.bvhtree import BVHTree
+    bvh = BVHTree.FromPolygons([v.co for v in me.vertices], [tuple(q.vertices) for q in me.polygons])
+    def poly(pts, x):
+        if x <= pts[0][0]: return pts[0][1]
+        for (x0, z0), (x1, z1) in zip(pts, pts[1:]):
+            if x0 <= x <= x1: return z0 + (z1 - z0) * (x - x0) / max(x1 - x0, 1e-9)
+        return pts[-1][1]
+    def thick(p):
+        """面往身体里打射线，多远碰到对面（鳍、刺是薄片：很近）"""
+        for sg in (-1, 1):                                           # 往里打；朝向反了的面往里打不到东西，就换个方向
+            h = bvh.ray_cast(p.center + p.normal * (sg * 1e-4), p.normal * sg)
+            if h[0] is not None: return h[3]
+        return 9.0
+    if HF: hf_m, hf_x0, hf_thin = HF.get('margin', 0.004), HF.get('x', W['head_x']), HF.get('thin', 0.025)
+    crest_thin = W.get('crest_thin', 0.012)
+    def head_fin(p):
+        if not HF: return None
+        c = p.center
+        if c.x < hf_x0: return None
+        if abs(c.y) > poly(HF['skull_half'], c.x) + hf_m and thick(p) < hf_thin: return 'ear'
+        top = poly(HF['skull_top'], c.x)
+        if c.z > top + hf_m: return 'fin'
+        if c.z > top - HF.get('base', 0.0) and thick(p) < HF.get('thin_crest', 0.012): return 'fin'   # 头冠的刺根：贴着头顶、但是薄
+        return None
+    out = {'body': [], 'fin': [], 'leg': [], 'head': [], 'ear': []}; cnt = {}; per_face = []
     for p in me.polygons:
         c, nrm = p.center, p.normal
         doms = [dominant[i] for i in p.vertices]
+        hfl = head_fin(p)
         if c.x < W['fan_x']: lab = 'fin'                                                   # 尾鳍
-        elif c.x < W['head_x'] and abs(c.y) < crest_y and c.z > spine_z(c.x) + crest_dz and abs(nrm.z) < 0.75: lab = 'fin'   # 背鳍：脊线上方、贴中线的竖片
+        elif hfl: lab = hfl                                                                # 头冠 / 耳鳍
+        elif c.x < W['head_x'] and abs(c.y) < crest_y and c.z > spine_z(c.x) + crest_dz and (abs(nrm.z) < 0.75 or thick(p) < crest_thin): lab = 'fin'
+            # 背鳍：脊线上方、贴中线的竖片；往后倒的刺（面朝上，|nz| ≥ 0.75）只要够薄也算（v3 review 第 2 条：幼龙脖子上的刺以前是藏青）
         elif sum(d in LEGS for d in doms) * 2 > len(doms) or (sum(d in LEGS or d in ROOTS for d in doms) * 2 > len(doms) and abs(c.y) > 0.8 * W['leg_y']
                 and (PN[p.index][1] - c).length > W.get('root_move', 0.02)                # 真在腿上（收腿时跟着挪了位置），不是腿根旁边的侧腹
                 and (PN[p.index][0].z > 0.15 or PN[p.index][0].x < -0.45 or PN[p.index][0].y * (1 if c.y > 0 else -1) > 0.45)): lab = 'leg'
+        elif PB and sum(d in ROOTS for d in doms) * 2 > len(doms) and abs(c.y) > breach_y and PB[p.index][0].z > 0.2: lab = 'leg'
         elif c.x > W['head_x2']: lab = 'head'
         else: lab = 'body'
-        cnt[lab] = cnt.get(lab, 0) + 1
+        cnt[lab] = cnt.get(lab, 0) + 1; per_face.append(lab)
         li = list(p.loop_indices)
         for k in range(1, len(li) - 1):
             out[lab].append([c_ for j in (li[0], li[k], li[k + 1]) for c_ in tuple(uv[j].uv)])
     print('FACE LABELS', cnt)
+    json.dump(per_face, open(os.path.join(CHECK, '_face_labels.json'), 'w'))      # 调试用：每个面的标签（按面序号），检查图按它上色
     return out
 TEX_OUT = os.path.join(ROOT, '.cache', 'art', NAME, 'tex', 'base_v2.png')
 if cfg.get('grade', True):

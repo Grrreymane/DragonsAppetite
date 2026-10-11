@@ -29,7 +29,12 @@ SOURCES = [
     ('heads_01.png', 3, 2, ['head_fire0', 'head_fire1', 'head_fire2', 'head_sea0', 'head_sea1', 'head_sea2']),
     ('seaicons_01.png', 3, 2, [None, 'breach', 'bite_sea', 'gulp_sea', 'clock', 'star']),
     ('dash_01.png', 2, 2, [None, 'dash', None, None]),   # 冲刺：四个方案里挑右上（龙头 + 前身往右冲）。原来的左下也是斜着往上 + 水花，和「跃出」太像
+    # 海龙阶段头像重画（docs/art-prompts/ui.md §11，.cache/art/ui/queue_heads.py）。有这张就用它，盖掉 heads_01 下排；没有就用下面 NAVY 的本地改色
+    ('seaheads_01.png', 3, 1, ['head_sea0', 'head_sea1', 'head_sea2']),
 ]
+OPTIONAL = {'seaheads_01.png'}
+# heads_01 下排的海龙头像是浅天蓝色，和模型 / 龙卡 / 海龙图标（深海军蓝 + 青色鳍 + 奶油色喉咙）对不上：本地改色（见 navy_sea）
+NAVY = {'head_sea0', 'head_sea1', 'head_sea2'}
 # 画完以后再加工：冲刺加三道粗速度线（见 speed_lines），44px 的按钮上也一眼看出「快」
 POST = {'dash': 'speed'}
 LAYOUT = ['bite', 'fire', 'plunge', 'roar', 'dash', 'breach',
@@ -159,6 +164,43 @@ def speed_lines(tile):
     return cv
 
 
+def _ss(e0, e1, x):
+    t = np.clip((x - e0) / (e1 - e0), 0, 1); return t * t * (3 - 2 * t)
+
+
+def _hsv(a):
+    r, g, b = a[..., 0], a[..., 1], a[..., 2]; mx = a.max(-1); mn = a.min(-1); d = mx - mn + 1e-6
+    h = np.where(mx == r, ((g - b) / d) % 6, np.where(mx == g, (b - r) / d + 2, (r - g) / d + 4)) * 60
+    return h, np.where(mx > 0, (mx - mn) / np.maximum(mx, 1e-6), 0), mx
+
+
+def _rgb(h, s, v):
+    h = (h % 360) / 60; i = np.floor(h); f = h - i; p = v * (1 - s); q = v * (1 - s * f); t = v * (1 - s * (1 - f)); i = i.astype(int) % 6
+    return np.stack([np.choose(i, [v, q, p, p, t, v]), np.choose(i, [t, v, v, q, p, p]), np.choose(i, [p, p, t, v, v, q])], -1)
+
+
+def navy_sea(tile):
+    """海龙头像改色（tile = fit_ring 之后的一格，金圈占 88%）：只动金圈以内。
+    蓝色鳞片（色相 190–235°）→ 深海军蓝（明暗关系保留，整体压暗）；很亮很饱和的蓝（眼睛）→ 青色；
+    发白的淡蓝（喉咙、肚皮）→ 奶油色；幼龙的肉粉色耳鳍 → 青色。青绿色底光（170–185°）和描边不动。"""
+    a = np.asarray(tile).astype(np.float32) / 255
+    rgb = a[..., :3]; h, s, v = _hsv(rgb)
+    n = a.shape[0]; yy, xx = np.mgrid[0:n, 0:n]
+    rr = np.hypot(xx - n / 2 + .5, yy - n / 2 + .5) / (n / 2)
+    inside = 1 - _ss(.74, .79, rr)
+    wb = _ss(188, 198, h) * (1 - _ss(228, 238, h)) * _ss(.14, .26, s) * _ss(.1, .2, v) * inside
+    we = wb * _ss(.8, .92, v) * _ss(.55, .7, s)
+    wp = (1 - _ss(.16, .28, s)) * _ss(.5, .62, v) * _ss(150, 175, h) * (1 - _ss(245, 260, h)) * inside
+    wf = (1 - _ss(26, 34, h)) * _ss(.2, .32, s) * _ss(.3, .45, v) * inside * (1 - _ss(.62, .7, rr))
+    body = _rgb(np.full_like(h, 212), np.clip(s * .6 + .45, 0, .8), .10 + .46 * v ** 1.35)
+    eye = _rgb(np.full_like(h, 176), np.clip(s, 0, .75), np.clip(v * 1.02, 0, 1))
+    cream = _rgb(np.full_like(h, 40), np.clip(.15 + s * .5, 0, .3), np.clip(v * .98, 0, 1))
+    fin = _rgb(np.full_like(h, 178), np.clip(s + .15, 0, .7), v * .9)
+    out = rgb.copy()
+    for w, c in ((wb, body), (we, eye), (wp, cream), (wf, fin)): out = out * (1 - w[..., None]) + c * w[..., None]
+    return Image.fromarray((np.dstack([out, a[..., 3]]) * 255).clip(0, 255).astype(np.uint8), 'RGBA')
+
+
 def fit(tile, size=INNER, pad=0):
     """裁到不透明部分的外框，等比缩放放进 size×size 的正中（留 pad）。"""
     bb = tile.getchannel('A').point(lambda v: 255 if v > 10 else 0).getbbox()
@@ -191,10 +233,12 @@ def fit_ring(tile, size=INNER, circle=False):
 
 
 def build_icons(preview, q=80):
-    tiles = {}
+    tiles = {}; navy_done = set()
     for fn, cols, rows, names in SOURCES:
         p = RAW / fn
-        if not p.exists(): print('缺原图', p); continue
+        if not p.exists():
+            if fn not in OPTIONAL: print('缺原图', p)
+            continue
         src = Image.open(p).convert('RGB')
         W, H = src.size
         if fn in CLEAN:
@@ -215,6 +259,10 @@ def build_icons(preview, q=80):
             c, r = i % cols, i // cols
             t = src.crop((c * W // cols, r * H // rows, (c + 1) * W // cols, (r + 1) * H // rows))
             tiles[n] = fit_ring(cut_white(t), circle=n in CIRCLE) if n.startswith('head_') else fit(cut_white(t, *THR.get(n, (232, 26)), holes=HOLES.get(n, 0)))
+            if n in NAVY:
+                if fn == 'heads_01.png': tiles[n] = navy_sea(tiles[n]); navy_done.add(n)
+                else: navy_done.discard(n)    # 重画的新头像本来就是深蓝，不改色
+    if navy_done: print('海龙头像本地改色：', sorted(navy_done))
     missing = [n for n in LAYOUT if n not in tiles]
     if missing: print('图集缺：', missing)
     rows = (len(LAYOUT) + COLS - 1) // COLS

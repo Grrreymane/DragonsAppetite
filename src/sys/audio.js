@@ -2,13 +2,13 @@
 //   createAudio() → { unlock(), setMute(b), muted, update(S, dt, events, under), play(name, o), setMusic(on) }
 //   搭图的 buildEngine(ac) 不碰 DOM，也能接 OfflineAudioContext：_lab/audio.html 用 renderOffline() 离线渲染，
 //   量峰值 / 响度、存 WAV，不用听也能检查。
-//   v2 事件：unlock（新能力小号角，进化后 1.45 秒，跟「新能力」卡一起出来）、skill {id:'roar'|'vortex'}（龙吼 / 漩涡，音乐让开一点）、
+//   v2 事件：unlock（新能力小号角，进化后 UNLOCK_AT = 1.64 秒，跟「新能力」卡一起出来）、skill {id:'roar'|'vortex'}（龙吼 / 漩涡，音乐让开一点）、
 //   lunge（扑咬的轻「嗒」）、locked（锁定的极轻「嘀」：只在空了 0.5 秒后锁到新猎物时响，吃 / 扑咬后 0.35 秒内不响）、
 //   blocked（还没学会的「啵-呜」）；另外 S.hero.skill 冷却好了自己放一声元素味的小「亮起来」（火苗 / 泡泡）。
 //   eat：一口吞几只时 sim 每只发一个 eat（多的带 extra）——只有主口爬连吃音阶，多的叠成一声更大的「咕嘟」；咕的大小跟着 S.stage 变。
 // 信号流：世界的一次性音效（水花 / 扇翅 / 入水…）→ sfx ┐
-//         龙自己的嘴和身体（咬吞 / 扑咬 / 撞晕 / 冲刺 / 被咬 / 撞岛）→ near ┤
-//         提示音（目标 / 图鉴 / 预警 / 新能力 / 漩涡）→ cue ┼→ 水下低通 → 总音量 → 压限器（-9 dB，12:1，2 毫秒）→ 软削波（|x| < 0.91）→ 扬声器
+//         龙自己的嘴和身体（咬吞 / 扑咬 / 撞晕 / 冲刺 / 被咬 / 撞岛 / 龙吼 / 进化的吼）→ near ┤
+//         提示音（目标 / 图鉴 / 预警 / 新能力 / 漩涡 / 进化的琶音）→ cue ┼→ 水下低通 → 总音量 → 压限器（-9 dB，12:1，2 毫秒）→ 软削波（|x| < 0.91）→ 扬声器
 //         两首曲子 → music（技能时让开）→ 1 kHz +7 dB ┘   ↖ 混响（音乐和部分音效的送出）
 // 水下：世界声（音效 + 音乐 + 混响）过 900 Hz 低通；龙自己的声音只降到 3000 Hz（海龙大半时间在水下，「咔」不能闷没了）；
 //       提示音降到 2500 Hz，免得目标完成的铃声被闷没了。
@@ -16,17 +16,20 @@
 //   曲子总线上 1 kHz 抬 7 dB（铺底也亮一点）：耳机里只响 1.5 dB，手机上背景响 3.4~5 dB；龙吼 / 漩涡的中频收一点。
 //   手机上大技能比背景（整段 RMS）高 10 dB 以内：玩家为了听清曲子调大音量，吼一声不会吓一跳。
 // 三个年纪的编配不一样（E.stage，update 里跟着 S.stage 走）：幼龙只在拍点上拨，少年龙全琶音，成龙再多一条低音号角。
+// 跟着年纪变的音效：咬吞 / 扑咬 / 冲刺（音高、长短）、进化、新能力号角（成龙更大）、海龙出水（少年起是「跃出」，更大）。
 
 const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
 const mtof = m => 440 * Math.pow(2, (m - 69) / 12);
 export const VOL = { master: 1.1, sfx: .85, cue: .8, music: .5 };   // 默认音量：音乐比音效小
 export const UNDER = { world: 900, near: 3000, cue: 2500 };   // 镜头完全在水下时各总线的低通（Hz）：世界（音效 + 曲子 + 混响）/ 龙自己 / 提示音
+// 「新能力」卡什么时候弹：ui.js 等阶段名大字放完（1.6 秒）+ 50 毫秒才出，实测进化后 1.67~1.70 秒。号角第一声比它早一点点（0.03~0.06 秒）
+export const UNLOCK_AT = 1.64;
 const MAXV = 24, MAXV_LOW = 16;                                     // 同时发声的一次性音效上限；水花 / 气泡 / 扇翅 / 光点只能占 16 个
 
 // 同名音效的最小间隔（秒）：一帧里来好几个就往后错开一点，排太远就丢
 const GAP = { flap: .1, eat: .045, splash: .07, orb: .045, bump: .25, alert: .45, crossWarn: .14, enterWater: .25, exitWater: .25,
   bite: .3, cook: .08, stun: .08, dash: .2, goal: .5, codex: .3, evolve: 2, shield: .5, bubble: .05, tap: .04,
-  unlock: 1.5, roar: 1, vortex: 1, lunge: .12, locked: .4, blocked: 1.2, ready: 1 };
+  unlock: 1.5, roar: 1, vortex: 1, lunge: .12, locked: .4, blocked: 6, ready: 1 };   // blocked 6 秒 = 界面「长大后学会」的间隔：有声就有字
 const DROP = { lunge: 1, locked: 1, blocked: 1, ready: 1 };   // 太密就直接丢，不往后排（晚了的「嘀」没有意义）
 const AFTER = { locked: .35 };                                // 吃 / 扑咬后这么多秒内直接丢：吃完马上锁下一只，「嘀」叠在「咔」上没意义
 const PRIO = { evolve: 1, goal: 1, codex: 1, bite: 1, alert: 1, eat: 1, cook: 1, stun: 1, unlock: 1, roar: 1, vortex: 1 };   // 满员也照样响（「吃得脆」是核心手感）
@@ -174,11 +177,11 @@ export function buildEngine(ac) {
     lfo.start(t); lfo.stop(end);
   }
   // 暖号角：两只略走调的「暖」波形（谐波逐个变小，不是锯齿那么冲），低通先张开再合上一点 → 「哇」的一下
-  function horn(v, m, t, len, amp) {
+  function horn(v, m, t, len, amp, dt = 6) {   // dt = 两只振荡器走调多少音分（低音小一点：C3 上 ±6 音分会 1 Hz 地「哇哇」）
     const f = BQ('lowpass', 700, 1.1, v.g), g = G(0, f), end = t + len + .3;
     f.frequency.setValueAtTime(700, t); f.frequency.exponentialRampToValueAtTime(2600, t + .05); f.frequency.exponentialRampToValueAtTime(1300, t + len + .2);
     g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(amp, t + .025); g.gain.linearRampToValueAtTime(amp * .75, t + len); g.gain.linearRampToValueAtTime(0, t + len + .25);
-    for (const d of [-6, 6]) { const o = ac.createOscillator(); o.setPeriodicWave(WARM); o.frequency.value = mtof(m); o.detune.value = d; o.connect(g); o.start(t); o.stop(end); track(v, o, end); }
+    for (const d of [-dt, dt]) { const o = ac.createOscillator(); o.setPeriodicWave(WARM); o.frequency.value = mtof(m); o.detune.value = d; o.connect(g); o.start(t); o.stop(end); track(v, o, end); }
   }
 
   // ---- 一口吞好几只：多的每只在主口上叠半音量的「咔」（同音高、略走一点），再给「咕」加一层更低更长的身体 → 一声大「咕嘟」 ----
@@ -200,11 +203,19 @@ export function buildEngine(ac) {
       tone(v, 'sine', 120 * p, 62 * p, t + .02, .03, .18, .17);
       fin(v);
     },
-    dash(t) {      // 冲刺：低通噪声往上扫
-      const v = V(t, 1, .12, near);
-      noise(v, t, .1, .5, .45, 'lowpass', 300, 3200, 4, null, .3);
-      noise(v, t, .08, .35, .18, 'bandpass', 700, 2600, 2, null, .3);
-      tone(v, 'sine', 90, 160, t, .06, .3, .18);
+    // 冲刺（海龙）：低通噪声 0.3 秒扫上去，在冲刺的这段时间里慢慢落（水从身边冲过去）+ 身后一串气泡。
+    //   跟着年纪变：o.len = 这一阶冲多久（0.8 / 1.2 / 1.4 秒），声音长度跟它的 0.6；幼龙尖一点、2 颗泡；成龙低 2.6 个半音、4 颗泡
+    dash(t, o) {
+      const s = clamp(o.stage ?? 1, 0, 2), p = [1.15, 1, .86][s], L = clamp((o.len || 1.2) * .6, .4, .9), v = V(t, [.9, 1, 1.08][s], .12, near);
+      const rush = (ft, f0, f1, f2, q, amp) => {
+        const n = ac.createBufferSource(), f = BQ(ft, f0, q), g = G(0, v.g), e = t + L + .15;
+        n.buffer = WHITE; n.loop = true; f.frequency.setValueAtTime(f0, t); f.frequency.exponentialRampToValueAtTime(f1, t + .3); f.frequency.exponentialRampToValueAtTime(f2, e);
+        swell(g.gain, t, .09, L * .25, L * .75 + .06, amp); n.connect(f); f.connect(g); n.start(t, rnd() * 1.5); n.stop(e); track(v, n, e);
+      };
+      rush('lowpass', 300 * p, 3200 * p, 900 * p, 4, .17);
+      rush('bandpass', 700 * p, 2600 * p, 1200 * p, 2, .08);   // 中频一层：手机喇叭靠它（长了以后要小：每 3~4 秒冲一次，不能累耳朵）
+      tone(v, 'sine', 90 * p, 160 * p, t, .06, L * .6, .22);
+      for (let i = 0; i <= s + 1; i++) { const tt = t + .12 + i * L * .22, f = rr(380, 620) * p; tone(v, 'sine', f, f * 2.1, tt, .004, .07, .08, .05); }
       fin(v);
     },
     // 咬「咔」+ 往下滑的「咕」。连吃每口升 2 个半音（最多 12 个）——只算主口：o.combo 是 sim 的连吃数（一口吞的额外猎物也算），
@@ -246,7 +257,24 @@ export function buildEngine(ac) {
       tone(v, 'sine', th ? 150 : 200, 55, t, .005, th ? .38 : .22, th ? .4 : .26);
       fin(v);
     },
-    exitWater(t) {       // 出水：轻一点的扫频 + 几颗水珠「叮」
+    // 出水：轻一点的扫频 + 几颗水珠「叮」（火龙扎完水出来）。
+    // 海龙的「跃出」（少年龙学会的新能力）要大得多：往上冲的厚「呼——」+ 一大片水帘「哗」+ 往上带的中频身体 + 更多水珠；
+    //   跟着速度和年纪变大，但比落回水里的「哗啦」（landWater）小
+    exitWater(t, o) {
+      const s = clamp(o.stage ?? 1, 0, 2);
+      if (o.kind === 'sea' && s >= 1) {
+        const k = clamp((o.speed || 24) / 34, .85, 1.15) * (s === 2 ? 1 : .9), p = s === 2 ? .9 : 1, v = V(t, k, .14);
+        // 往上冲：低通噪声 400 → 2000 Hz，0.4 秒鼓起来再落
+        const s1 = ac.createBufferSource(), f1 = BQ('lowpass', 400 * p, 1.2), g1 = G(0);
+        s1.buffer = WHITE; s1.loop = true; f1.frequency.setValueAtTime(400 * p, t); f1.frequency.exponentialRampToValueAtTime(2000 * p, t + .4);
+        swell(g1.gain, t, .16, .08, .3, .42); s1.connect(f1); f1.connect(g1); g1.connect(v.g);
+        s1.start(t, rnd() * 1.5); s1.stop(t + .6); track(v, s1, t + .6);
+        noise(v, t + .02, .03, .55, .3, 'bandpass', 1800, 700, 1.1);                                // 水帘「哗」：比火龙出水宽、长
+        noise(v, t + .1, .02, .4, .12, 'highpass', 2600, 3600, 0, CRACK);                          // 水沫的细碎声
+        tone(v, 'triangle', 330 * p, 620 * p, t, .05, .3, .12, .3); tone(v, 'sine', 140 * p, 240 * p, t, .05, .3, .14, .3);   // 往上带的身体（中频那层手机也听得见）
+        for (let i = 0; i < 3 + 2 * s; i++) { const tt = t + .2 + i * rr(.06, .1), f = rr(650, 1050); tone(v, 'sine', f, f * rr(1.6, 2), tt, .003, .07, .09, .05); }
+        fin(v); return;
+      }
       const v = V(t, 1, .12);
       noise(v, t, .015, .32, .4, 'bandpass', 2800, 700, 1.2);
       for (let i = 0; i < 3; i++) { const tt = t + .12 + i * rr(.06, .12), f = rr(700, 1000); tone(v, 'sine', f, f * rr(1.6, 2), tt, .003, .07, .1, .05); }
@@ -288,24 +316,33 @@ export function buildEngine(ac) {
       fin(v);
     },
     // 进化：五声音阶上行琶音 + 龙吼（变成少年龙吼得高一点、短一点；成龙低沉）。吼在 1.5 秒前收住：
-    // 收尾交给 1.45 秒后跟「新能力」卡一起出来的号角（v2 每次进化后都有 unlock）
+    // 收尾交给 UNLOCK_AT 秒后跟「新能力」卡一起出来的号角（v2 每次进化后都有 unlock）。
+    // 琶音走提示音总线、龙吼走龙自己的总线：海龙在水里进化，不能闷成远处的声音（接着的号角在 cue 上是亮的）
     evolve(t, o) {
-      const v = V(t, 1, .3), adult = o.stage !== 1;
+      const v = V(t, 1.06, .3, cue), adult = o.stage !== 1;
       [60, 62, 64, 67, 69, 72, 74, 76, 79, 81, 84].forEach((m, i) => tone(v, 'triangle', mtof(m), 0, t + i * .07, .005, .5, .11));
-      growl(v, t + .5, adult ? .3 : .26, adult ? .95 : 1.3, adult ? 1 : .85);
       fin(v);
+      const w = V(t + .5, 1, .3, near);
+      growl(w, t + .5, adult ? .3 : .26, adult ? .95 : 1.3, adult ? 1 : .85);
+      fin(w);
     },
     // ---- v2：能力 / 技能 / 自动瞄准 ----
-    unlock(t) {          // 学会新能力：「嗒-嗒-嗒——」三声上行的暖号角 + 一个大三和弦亮起来 + 几颗高音铃（全在 C 五声音阶里，跟曲子不打架）
-      const v = V(t, 1, .3, cue);
-      [67, 72, 76].forEach((m, i) => horn(v, m, t + i * .1, .1, .1));
-      [72, 76, 79, 84].forEach(m => horn(v, m, t + .32, .9, .062));
-      tone(v, 'sine', mtof(60), 0, t + .32, .02, 1.3, .1);
-      [91, 96, 100, 103].forEach((m, i) => bell(v, mtof(m), t + .36 + i * .07, .7, .045));
+    // 学会新能力：「嗒-嗒-嗒——」上行的暖号角 + 一个大三和弦亮起来 + 几颗高音铃（全在 C 五声音阶里，跟曲子不打架）。
+    //   o.stage = 2（成龙：龙吼 / 漩涡 + 一口吞 4 只，最后也最大的一次）：号角多一声到 C6、和弦下面垫一只 C3 低音号角、多撑 0.3 秒、铃从 E6 起多一颗
+    //   o.kind：一点元素味（火龙 = 一口小火苗「呼」；海龙 = 三颗往上冒的泡泡，落在 C6 / E6 / G6 上）
+    unlock(t, o) {
+      const big = o.stage === 2, v = V(t, 1, .3, cue), run = big ? [67, 72, 76, 84] : [67, 72, 76], c0 = t + run.length * .1 + .02, hold = big ? .3 : 0;
+      run.forEach((m, i) => horn(v, m, t + i * .1, .1, .1));
+      [72, 76, 79, 84].forEach(m => horn(v, m, c0, .9 + hold, big ? .056 : .062));
+      if (big) horn(v, 48, c0, 1 + hold, .06, 2.5);
+      tone(v, 'sine', mtof(60), 0, c0, .02, 1.3 + hold, .1);
+      (big ? [88, 91, 96, 100, 103] : [91, 96, 100, 103]).forEach((m, i) => bell(v, mtof(m), c0 + .04 + i * .07, .7, .045));
+      if (o.kind === 'sea') [[500, 84], [620, 88], [760, 91]].forEach(([a, m], i) => tone(v, 'sine', a, mtof(m), c0 + .12 + i * .09, .004, .1, .1, .06));
+      else if (o.kind === 'fire') { noise(v, c0 - .02, .08, .3, .2, 'bandpass', 600, 1700, 2.5, null, .22); noise(v, c0, .01, .22, .06, 'highpass', 1800, 2200, 0, CRACK); }
       fin(v);
     },
-    roar(t) {            // 龙吼（成年火龙的技能）：大而圆的「吼——」，不刺耳；下面一层地面似的隆隆，音乐让开
-      const v = V(t, 1, .32);
+    roar(t) {            // 龙吼（成年火龙的技能）：大而圆的「吼——」，不刺耳；下面一层地面似的隆隆，音乐让开。走龙自己的总线：扎水时吼也不闷
+      const v = V(t, 1, .32, near);
       growl(v, t, .5, 1, 1.9);
       noise(v, t + .05, .25, 1.5, .16, 'lowpass', 380, 150, .7, BROWN);
       fin(v);
@@ -651,8 +688,11 @@ export function createAudio(opt = {}) {
       case 'orb': st.orbN = t - st.orbT < .7 ? st.orbN + 1 : 0; st.orbT = t; E.play('orb', { n: st.orbN }); break;
       case 'goal': case 'codex': { const at = Math.max(t + .14, st.cueT + .4); st.cueT = at; E.play(e.type, e, at); break; }   // 晚一点，别和「咔」叠在一起；同一口里两个铃错开 0.4 秒
       case 'evolve': st.evoT = t; E.play('evolve', { stage: e.stage }); break;
-      // 新能力：跟着进化来的话等进化的龙吼收住（进化后 1.45 秒）再响；开局头 1 秒的（初始能力）不响
-      case 'unlock': if (!S || S.t >= 1) E.play('unlock', e, Math.max(t + .03, st.evoT + 1.45)); break;   // 「新能力」卡在进化后约 1.48 秒弹出
+      // 新能力：跟着进化来的话等进化的龙吼收住、卡片弹出来（进化后 UNLOCK_AT 秒）再响；开局头 1 秒的（初始能力）不响
+      case 'unlock': if (!S || S.t >= 1) E.play('unlock', { stage: S ? S.stage : 1, kind: S && S.kind }, Math.max(t + .03, st.evoT + UNLOCK_AT)); break;
+      // 冲刺跟着年纪变长变低；海龙的出水 = 跃出（新能力），要比火龙扎完水出来大
+      case 'dash': E.play('dash', { stage: S ? S.stage : 1, len: S && S.cfg && S.cfg.dashT }); break;
+      case 'exitWater': E.play('exitWater', { speed: e.speed, kind: S && S.kind, stage: S ? S.stage : 1 }); break;
       case 'skill': E.play(e.id === 'vortex' || e.id !== 'roar' && S && S.kind === 'sea' ? 'vortex' : 'roar'); break;
       case 'eat': E.play('eat', { combo: e.combo, extra: e.extra, gold: e.gold, stage: S ? S.stage : 1 }); break;
       case 'lunge': E.play('lunge', { stage: S ? S.stage : 1 }); break;

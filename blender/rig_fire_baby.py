@@ -217,6 +217,17 @@ CLUB_CUT = 0.01                    # 删掉有顶点 x < -0.147 的面（旧尾�
 CLUB_MID, CLUB_TIP = 0.038, 0.088  # 最宽一圈 / 尾尖离尾杆末端多远（设定图：尾锤长约 12% 体长）
 CLUB_H, CLUB_W = 0.055, 0.028      # 菱形截面半高 / 半宽 → 约 0.11 高 × 0.056 宽（v2 0.13 × 0.06，追尾镜头里太占地方）
 CLUB_VM = 0.32                     # 展开贴图里前半（对着尾巴、很少看到）只占 32%，背面（追尾镜头正对着）占 68%
+# v4 尾锤颜色（v3 复审：金铜色在追尾镜头里是全身最亮、对比最强的一块，把视线拉到屁股上）：深的暖灰玄武岩 + 橙红熔岩裂纹，
+#   上切面亮、下切面明显暗（网格是平滑法线，切面的明暗只能画在贴图里）；画法见 club_paint.py
+# v4：左右不再共用一块贴图（v3 镜像展开，追尾镜头从正后方同时看到左右两半，裂纹拼成左右对称的「字」）；每片切面像素少一些，但裂纹各不相同
+CLUB_MIRROR = os.environ.get('FM_CLUBMIRROR') == '1'
+CLUB_PARTS = json.loads(os.environ.get('FM_CLUBPARTS', '[[3, 0], [1, 2]]'))   # 两块空地：大的放上面两片（追尾镜头在上方，最显眼），小的放下面两片
+#   复审建议的 upper 0.22 / lower 0.13 渲染出来只有 22,11,7（ACES 色调映射把暗部压得很低、还偏红），目标是追尾镜头里中位数 ≈ 50~65 / 35~45 / 30~40，
+#   实测（_lab/firemodels.html 追尾特写 + 尾锤顶点投影量中位数）：这组 → 幼龙 53,39,23 / 57,44,33，少年龙 56,45,39 / 58,45,30（v3 是 95,57,39 金铜色，成龙 17,6,3）
+#   裂纹的 core / glow 也比复审建议的再红一点：ACES 会把亮的橙黄压成发白的奶油色
+CLUB_PALETTE = {'upper': (0.30, 0.275, 0.285), 'lower': (0.20, 0.18, 0.19),
+                'glow': (0.9, 0.28, 0.05), 'core': (1.0, 0.52, 0.14)}
+if os.environ.get('FM_CLUBPAL'): CLUB_PALETTE.update(json.loads(os.environ['FM_CLUBPAL']))   # 调试：试颜色（JSON，只写要改的键）
 # 背上那排大刺：中线（|y|<BACK_Y0）上、比背线高出 BACK_BASE 以上的部分 ×SPIKE_K；|y| 到 BACK_Y1 渐变回 1
 #   背线 = 不算刺的背脊高度（侧视量的，.cache/check/firemodels/v3/baby_back_rest.png），尾根 x 0.03 到肩 x 0.272
 BACK_LINE = [(0.03, -0.019), (0.06, -0.010), (0.08, 0.003), (0.10, 0.009), (0.12, 0.016), (0.15, 0.022), (0.18, 0.028),
@@ -266,7 +277,7 @@ for v in me.vertices:
             k = SPIKE_K + (1 - SPIKE_K) * smooth01(BACK_Y0, BACK_Y1, abs(p.y))
             p.z = bz + BACK_BASE + (p.z - bz - BACK_BASE) * k; n_back += 1
 me.update()
-CLUB = FL.rebuild_club(mesh, CLUB_O, (-1, 0, 0), CLUB_CUT, CLUB_MID, CLUB_TIP, CLUB_H, CLUB_W, vm=CLUB_VM)
+CLUB = FL.rebuild_club(mesh, CLUB_O, (-1, 0, 0), CLUB_CUT, CLUB_MID, CLUB_TIP, CLUB_H, CLUB_W, vm=CLUB_VM, mirror=CLUB_MIRROR)
 print('CLUB', CLUB)
 # tail6（尾锤骨）指向新尾尖：飞行尾巴的侧视目标角按骨头方向解，骨头要和尾锤的轴一致
 _cx, _cy, _cz = CLUB['center']
@@ -477,7 +488,8 @@ for img in list(bpy.data.images):
 
 # ---------- v3：尾锤贴图（在图集空地上画深色玄武岩 + 发光熔岩裂纹，尾锤的 UV 放进去） ----------
 base_img = next(i for i in bpy.data.images if i.size[0] > 0)
-print('CLUBTEX', FL.club_texture(mesh, base_img, aspect=2 * math.hypot(CLUB_H, CLUB_W) / CLUB_TIP, seed=7, vm=CLUB_VM))
+print('CLUBTEX', FL.club_texture(mesh, base_img, CLUB['geom'], seed=7, vm=CLUB_VM, palette=CLUB_PALETTE, mirror=CLUB_MIRROR,
+                                      parts=CLUB_PARTS, flip=1))
 
 # ---------- 贴图缩到 1024，导出 ----------
 for img in bpy.data.images:
@@ -488,6 +500,7 @@ bpy.ops.object.select_all(action='SELECT')
 bpy.ops.export_scene.gltf(filepath=OUT_GLB, export_format='GLB', export_animations=True, export_animation_mode='NLA_TRACKS',
                           export_skins=True, export_image_format='WEBP', export_image_quality=85, export_yup=True)
 size = FL.bake_quantize(OUT_GLB)
+tris_glb = FL.glb_tris(OUT_GLB)   # 清单写导出后 glb 里的实际三角形数
 
 # ---------- 清单（静止姿势，Blender 坐标） ----------
 gi = {g.index: g.name for g in mesh.vertex_groups}
@@ -514,14 +527,14 @@ if MANIFEST:
         'wingBones': {'L': ['wing1.L', 'wing2.L', 'fing1.L'], 'R': ['wing1.R', 'wing2.R', 'fing1.R']},
         'actions': {name: round(frames / 24, 3) for name, act, frames in actions},
         'flapHz': round(FLAPS / 3, 3),
-        'tris': FL.tris(mesh), 'bones': len(BONES), 'bytes': size,
+        'tris': tris_glb, 'bones': len(BONES), 'bytes': size,
         'extents': {'x': [round(min(xs), 3), round(max(xs), 3)], 'y': [round(min(p.y for p in V), 3), round(max(p.y for p in V), 3)],
                     'z': [round(min(p.z for p in V), 3), round(max(p.z for p in V), 3)], 'wingspan': round(span, 3)},
         'notes': (
             "Blender rest coords (head +X, up +Z, +Y = dragon's left). v2 (2026-10-10, review_fire_baby.md): head x1.2, wings x0.85, "
             f"tail shaft shortened again (club moved rigidly). v3 (2026-10-11): club replaced by a clean upright octahedral crystal (~{2 * CLUB_H:.2f} tall x {2 * CLUB_W:.2f} wide, "
             f"its own painted basalt + glowing lava-crack patch in a free spot of the atlas), ridge spikes from the tail to the shoulders x{SPIKE_K}, "
-            f"decimated to {FL.tris(mesh)} tris (neck/back/body only; face, wings, claws untouched), vertices welded + smooth normals, "
+            f"decimated to {tris_glb} tris (neck/back/body only; face, wings, claws untouched), vertices welded + smooth normals, "
             "KHR_mesh_quantization (POSITION short, NORMAL byte, UV ushort, WEIGHTS ubyte, rotation keys short; constant translation/scale channels removed; "
             "three.js GLTFLoader reads it natively). "
             f"Nose-to-tail {L:.3f}, head {head_len:.3f} ({head_len / L * 100:.0f}%), wingspan {span:.3f} ({span / L:.2f} x length; adult 1.07). "
@@ -532,6 +545,6 @@ if MANIFEST:
             "Same 38 bones as fire_adult (GLTFLoader strips the dot: wing1.L -> wing1L). No jaw bone. Only the base-colour texture (1024 WEBP q85)."),
     }
     json.dump(man, open(MANIFEST, 'w'), indent=2)
-print('MANIFEST_NUMBERS', json.dumps({'mouth': mouth, 'pivot': pivot, 'tris': FL.tris(mesh), 'len': round(L, 3), 'head': round(head_len, 3),
+print('MANIFEST_NUMBERS', json.dumps({'mouth': mouth, 'pivot': pivot, 'tris': tris_glb, 'tris_blend': FL.tris(mesh), 'len': round(L, 3), 'head': round(head_len, 3),
       'span': round(span, 3), 'bytes': size}))
 print('DONE bones', len(BONES), 'actions', [a[0] for a in actions], 'images', [i.name for i in bpy.data.images])

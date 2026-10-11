@@ -6,7 +6,7 @@ while (!window.__audioLab) await sleep(50);
 const L = window.__audioLab, only = (new URLSearchParams(location.search).get('only') || '').split(',').filter(Boolean);
 const R = await L.runTests(only.length ? only : undefined);
 for (const r of R) {
-  __log(`${r.bad.length ? 'ERR ' : 'ok  '} ${r.name.padEnd(13)} peak ${r.peak.toFixed(3)} rms ${r.rms.toFixed(4)} rms50ms ${r.st.toFixed(4)} phone ${r.loss.toFixed(1)} dB phRms ${(20 * Math.log10(r.phRms + 1e-9)).toFixed(1)} dBFS${r.gap != null ? ' gap-to-bg ' + r.gap.toFixed(1) : ''}${r.hiDrop != null ? ' >1.5k ' + r.hiDrop.toFixed(1) + ' dB' : ''}${r.vsRoar != null ? ' vs-roar ' + r.vsRoar.toFixed(1) : ''}${r.over != null ? ' over-bg ' + r.over.toFixed(1) : ''} ${r.bad.join(' ')}`);
+  __log(`${r.bad.length ? 'ERR ' : 'ok  '} ${r.name.padEnd(13)} peak ${r.peak.toFixed(3)} rms ${r.rms.toFixed(4)} rms50ms ${r.st.toFixed(4)} phone ${r.loss.toFixed(1)} dB phRms ${(20 * Math.log10(r.phRms + 1e-9)).toFixed(1)} dBFS${r.gap != null ? ' gap-to-bg ' + r.gap.toFixed(1) : ''}${r.hiDrop != null ? ' >1.5k ' + r.hiDrop.toFixed(1) + ' dB' : ''}${r.vsExit != null ? ' vs-exit ' + r.vsExit.toFixed(1) + ' vs-land ' + r.vsLand.toFixed(1) : ''} len ${r.len.toFixed(2)}${r.vsRoar != null ? ' vs-roar ' + r.vsRoar.toFixed(1) : ''}${r.over != null ? ' over-bg ' + r.over.toFixed(1) : ''} ${r.bad.join(' ')}`);
   await fetch('/__shot?name=' + encodeURIComponent(r.name + '.wav'), { method: 'POST', body: L.wav(r.buf) });
 }
 await __done();

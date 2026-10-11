@@ -72,6 +72,9 @@ export function createUI(root, api = {}) {
   const hintEl = h('div', 'd-hint'); hintEl.hidden = true; root.appendChild(hintEl);
   const toastEl = h('div', 'd-toast'); root.appendChild(toastEl);
   const abEl = h('div', 'd-abil'); abEl.hidden = true; root.appendChild(abEl);
+  // 新能力卡的下沿（px，0 = 没有卡）：hud.js 的头顶箭头 / 「!」/ 小牌不画到卡片上。ResizeObserver 在排版之后给，update 里不读布局
+  G.abBot = 0;
+  if (typeof ResizeObserver === 'function') new ResizeObserver(() => { G.abBot = abEl.hidden ? 0 : abEl.offsetTop + abEl.offsetHeight + 8; }).observe(abEl);
   const menu = createMenu(root, api);
   const title = createTitle(root, api);
   const codex = createCodex(root, api, pic);
@@ -93,7 +96,8 @@ export function createUI(root, api = {}) {
     blocked_plunge: ['d-hc d-hb', `<span class="d-hdisc">${icon('plunge')}</span><i class="d-hlk">${icon('lock')}</i>`, '长大后学会'],
     blocked_breach: ['d-hc d-hb', `<span class="d-hdisc">${icon('breach')}</span><i class="d-hlk">${icon('lock')}</i>`, '长大后学会'],
   };
-  let shownHint = null, baseHint = null, tempT = 0, blockedAt = {}, hideT = 0, shownAt = 0, fadeA = null;
+  // baseHint = 主程序要的教学提示（这条龙已经学会的才算）；tempHint = 「长大后学会」（2.4 秒）；shownHint = 屏幕上正在显示的
+  let shownHint = null, baseHint = null, tempHint = null, tempT = 0, blockedAt = {}, hideT = 0, shownAt = 0, fadeA = null, quietT = 0;
   // fast = 立刻藏（关 HUD 时）；否则淡出 0.18 秒
   const render = (name, fast) => {
     if (name === shownHint) return; shownHint = name;
@@ -110,46 +114,65 @@ export function createUI(root, api = {}) {
     hintEl.hidden = false; shownAt = performance.now();
     if (hintEl.animate) hintEl.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 200 });
   };
+  // 进化演出时不出提示：阶段名大字还在、新能力卡在放 / 排着队 → 先大字，再卡片，最后才是提示（不叠在一起）
+  const quiet = () => toastBusy() || abBusy || abQ.length > 0;
+  const wanted = () => tempHint || (quiet() ? null : baseHint);
   // 主程序的提示条件会在边界上来回跳（例如猎物刚进 35 米又出去，一帧出一帧收）：
-  // 收起来要等 0.4 秒、而且至少露 1.2 秒，这期间又要同一个提示就接着显示，不会一闪一闪
-  const showBase = () => {
-    clearTimeout(hideT); hideT = 0;
-    if (baseHint || !shownHint) { render(baseHint); return; }
+  // 收起来要等 0.4 秒、而且至少露 1.2 秒，这期间又要同一个提示就接着显示，不会一闪一闪。大字 / 卡片来了就马上淡出
+  const sync = () => {
+    const want = wanted();
+    if (want || !shownHint) { clearTimeout(hideT); hideT = 0; render(want); return; }
+    if (quiet()) { clearTimeout(hideT); hideT = 0; render(null); return; }
+    if (hideT) return;
     const wait = Math.max(400, 1200 - (performance.now() - shownAt));
-    hideT = setTimeout(() => { hideT = 0; if (!baseHint && !tempT) render(null); }, wait);
+    hideT = setTimeout(() => { hideT = 0; render(wanted()); }, wait);
   };
   // 「扎水 / 跃出」的教学提示：这条龙还没学会（S.abilities 里没有）就先不显示，学会了再出来
   let wantHint = null, abil = null;
   const usable = name => !(name === 'plunge' || name === 'breach') || !Array.isArray(abil) || abil.includes(name);
+  const clearTemp = () => { clearTimeout(tempT); tempT = 0; tempHint = null; };
   const hint = name => {
     if (name && /^blocked_/.test(name)) {
-      if (!HINTS[name]) return;
-      clearTimeout(tempT); clearTimeout(hideT); hideT = 0; render(name);
-      tempT = setTimeout(() => { tempT = 0; render(baseHint); }, 2400);
-      return;
+      if (!HINTS[name] || quiet()) return;    // 进化演出时不提示「长大后学会」（这时多半刚学会）
+      clearTemp(); tempHint = name;
+      tempT = setTimeout(() => { clearTemp(); if (!wanted()) { clearTimeout(hideT); hideT = 0; render(null); } else sync(); }, 2400);
+      sync(); return;
     }
     wantHint = name && HINTS[name] ? name : null;
     baseHint = wantHint && usable(wantHint) ? wantHint : null;
-    if (!tempT) showBase();
+    sync();
   };
 
   // ---------- 大字（阶段名）：放大淡入，停 1.2 秒，淡出。不闪 ----------
-  let toastEnd = 0;
+  // 「放完了」以动画真正结束为准（onfinish），不按钟表算：换模型时卡一下，动画会晚开始，卡片也跟着晚出，两个不会叠在一起。
+  // toastOn = 正在放；toastEnd = 放完的时刻；toastEst = 估计放完的时刻（abilityLeft 用）。保底：2 秒后动画不在播了（被取消）也算放完
+  let toastOn = false, toastEnd = 0, toastEst = 0, toastA = null, toastSafe = 0;
+  const toastBusy = () => toastOn || performance.now() < toastEnd + 50;
+  const toastDone = a => {
+    if (a !== toastA || !toastOn) return;
+    toastOn = false; toastEnd = performance.now(); clearTimeout(toastSafe);
+    clearTimeout(quietT); quietT = setTimeout(() => { nextAbility(); sync(); }, 60);   // 后面有卡片就出卡片，没有就把提示放出来
+  };
   const toast = text => {
     toastEl.textContent = text || '';
     toastEl.classList.toggle('sea', kind === 'sea');
-    toastEnd = performance.now() + 1600;
+    toastOn = true; toastEst = performance.now() + 1600;
     if (toastEl.animate) {
-      toastEl.getAnimations && toastEl.getAnimations().forEach(a => a.cancel());
-      toastEl.animate([{ opacity: 0, transform: 'scale(.7)' }, { opacity: 1, transform: 'scale(1.05)', offset: .14 }, { opacity: 1, transform: 'scale(1)', offset: .22 },
+      toastEl.getAnimations && toastEl.getAnimations().forEach(a => { a.onfinish = null; a.cancel(); });
+      const a = toastA = toastEl.animate([{ opacity: 0, transform: 'scale(.7)' }, { opacity: 1, transform: 'scale(1.05)', offset: .14 }, { opacity: 1, transform: 'scale(1)', offset: .22 },
         { opacity: 1, transform: 'scale(1)', offset: .75 }, { opacity: 0, transform: 'scale(1)' }], { duration: 1600, easing: 'ease-out', fill: 'forwards' });
-    }
+      a.onfinish = () => toastDone(a);
+    } else toastA = null;
+    const a0 = toastA, chk = () => { if (a0 && a0.playState === 'running') toastSafe = setTimeout(chk, 500); else toastDone(a0); };
+    clearTimeout(toastSafe); toastSafe = setTimeout(chk, a0 ? 2000 : 1600);
+    sync();   // 大字在的时候提示先收起来
   };
 
   // ---------- 「新能力」卡：图标 + 名字 + 一句话，约 2.5 秒，不挡操作（pointer-events: none）----------
   // 位置：成长条下面（屏幕上部），不挡刚换好模型的龙；两个能力并排（卡片矮一半）。
-  // 阶段名大字还在的话等它放完再出；同一组能力 8 秒内只弹一次（主程序调 showAbility 和 'unlock' 事件谁先到都行）。
-  // HUD 没开（标题页）就不弹；结算卡开着时排队，点「继续」后再弹（被结算卡打断的那张也重放）
+  // 阶段名大字放完（完全淡出后 50ms）才出，两个不叠；同一组能力 8 秒内只弹一次（主程序调 showAbility 和 'unlock' 事件谁先到都行）。
+  // HUD 没开（标题页）就不弹；结算卡开着时排队，点「继续」后再弹（被结算卡打断的那张也重放）。
+  // 卡片的下沿写进 G.abBot（hud.js 的屏幕标记躲开它）
   const abQ = []; let abBusy = false, abLast = { key: '', t: -1e9 }, abTimer = 0, abCur = null, abEnd = 0, resOpen = false;
   const norm = list => (Array.isArray(list) ? list : [list]).map(a => {
     if (typeof a === 'string') a = { id: a };
@@ -165,24 +188,26 @@ export function createUI(root, api = {}) {
     if (key === abLast.key && now - abLast.t < 8000) return;
     if (abQ.some(q => q.key === key)) return;
     abLast = { key, t: now };
-    abQ.push({ key, L }); nextAbility();
+    abQ.push({ key, L }); nextAbility(); sync();
   }
   function stopAbility() {
     clearTimeout(abTimer);
     if (abBusy) { abEl.getAnimations && abEl.getAnimations().forEach(a => { a.onfinish = null; a.cancel(); }); clearTimeout(abEl._t); }
-    abEl.hidden = true; abEl.innerHTML = ''; abBusy = false; abCur = null; root.classList.remove('d-abon');
+    abEl.hidden = true; abEl.innerHTML = ''; abBusy = false; abCur = null; G.abBot = 0; root.classList.remove('d-abon');
   }
   function nextAbility() {
     if (abBusy || !abQ.length || resOpen || hud.el.hidden) return;
-    const wait = Math.max(0, toastEnd - performance.now() - 150);
+    if (toastOn) return;   // 大字放完时 toastDone 会再叫一次
+    const wait = Math.max(0, toastEnd + 50 - performance.now());
     if (wait > 0) { clearTimeout(abTimer); abTimer = setTimeout(nextAbility, wait); return; }
     abCur = abQ.shift(); const { L } = abCur; abBusy = true;
     abEl.className = 'd-abil ' + (kind === 'sea' ? 'sea' : 'fire') + (L.length > 1 ? ' two' : '');
     abEl.innerHTML = `<div class="d-abrib"><span>新能力</span></div><div class="d-abrows">${L.map(a =>
       `<div class="d-abrow"><div class="d-abic"><i class="d-rays"></i>${icon(a.icon)}</div><div class="d-abtx"><b>${a.zh}</b><span>${a.desc}</span></div></div>`).join('')}</div>`;
     abEl.hidden = false; root.classList.add('d-abon');   // 卡片在的时候小目标卡和连吃先让开（不叠在一起），放完再滑回来
+    G.abBot = G.st + 6 + 38 + 44 * G.s + (L.length > 1 ? 150 : 132) * G.s;   // 先估一个，ResizeObserver 排版后给准的
     const dur = abDur(L); abEnd = performance.now() + dur;
-    const done = () => { abEl.hidden = true; abEl.innerHTML = ''; abBusy = false; abCur = null; root.classList.remove('d-abon'); nextAbility(); };
+    const done = () => { abEl.hidden = true; abEl.innerHTML = ''; abBusy = false; abCur = null; G.abBot = 0; root.classList.remove('d-abon'); nextAbility(); sync(); };
     if (abEl.animate) {
       abEl.animate([{ opacity: 0, transform: 'translateY(-14px) scale(.7)' }, { opacity: 1, transform: 'translateY(0) scale(1.06)', offset: .1 },
         { opacity: 1, transform: 'scale(1)', offset: .16 }, { opacity: 1, transform: 'scale(1)', offset: .88 }, { opacity: 0, transform: 'translateY(-10px) scale(.96)' }],
@@ -195,34 +220,36 @@ export function createUI(root, api = {}) {
   const abilityLeft = () => {
     const now = performance.now();
     let t = abBusy ? Math.max(0, abEnd - now) : 0;
-    if (abQ.length) t += (abBusy ? 0 : Math.max(0, toastEnd - now - 150)) + abQ.reduce((s, q) => s + abDur(q.L), 0);
+    if (abQ.length) t += (abBusy ? 0 : Math.max(0, (toastOn ? toastEst : toastEnd) + 50 - now)) + abQ.reduce((s, q) => s + abDur(q.L), 0);
     return t / 1000;
   };
 
-  // ---------- 结算卡：新能力卡还在放的话等它放完（最多 1.5 秒）；还是被打断的话，点「继续」后重放 ----------
-  let resT = 0;
+  // ---------- 结算卡：马上打开（主程序这时已经暂停了世界，不能停着没面板）。
+  // 新能力卡还在放的话先收起来，点「继续」后重放；主程序最好先等 abilityLeft 归零再调（见 ARCH）----------
   function showResult(info, onContinue) {
-    clearTimeout(resT);
-    const open = () => {
-      resT = 0; resOpen = true;
-      if (abBusy) { const cur = abCur; stopAbility(); if (cur) { abQ.unshift(cur); abLast.t = -1e9; } }
-      clearTimeout(abTimer);
-      result.show(info, () => { resOpen = false; onContinue && onContinue(); setTimeout(nextAbility, 350); });
-    };
-    const left = abBusy ? abEnd - performance.now() : 0;
-    if (left > 0) resT = setTimeout(open, Math.min(1500, left + 120)); else open();
+    resOpen = true;
+    if (abBusy) { const cur = abCur; stopAbility(); if (cur) { abQ.unshift(cur); abLast.t = -1e9; } }
+    clearTimeout(abTimer);
+    result.show(info, () => { resOpen = false; onContinue && onContinue(); setTimeout(nextAbility, 350); });
   }
 
   // 主程序没转发的话，ui 自己看事件：进化解锁 → 新能力卡；想扎水 / 跃出但还没学会 → 提示（同一个能力 6 秒内只提示一次）
+  // 学会了新能力：「长大后学会」这个能力的提示马上收掉；等着的「扎水 / 跃出」教学提示可以出来了（但要等大字和卡片放完）
   function watch(S, events) {
-    const got = S.abilities || null;
-    if (got !== abil) { const ch = !abil || !got || got.length !== abil.length; abil = got; if (ch && wantHint) hint(wantHint); }
-    if (!events) return;
-    for (const e of events) {
+    if (events) for (const e of events) {
       if (e.type === 'unlock' && e.abilities && e.abilities.length) showAbility(e.abilities);
-      else if (e.type === 'blocked' && e.ability) {
+      else if (e.type === 'blocked' && e.ability && !quiet()) {
         const t = performance.now(), k = e.ability;
         if (!(t - (blockedAt[k] || -1e9) < 6000)) { blockedAt[k] = t; hint('blocked_' + k); }
+      }
+    }
+    const got = S.abilities || null;
+    if (got !== abil) {
+      const ch = !abil || !got || got.length !== abil.length; abil = got;
+      if (ch) {
+        if (tempHint && Array.isArray(abil) && abil.includes(tempHint.slice(8))) clearTemp();
+        baseHint = wantHint && usable(wantHint) ? wantHint : null;
+        sync();
       }
     }
   }
@@ -231,14 +258,14 @@ export function createUI(root, api = {}) {
     showTitle(save) { save = save || (api.getSave && api.getSave()) || {}; if (save.mute != null) this.setMute(!!save.mute); if (save.left != null) this.setLeft(!!save.left); loading.set(1); title.show(save); },
     hideTitle() { title.hide(); },
     showHUD(k) { kind = k === 'sea' ? 'sea' : 'fire'; root.classList.toggle('d-sea', kind === 'sea'); hud.show(kind); },
-    hideHUD() { hud.hide(); baseHint = null; wantHint = null; abil = null; clearTimeout(tempT); tempT = 0; clearTimeout(hideT); hideT = 0; render(null, true); abQ.length = 0; stopAbility(); },
+    hideHUD() { hud.hide(); baseHint = null; wantHint = null; abil = null; abLast = { key: '', t: -1e9 }; clearTemp(); clearTimeout(hideT); hideT = 0; clearTimeout(quietT); clearTimeout(toastSafe); toastOn = false; render(null, true); abQ.length = 0; stopAbility(); },
     update(S, dt, events) { hud.update(S, dt, events); if (S && !hud.el.hidden) watch(S, events); },
     showPause() { menu.show(kind); },
     hidePause() { menu.hide(); },
     showCodex(save) { codex.show(save); },
     hideCodex() { codex.hide(); },
     showResult,
-    hideResult() { clearTimeout(resT); resT = 0; result.hide(); if (resOpen) { resOpen = false; setTimeout(nextAbility, 350); } },
+    hideResult() { result.hide(); if (resOpen) { resOpen = false; setTimeout(nextAbility, 350); } },
     showAbility,
     get abilityLeft() { return abilityLeft(); },
     toast,

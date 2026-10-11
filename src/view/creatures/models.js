@@ -82,30 +82,33 @@ function bell(B, { rimY, R, H, lobes, paint, glowF }) {
   rings.push({ c: [0, rimY + H * .3, 0], rx: 0, ry: 0 });
   B.loft(rings, { n, axis: 'y', rot: Math.PI / n, ap: v => [sm(y0 + H, rimY, v.y), 0, 0, 0], paint, glowF });
 }
-// 水母的一条触手 / 飘带：从伞底里面往下垂，越往下弯得越多（左右 + 前后一起弯，像软软的卷须），粗细收到一个尖。
-// 根部藏在伞盖里（不用封口）；明暗用平滑法线（软的，不是一节一节硬硬的）。w 起始粗细；flat < 1 = 扁飘带（n = 4）
-function tendril(B, { a, r0, y0, y1, w, flat = 1, wave = .09, seg = 4, ph = 0, n = 3, paint, glow, i }) {
-  const rd = [Math.sin(a), Math.cos(a)], tg = [Math.cos(a), -Math.sin(a)], rings = [];
+// 水母的一条触手 / 飘带：从伞底里面往下垂，左右弯成一个 S（越往下弯得越开，梢上自然卷过去），粗细收到一个尖。
+// S 弯的方向所有触手一样（左右 = 脸的左右），相位只差一点：像一把顺着水流飘的飘带，不是一根根往外乱伸的细条。
+// 根部藏在伞盖里（不用封口）；明暗用平滑法线（软的，不是一节一节硬硬的）。w 起始粗细；flat < 1 = 扁飘带（n = 4，宽面朝外）
+function tendril(B, { a, r0, y0, y1, w, flat = 1, wave = .09, freq = 4.4, seg = 6, ph = 0, n = 3, taper = .65, paint, glow, i }) {
+  const rd = [Math.sin(a), Math.cos(a)], rings = [];
   const f = flat < 1 ? k => [k & 1 ? 1 : flat, 0] : undefined;
   for (let k = 0; k <= seg; k++) {
-    const t = k / seg, y = y0 + (y1 - y0) * t, sw = Math.sin(t * 5.6 + ph) * wave * t, rr = r0 * (1 + t * .12) + Math.cos(t * 4.4 + ph) * wave * .45 * t;
-    const wk = k === seg ? 0 : w * (1 - t * .78);
-    rings.push({ c: [rd[0] * rr + tg[0] * sw, y, rd[1] * rr + tg[1] * sw], rx: wk, ry: wk, f });
+    const t = k / seg, cu = sm(.6, 1, t);
+    const y = y0 + (y1 - y0) * t + (y0 - y1) * .05 * cu * cu;
+    const sx = Math.sin(t * freq + ph) * wave * (.15 + .85 * t), sz = Math.cos(t * 3.6 + ph * 1.3) * wave * .35 * t, rr = r0 * (1 + t * .1);
+    const wk = k === seg ? 0 : w * (1 - t * taper);
+    rings.push({ c: [rd[0] * rr + sx, y, rd[1] * rr + sz], rx: wk, ry: wk, f });
   }
-  B.loft(rings, { n, axis: 'y', rot: a, ap: v => [0, sm(y0, y1, v.y), i * 1.7 + ph, 0], paint, glow });
+  B.loft(rings, { n, axis: 'y', rot: a, ap: v => [0, sm(y0, y1, v.y), ph + i * .5, 0], paint, glow });
 }
 
-// 云水母：圆顶伞盖（顶上淡、伞边深粉）+ 花边伞边 + 中间一簇花边短须 + 5 条长长的卷曲飘带，微微发光（伞盖朝上 +Y）；
+// 云水母：圆顶伞盖（顶上淡、伞边深粉）+ 花边伞边 + 中间一簇花边短须 + 5 条长长的 S 形飘带，微微发光（伞盖朝上 +Y）；
 // 脸朝前：大眼睛 + 腮红 + 小嘴。按「伞顶到原来须梢 = 1」归一化，飘带加长后伞盖大小不变
 function cloudjelly({ body, belly, accent }) {
   const B = builder(14), rib = mixHex(belly, accent, .45), ribTip = mixHex(accent, 0xff6aa8, .3);
   bell(B, { rimY: .6, R: .5, H: .4, lobes: 6, paint: (c, n) => n.y < -.25 ? accent : c.y > .93 ? mixHex(body, belly, .5) : body, glowF: (c, n) => n.y < -.25 ? .35 : .14 });
   // 中间一簇花边短须（n = 6，半径一大一小交替；顶上一圈藏在伞里）
-  B.loft([{ c: [0, .7, 0], rx: .13, ry: .13 }, { c: [0, .49, 0], rx: .19, ry: .19, f: k => [k & 1 ? .45 : 1, 0] }, { c: [0, .35, 0], rx: 0, ry: 0 }],
-    { n: 6, axis: 'y', ap: v => [0, sm(.62, .2, v.y) * .6, 3.1, 0], paint: () => rib, glow: .35 });
+  B.loft([{ c: [0, .7, 0], rx: .13, ry: .13 }, { c: [0, .53, 0], rx: .12, ry: .12, f: k => [k & 1 ? .45 : 1, 0] }, { c: [0, .48, 0], rx: 0, ry: 0 }],
+    { n: 6, axis: 'y', ap: v => [0, sm(.62, .2, v.y) * .6, 3.1, 0], color: accent, glow: .35 });
   for (let i = 0; i < 5; i++) {
     const a = Math.PI / 5 + i * Math.PI * 2 / 5;
-    tendril(B, { a, r0: .25, y0: .65, y1: (i & 1) ? -.2 : -.08, w: .06, flat: .4, wave: .14, seg: 4, ph: i * 1.3, n: 4, i, paint: c => c.y < .2 ? ribTip : rib, glow: .3 });
+    tendril(B, { a, r0: .25, y0: .65, y1: (i & 1) ? -.2 : -.08, w: .062, flat: .4, wave: .16, seg: 8, ph: .4 + i * .6, n: 4, i, paint: c => c.y < .2 ? ribTip : rib, glow: .3 });
   }
   const eye = eyeAt(B, [.15, .78, 0], [0, 0, 1], .07);
   const OFF = [0, .8, 0], r = B.finish('y', 1.01, OFF), s = r.s;
@@ -186,18 +189,18 @@ function sardine({ body, belly, accent }) {
   return { ...r, kind: KIND.fish, P: [6 / s, .09 * s, 0, 0], Q: [0, 0, 0, 0], eye: eyeN(eye, s), eyeType: 1 };
 }
 
-// 水母：圆顶伞盖（深一点的青，顶上亮）+ 花边伞边 + 中间一簇短须 + 5 条细长卷曲的触手，自己发青光（伞盖朝上 +Y）；脸朝前（大眼睛 + 小嘴）
-// 面数控制在 230 以内（一群 3–6 只）：伞盖 5 片花边、触手 4 节
+// 水母：圆顶伞盖（深一点的青，顶上亮）+ 花边伞边 + 中间一簇短须 + 5 条 S 形的扁触手，自己发青光（伞盖朝上 +Y）；脸朝前（大眼睛 + 小嘴）
+// 面数约 340（一群 3–6 只）：伞盖 5 片花边、触手 6 节
 function jelly({ body, belly, accent }) {
   // 颜色比 species 的主色深一点、饱和一点（主色太浅，在卡通光照下几乎是白的），靠自发光亮起来
-  const B = builder(19), deep = mixHex(accent, 0x0a86b8, .35), top = mixHex(body, accent, .35), ten = mixHex(body, accent, .55), arm = mixHex(accent, belly, .25);
+  const B = builder(19), deep = mixHex(accent, 0x0a86b8, .35), top = mixHex(body, accent, .35), ten = mixHex(body, accent, .55);
   bell(B, { rimY: .58, R: .44, H: .4, lobes: 5, paint: (c, n) => n.y < -.25 ? mixHex(accent, belly, .2) : c.y > .9 ? top : deep, glowF: (c, n) => n.y < -.25 ? .55 : c.y > .9 ? .2 : .3 });
   // 中间一簇短短的花边（像裙边，不是往下戳的尖）
-  B.loft([{ c: [0, .67, 0], rx: .1, ry: .1 }, { c: [0, .49, 0], rx: .15, ry: .15, f: k => [k & 1 ? .45 : 1, 0] }, { c: [0, .37, 0], rx: 0, ry: 0 }],
-    { n: 6, axis: 'y', ap: v => [0, sm(.6, .35, v.y) * .6, 2.2, 0], paint: () => arm, glow: .5 });
-  for (let i = 0; i < 5; i++) {
+  B.loft([{ c: [0, .67, 0], rx: .1, ry: .1 }, { c: [0, .51, 0], rx: .1, ry: .1, f: k => [k & 1 ? .45 : 1, 0] }, { c: [0, .47, 0], rx: 0, ry: 0 }],
+    { n: 6, axis: 'y', ap: v => [0, sm(.6, .35, v.y) * .6, 2.2, 0], color: deep, glow: .45 });
+  for (let i = 0; i < 5; i++) {            // 5 条扁飘带一样的触手（宽面朝外，S 形 + 梢上卷）
     const a = .3 + i * Math.PI * 2 / 5;
-    tendril(B, { a, r0: .21, y0: .63, y1: (i & 1) ? -.24 : -.06, w: .034, wave: .13, seg: 4, ph: i * 1.1, n: 3, i, paint: () => ten, glow: .5 });
+    tendril(B, { a, r0: .21, y0: .63, y1: (i & 1) ? -.24 : -.06, w: .05, flat: .5, wave: .13, seg: 6, ph: 1 + i * .55, n: 4, i, paint: () => ten, glow: .5 });
   }
   const eye = eyeAt(B, [.14, .76, 0], [0, 0, 1], .068);
   const OFF = [0, .78, 0], r = B.finish('y', 1.01, OFF), s = r.s;
@@ -221,28 +224,31 @@ function squid({ body, belly, accent }) {
   return { ...r, kind: KIND.squid, P: [.14, .06 * s, .035 * s, 0], Q: [0, 0, 0, 0], eye: eyeN(eye, s), eyeType: 1 };
 }
 
-// 海龟：圆壳（壳片深浅交替、壳顶更亮）+ 四片鳍 + 圆头，绿色
+// 海龟：高高的圆顶壳（壳片深浅交替、壳顶更亮）+ 四片鳍（前鳍尖往下垂）+ 带脖子的大圆头，绿色
 function turtle({ body, belly, accent }) {
   const B = builder(21), skin = mixHex(body, 0xc8e098, .45), top = mixHex(body, 0xd8e8a0, .25);
   // 壳片：中间一圈 8 大片、外面一圈 16 小片，深浅交替（壳顶最亮）
   const sector = (c, k) => Math.floor((Math.atan2(c.x, c.z + .02) + Math.PI) / (Math.PI * 2 / k)) & 1;
   const mid = mixHex(body, top, .5);
   B.loft([
-    { c: [0, .245, -.02], rx: 0, ry: 0 },
-    { c: [0, .215, -.02], rx: .19, ry: .23 },
-    { c: [0, .15, -.02], rx: .32, ry: .39 },
-    { c: [0, .085, -.02], rx: .39, ry: .47 },
-    { c: [0, .035, -.02], rx: .41, ry: .49 },       // 壳边
+    { c: [0, .34, -.02], rx: 0, ry: 0 },
+    { c: [0, .31, -.02], rx: .19, ry: .23 },
+    { c: [0, .24, -.02], rx: .32, ry: .39 },
+    { c: [0, .15, -.02], rx: .39, ry: .47 },
+    { c: [0, .05, -.02], rx: .41, ry: .49 },        // 壳边
     { c: [0, -.02, -.02], rx: .36, ry: .43 },
     { c: [0, -.045, -.02], rx: 0, ry: 0 },
-  ], { n: 16, axis: 'y', rot: Math.PI / 16, paint: (c, n) => n.y < -.6 ? belly : c.y > .2 ? top : c.y > .12 ? (sector(c, 8) ? mid : body) : c.y > .04 ? (sector(c, 16) ? accent : body) : accent });
-  B.loft([R(.28, .075, .065), R(.44, .1, .09, .03), R(.56, .07, .065, .03), R(.6, 0, 0, .025)], { n: 10, cap0: true, ap: () => [0, 3, 0, 0], paint: (c, n) => n.y < -.3 ? belly : skin });
+  ], { n: 16, axis: 'y', rot: Math.PI / 16, paint: (c, n) => n.y < -.6 ? belly : c.y > .3 ? top : c.y > .165 ? (sector(c, 8) ? mid : body) : c.y > .07 ? (sector(c, 16) ? accent : body) : accent });
+  // 头：从壳下伸出的脖子 + 圆圆的大脑袋
+  B.loft([R(.28, .09, .08), R(.46, .12, .11, .03), R(.6, .085, .08, .03), R(.66, 0, 0, .025)], { n: 10, cap0: true, ap: () => [0, 3, 0, 0], paint: (c, n) => n.y < -.3 ? belly : skin });
+  const dn = Math.tan(.26);           // 前鳍尖往下垂约 15°
   for (const s of [1, -1]) {          // 鳍：平滑的明暗（软软的，不是硬片）
-    B.fin([[s * .25, 0, .2], [s * .5, -.01, .14], [s * .66, -.02, .03], [s * .72, -.03, -.08], [s * .5, -.02, -.02], [s * .28, 0, .06]], [0, 1, 0], .035, { ap: () => [s, 1, 0, 0], paint: (c, n) => n.y < -.3 ? belly : skin, flat: false });
+    B.fin([[.25, 0, .2], [.5, -.01, .14], [.66, -.02, .03], [.72, -.03, -.08], [.5, -.02, -.02], [.28, 0, .06]].map(([x, y, z]) => [s * x, y - (x - .25) * dn, z]), [0, 1, 0], .035,
+      { ap: () => [s, 1, 0, 0], paint: (c, n) => n.y < -.3 ? belly : skin, flat: false });
     B.fin([[s * .18, -.02, -.3], [s * .32, -.03, -.38], [s * .36, -.03, -.46], [s * .14, -.02, -.44]], [0, 1, 0], .028, { ap: () => [s, 2, 0, 0], color: skin, flat: false });
   }
   B.pyr([[-.03, -.01, -.42], [.03, -.01, -.42], [0, .02, -.42]], [0, -.01, -.56], { open: true, color: skin, flat: true });
-  const eye = eyeAt(B, [0, .07, .5], [1, 0, 0], .052);
+  const eye = eyeAt(B, [0, .075, .5], [1, 0, 0], .06);
   const r = B.finish(), s = r.s;
   return { ...r, kind: KIND.turtle, P: [.25 * s, 0, .13 * s, .18 * s], Q: [.5, .35, .3, 0], eye: eyeN(eye, s), eyeType: 1, view: [.5, .6] };
 }

@@ -17,12 +17,13 @@ canvas{display:block}
 <script type="module">
 // 海龙主角模型对比页（seamodels 模块自查用）：按「模型 × 视角 × 时间」排格子，用游戏里的卡通材质 + 描边（src/view/dragon.js）
 //   ?m=sea_baby,sea_teen,sea_adult       模型清单名（models/<名>.json）
-//   &v=chase,side,top,front34,under,back34  视角：chase = 游戏水下追尾镜头（和 src/view/camera.js 同一公式）
+//   &v=chase,side,top,front34,under,back34  视角：chase = 游戏水下追尾镜头（和 src/view/camera.js 同一公式：海龙 Sz = 体长 × 0.5）
 //   &act=Swim|Dash|Glide|Breach|Idle    动作；&t=0,0.375 时间（秒，可多个）
 //   &len=5,9,14                          游戏体长（米），默认 config/dragons.js 的值
 //   &cw=270&ch=480                       每格像素；&cols=  列数；&zoom=2 追尾镜头放大
 //   &glow=1                              斑点发光（dragon.js 的 uGlow）
 //   &look=-0.4&dist=0.3                  特写：看点在身体前后方向 look × 体长处（负 = 往尾巴），取景宽约 dist × 体长
+//   &nohull=1 不画描边壳；&cull=1 只画正面；&ocol=0b1622 描边颜色（预览）
 import * as THREE from 'three';
 import { createDragonView, loadModel } from '../src/view/dragon.js';
 const Q = new URLSearchParams(location.search);
@@ -61,8 +62,9 @@ for (let i = 0; i < names.length; i++) {
   const len = lens ? lens[i] : (LEN[nm] || 9);
   D.build(loaded, len, null);
   if (Q.get('glow')) D.glow.value = +Q.get('glow');
-  if (Q.get('nohull')) for (const h of D.hulls) h.visible = false;          // &nohull=1：不画描边壳（查黑碎片是不是描边壳露出来的）
-  if (Q.get('cull')) for (const m of D.toonMats) m.side = THREE.FrontSide;   // &cull=1：只画正面（查朝向反了的面）
+  if (Q.get('nohull') === '1') for (const h of D.hulls) h.visible = false;          // &nohull=1：不画描边壳（查黑碎片是不是描边壳露出来的）
+  if (Q.get('ocol')) for (const h of D.hulls) h.material.color.set('#' + Q.get('ocol'));   // &ocol=0b1622：描边换色预览（海龙建议用藏青）
+  if (Q.get('cull') === '1') for (const m of D.toonMats) m.side = THREE.FrontSide;   // &cull=1：只画正面（查朝向反了的面）
   dragons[nm] = { D, len };
   let tris = 0; D.model.traverse(o => { if (o.isSkinnedMesh && o.material.type === 'MeshToonMaterial') tris += o.geometry.index.count / 3; });
   out.info[nm] = { tris, len, length: loaded.man.length, anims: loaded.gltf.animations.map(a => a.name + ':' + a.duration.toFixed(3)) };
@@ -70,7 +72,8 @@ for (let i = 0; i < names.length; i++) {
 const h = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, bank: 0, yawRate: 0, flyW: 0, tuck: 0, medium: ACT === 'Breach' ? 'air' : 'water', dashT: ACT === 'Dash' ? .5 : 0, surf: 0, speed: 16, len: 5 };
 const Sfake = { kind: 'sea', cfg: { cruise: 16 } };
 function placeCam(v, len) {
-  const Sz = len / .94, span = 11 * Math.pow(Sz / 11, .6);
+  // 和 src/view/camera.js 一样：海龙 Sz = 体长 × 0.5（火龙才是 体长 / 0.94；以前这里抄了火龙的，追尾格子比游戏里远 1.6 倍）
+  const Sz = len * .5, span = 11 * Math.pow(Sz / 11, .6);
   camera.fov = 62; camera.aspect = CW / CH;
   const hTan = Math.tan(camera.fov * Math.PI / 360) * Math.min(1, camera.aspect);
   const dist = span * .46 / hTan + 3 * span / 11;

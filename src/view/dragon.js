@@ -68,7 +68,7 @@ export function createDragonView({ scene }) {
       };
       toon.customProgramCacheKey = () => 'heroToon';
       o.material = toon; D.toonMats.push(toon);
-      const h = new THREE.SkinnedMesh(o.geometry, outlineMat(0x1c0d08, man.outline || .0042 * (man.length || .94) / .94));
+      const h = new THREE.SkinnedMesh(o.geometry, outlineMat(0x1c0d08, (man.outline || .0042 * (man.length || .94) / .94) * 1.4));
       h.bind(o.skeleton, o.bindMatrix); h.frustumCulled = false;
       h.position.copy(o.position); h.quaternion.copy(o.quaternion); h.scale.copy(o.scale);
       o.parent.add(h); D.hulls.push(h);
@@ -101,7 +101,7 @@ export function createDragonView({ scene }) {
   // 每帧：h = 插值后的主角状态 {x,y,z,yaw,pitch,bank,yawRate,flyW,tuck,...}；S = sim
   D.update = (h, S, dt, time) => {
     if (!D.model) return;
-    const bob = D.kind === 'fire' && h.medium === 'air' ? Math.sin(time * Math.PI * 2) * .35 * h.flyW * (D.scale / 11) : 0;
+    const bob = D.kind === 'fire' && h.medium === 'air' ? Math.sin(time * Math.PI * 2 * ((D.man && D.man.flapHz) || 1)) * .35 * h.flyW * (D.scale / 11) : 0;
     root.position.set(h.x, h.y + bob, h.z);
     root.rotation.set(-h.pitch, h.yaw, h.bank, 'YXZ');
     // 吞下去时身体鼓一下（3%，0.15 秒）

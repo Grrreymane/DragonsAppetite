@@ -46,7 +46,7 @@ button.on{background:#e2552a;box-shadow:0 2px 0 #9e3416}
   </div>
 </div>
 <script type="module">
-import { createAudio, renderOffline } from '../src/sys/audio.js';
+import { createAudio, renderOffline, UNLOCK_AT } from '../src/sys/audio.js';
 import { DRAGONS } from '../src/config/dragons.js';
 const $ = id => document.getElementById(id);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -131,7 +131,7 @@ const SKY_LOOP = 128 * 60 / 84 / 2, SEA_LOOP = 128 * 60 / 70 / 2;   // 16 小节
 // [名字, 时长, setup, 类别]  类别决定 RMS 的合理范围
 const TESTS = [
   ['flap', ...one('flap', { pitch: 1 })], ['flap_baby', ...one('flap', { pitch: 1.3 })],
-  ['dash', ...one('dash')],
+  ['dash', ...one('dash')], ['dash_baby', ...one('dash', { stage: 0, len: .8 })], ['dash_adult', ...one('dash', { stage: 2, len: 1.4 })],   // 冲刺：三个年纪的长短 / 音高
   ['eat', ...one('eat', { combo: 1 })], ['eat_combo4', ...one('eat', { combo: 4 })], ['eat_combo9', ...one('eat', { combo: 9 })], ['eat_gold', ...one('eat', { combo: 1, gold: true })],
   ['eat_baby', ...one('eat', { combo: 1, stage: 0 })], ['eat_adult', ...one('eat', { combo: 1, stage: 2 })],
   // 成龙一口吞 4 只：同一时刻 4 个 eat（连吃数 1..4，多的带 extra），0.9 秒后再一口（5..8）、再一口（9..12）→ 音阶只该爬 1 → 2 → 3 级
@@ -143,19 +143,27 @@ const TESTS = [
   ['lunge_under', 3.5, E => { E.setUnder(1, 0); E.play('lunge', {}, 1); }], ['stun_under', 3.5, E => { E.setUnder(1, 0); E.play('stun', {}, 1); }],
   ['cook', ...one('cook')], ['stun', ...one('stun')],
   ['enterWater', ...one('enterWater', { speed: 40 })], ['landWater', ...one('enterWater', { speed: 30, thick: true })], ['exitWater', ...one('exitWater')],
+  // 海龙的「跃出」（少年龙学会）：比火龙出水大，比落回水里的 landWater 小（成龙按冲刺最快的速度测）
+  ['breach_teen', ...one('exitWater', { kind: 'sea', stage: 1, speed: 20 })], ['breach_adult', ...one('exitWater', { kind: 'sea', stage: 2, speed: 45 })],
   ['splash', ...one('splash', { size: 1 })], ['splash_big', ...one('splash', { size: 3 })],
   ['alert', ...one('alert')], ['bite', ...one('bite', { lost: 3 })], ['orb', ...one('orb')],
   ['goal', ...one('goal')], ['codex', ...one('codex')], ['evolve', 4.5, E => E.play('evolve', { stage: 2 }, .05)], ['evolve_teen', 4.5, E => E.play('evolve', { stage: 1 }, .05)],
+  // 海龙在水里进化 / 火龙扎水时吼：龙自己的声音，水下 1.5 kHz 以上最多掉 6 dB（同咬吞）
+  ['evolve_under', 5.5, E => { E.setUnder(1, 0); E.play('evolve', { stage: 2 }, 1); }], ['roar_under', 4.5, E => { E.setUnder(1, 0); E.play('roar', {}, 1); }],
   // v2：新能力 / 龙吼 / 漩涡 / 扑咬 / 锁定 / 没学会 / 技能好了
-  ['unlock', ...one('unlock')], ['roar', 3, E => E.play('roar', {}, .05)], ['vortex', 3, E => E.play('vortex', {}, .05)],
+  ['unlock', 4, E => E.play('unlock', { stage: 1, kind: 'fire' }, .05)], ['unlock_sea', 4, E => E.play('unlock', { stage: 1, kind: 'sea' }, .05)],
+  ['unlock_adult', 4, E => E.play('unlock', { stage: 2, kind: 'fire' }, .05)], ['unlock_adult_sea', 4, E => E.play('unlock', { stage: 2, kind: 'sea' }, .05)],   // 成龙：多一声 C6 + 低音号角 + 长 0.3 秒
+  ['roar', 3, E => E.play('roar', {}, .05)], ['vortex', 3, E => E.play('vortex', {}, .05)],
   ['vortex_under', 4, E => { E.setUnder(1, 0); E.play('vortex', {}, 1); }],
   ['lunge', ...one('lunge')], ['lunge_baby', ...one('lunge', { stage: 0 })], ['lunge_adult', ...one('lunge', { stage: 2 })], ['locked', ...one('locked')], ['blocked', ...one('blocked')], ['ready', ...one('ready', { kind: 'fire' })], ['ready_sea', ...one('ready', { kind: 'sea' })],
   // 吃 / 扑咬后 0.35 秒内的「嘀」丢掉：咔(.3) 嘀(.4 丢) 扑(1.0) 嘀(1.2 丢) 嘀(1.8 响) → 只该有 3 个声部
   ['locked_after_eat', 2.5, E => { E.play('eat', { combo: 1 }, .3); E.play('locked', {}, .4); E.play('lunge', {}, 1); E.play('locked', {}, 1.2); E.play('locked', {}, 1.8); }],
+  // sim 按住不放时每 5 秒发一次 blocked，界面「长大后学会」6 秒内只出一次 → 声音也只在 0 / 10 秒响（有声就有字）
+  ['blocked_5s', 11, E => { for (const t of [.05, 5.05, 10.05]) E.play('blocked', {}, t); }],
   ['locked_spam', 2.5, E => { for (let t = .05; t < 2.4; t += .1) E.play('locked', {}, t); }],   // 每 0.1 秒来一个：只能响 6 次（0.4 秒一次）
-  // 进化全套：进化 → 1.45 秒后新能力（游戏里 unlock 跟 evolve 同一帧来；「新能力」卡在进化后约 1.48 秒弹出）
-  ['evolve_unlock', 6, E => { E.setMix(0, 0, 0); E.musicTick(6); E.play('evolve', { stage: 2 }, .3); E.play('unlock', {}, .3 + 1.45); }],
-  ['evolve_unlock_teen', 6, E => { E.setMix(0, 0, 0); E.musicTick(6); E.play('evolve', { stage: 1 }, .3); E.play('unlock', {}, .3 + 1.45); }],
+  // 进化全套：进化 → UNLOCK_AT 秒后新能力（游戏里 unlock 跟 evolve 同一帧来；「新能力」卡在进化后约 1.68 秒弹出）
+  ['evolve_unlock', 6, E => { E.setMix(0, 0, 0); E.musicTick(6); E.play('evolve', { stage: 2 }, .3); E.play('unlock', { stage: 2, kind: 'fire' }, .3 + UNLOCK_AT); }],
+  ['evolve_unlock_teen', 6, E => { E.setMix(0, 0, 0); E.musicTick(6); E.play('evolve', { stage: 1 }, .3); E.play('unlock', { stage: 1, kind: 'sea' }, .3 + UNLOCK_AT); }],
   // 扑咬 → 0.15 秒后「咔」（一口吞 2 只）；中间夹着锁定的「嘀」
   ['hunt_mix', 6, E => { E.setMix(0, 0, 0); E.musicTick(6); for (let t = 0; t <= 6; t += .05) E.setLoops({ wind: .39, windK: 1, gust: .5 }, t);
     for (let t = .6; t < 6; t += 1.4) { E.play('locked', {}, t - .5); E.play('lunge', {}, t); E.play('eat', { combo: 1, stage: 1 }, t + .15); E.play('eat', { combo: 2, stage: 1, extra: true }, t + .15); } }],
@@ -185,6 +193,7 @@ const TESTS = [
     for (let i = 0; i < 40; i++) E.play('eat', { combo: 1 + i }, .5 + i * .01);
     for (let i = 0; i < 20; i++) E.play('splash', { size: 3 }, .5 + i * .02);
     ['evolve', 'goal', 'codex', 'bite', 'cook', 'enterWater', 'flap', 'dash', 'bump', 'roar', 'vortex', 'unlock', 'lunge', 'blocked'].forEach(n => E.play(n, { thick: true, speed: 50 }, .55));
+    E.play('exitWater', { kind: 'sea', stage: 2, speed: 50 }, .56); E.play('unlock', { stage: 2, kind: 'sea' }, 2.06);
   }],
   ['sky_full', SKY_LOOP + 3, E => { E.setMix(0, 0, 0); E.musicTick(SKY_LOOP); }],
   ['sea_full', SEA_LOOP + 3, E => { E.setMix(1, 1, 0); E.musicTick(SEA_LOOP); }],
@@ -219,7 +228,7 @@ function alertOverBg(r) {
   const sr = r.buf.sampleRate, T = [3, 5, 7, 9], on = T.map(t => winRms(r.pm, sr, t, t + .4)), off = T.map(t => winRms(r.pm, sr, t - .8, t - .2));
   return 20 * Math.log10(on.reduce((a, b) => a + b) / off.reduce((a, b) => a + b));
 }
-const THUDS = ['bite', 'bump', 'alert', 'flap', 'eat', 'eat_baby', 'eat_adult', 'roar', 'blocked', 'unlock', 'evolve', 'evolve_teen', 'vortex'];   // 低频为主的音效：手机上最多掉 10 dB（扇翅 / 咬吞 12.5 dB，漩涡 5 dB）
+const THUDS = ['bite', 'bump', 'alert', 'flap', 'eat', 'eat_baby', 'eat_adult', 'roar', 'blocked', 'unlock', 'unlock_sea', 'unlock_adult', 'unlock_adult_sea', 'evolve', 'evolve_teen', 'vortex', 'breach_teen', 'breach_adult'];   // 低频为主的音效：手机上最多掉 10 dB（扇翅 / 咬吞 12.5 dB，漩涡 5 dB）
 const SOFT = { locked: .03, lunge: .1, lunge_baby: .1, lunge_adult: .1 };   // 很轻的提示：最响 50 毫秒的 RMS 不超过这个（不吵）
 const OVER = { alert_mix: [6, 99], ready_mix: [2.5, 8], ready_sea_mix: [2.5, 8] };   // 提示在背景上要突出多少 dB（手机模型）
 function check(name, r) {
@@ -261,13 +270,21 @@ async function runTests(only) {
   if (R('stress') && R('stress').maxV > 24 + 8) R('stress').bad.push('voices-over-cap');
   if (R('locked_spam') && R('locked_spam').played > 6) R('locked_spam').bad.push('locked-more-than-every-0.4s');
   if (R('vortex') && R('vortex_under') && R('vortex_under').st < R('vortex').st * .5) R('vortex_under').bad.push('vortex-lost-underwater');
+  if (R('blocked_5s') && R('blocked_5s').played !== 2) R('blocked_5s').bad.push('blocked-not-in-step-with-hint');
   if (R('locked_after_eat') && R('locked_after_eat').played !== 3) R('locked_after_eat').bad.push('locked-after-eat-not-dropped');
   // 龙自己的声音在水下不能闷没了：1.5 kHz 以上最多掉 6 dB
-  for (const n of ['eat', 'lunge', 'stun']) { const a = R(n), u = R(n + '_under'); if (a && u) { const d = u.hiDrop = 20 * Math.log10(Math.max(1e-9, u.hi) / Math.max(1e-9, a.hi)); if (d < -6) u.bad.push('own-sound-muffled-' + d.toFixed(1) + 'dB'); } }
+  for (const n of ['eat', 'lunge', 'stun', 'evolve', 'roar']) { const a = R(n), u = R(n + '_under'); if (a && u) { const d = u.hiDrop = 20 * Math.log10(Math.max(1e-9, u.hi) / Math.max(1e-9, a.hi)); if (d < -6) u.bad.push('own-sound-muffled-' + d.toFixed(1) + 'dB'); } }
   // 手机上大技能比背景（整段 RMS）最多高 10 dB：玩家为了听清曲子调大音量，吼一声不该吓一跳
   for (const [n, bg] of [['roar', 'cruise_mix'], ['vortex', 'sea_under']]) { const a = R(n), b = R(bg); if (a && b) { const d = a.gap = 20 * Math.log10(a.ph / b.phRms); if (d > 10) a.bad.push(`phone-gap-to-${bg}-${d.toFixed(1)}dB`); } }
   // 海龙的漩涡和火龙的龙吼在手机上差不多响（最响 50 毫秒，差 3 dB 以内）
   if (R('vortex') && R('roar')) { const d = R('vortex').vsRoar = 20 * Math.log10(R('vortex').ph / R('roar').ph); if (Math.abs(d) > 3) R('vortex').bad.push('vortex-vs-roar-phone-' + d.toFixed(1) + 'dB'); }
+  // 海龙跃出：比火龙出水响（最响 50 毫秒 +3 dB 以上），比落回水里小（峰值和最响 50 毫秒都小）
+  for (const n of ['breach_teen', 'breach_adult']) { const b = R(n), x = R('exitWater'), l = R('landWater'); if (b && x && l) {
+    b.vsExit = 20 * Math.log10(b.st / x.st); b.vsLand = 20 * Math.log10(b.st / l.st);
+    if (b.vsExit < 3) b.bad.push('breach-not-bigger-than-exit'); if (b.peak >= l.peak || b.st >= l.st) b.bad.push('breach-louder-than-landing'); } }
+  // 跟着年纪变：冲刺越来越长；成龙的新能力号角比少年的长、能量大
+  if (R('dash_baby') && R('dash_adult') && !(R('dash_adult').len > R('dash').len && R('dash').len > R('dash_baby').len)) R('dash_adult').bad.push('dash-length-not-growing');
+  for (const [a, b] of [['unlock_adult', 'unlock'], ['unlock_adult_sea', 'unlock_sea']]) { const x = R(a), y = R(b); if (x && y && !(x.len > y.len + .2 && x.rms * Math.sqrt(x.len) > y.rms * Math.sqrt(y.len) * 1.15)) x.bad.push('adult-unlock-not-bigger'); }
   const nBad = results.filter(r => r.bad.length).length;
   $('sum').textContent = nBad ? `${nBad} 项不合格` : `全部 ${results.length} 项合格`;
   draw();

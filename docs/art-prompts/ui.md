@@ -4,13 +4,14 @@
 
 | 上线文件 | 内容 | 尺寸 | 大小 |
 |---|---|---|---|
-| `img/ui/icons.webp` | 图标图集 6×5 格，一格 192px（四周 8px 透明边）：能力 8 + 锁 + 菜单类 8 + 沙漏 + 阶段头像 6 + 海龙版咬 / 大口吞 2 + 星星（顺序见 `src/ui/icons.js` 的 `SHEET.names`，由 `tools/ui_icons.py` 的 `LAYOUT` 自动写入） | 1152×960 | 205 KB |
+| `img/ui/icons.webp` | 图标图集 6×5 格，一格 192px（四周 8px 透明边）：能力 8 + 锁 + 菜单类 8 + 沙漏 + 阶段头像 6 + 海龙版咬 / 大口吞 2 + 星星（顺序见 `src/ui/icons.js` 的 `SHEET.names`，由 `tools/ui_icons.py` 的 `LAYOUT` 自动写入） | 1152×960 | 206 KB |
 | `img/ui/logo.webp` | 标题字「小龙大胃王」+ 小火龙（透明底） | 720×317 | 53 KB |
 | `img/ui/title_bg.webp` | 标题 / 加载页背景 | 720×1280 | 32 KB |
 | `img/ui/card_fire.webp` / `card_sea.webp` | 标题页两张龙卡插画（照概念设定的少年龙，透明底） | 390×533 | 36 / 52 KB |
 
 图集里每格出自哪张原图：能力 3×3（§1，冲刺 / 跃出两格弃用）、菜单 3×3（§2，「继续」三角弃用，一直用白色 SVG）、阶段头像（§3）、
 海龙图标 3×2（§7：跃出、海龙咬、海龙大口吞、沙漏、星星）、冲刺 2×2（§8，现在挑右上 + 本地加的速度线，见 §10）。§6 是第一版海龙咬 / 大口吞（已被 §7 取代）。
+海龙的三个阶段头像现在是 §3 下排**本地改色**成深海军蓝的版本（§11）；§11 的 AI 重画出图后会自动替换。
 
 抠底说明：原图是白底，工具从图边往里泛洪「接近白色」的像素当背景（图标外圈都是深色描边，半透明边按深色描边反推，不会留白边）。
 标题字也试过 AI `remove_background.py --model hr`，但它把小龙眼睛的高光一起抠透了，所以用本地抠底。
@@ -116,6 +117,25 @@ Image 1 is the character reference for the SEA DRAGON (wingless, navy + turquois
 Generous white space, big gaps, plain flat pure white background, no text, no grid lines.
 ```
 （完整版见 `.cache/art/ui/p3_dashgulp.txt`。）
+
+## 11. 海龙阶段头像改成深海军蓝（第四轮评审）
+
+§3 下排的海龙头像是浅天蓝色，和海龙模型、标题龙卡、§7 的海龙图标（深海军蓝鳞片 + 青色鳍 + 奶油色喉咙）对不上。
+
+**这次 AI 连不上**（`AI 生图服务` TLS 握手失败，关沙盒也一样，可能是内网 / VPN 没开），所以先在本地改色上线：
+`tools/ui_icons.py` 的 `navy_sea()` 只改金圈以内——蓝色鳞片（色相 190–235°）压暗成深海军蓝（保留明暗）、很亮的蓝（眼睛）换成青色、
+发白的淡蓝（喉咙 / 肚皮）换成奶油色、幼龙肉粉色的耳鳍换成青色；青绿色底光、金圈、描边不动。检查图：`.cache/art/ui/preview_icons_dark.png`。
+
+网络好了以后跑 `python .cache/art/ui/queue_heads.py`（上传参考图、排队、遇到网络错误自动重试；网址只存在 `.cache/art/ui/up4_*.json`），
+出图 `raw/seaheads_01.png`（一排三个），再跑 `python tools/ui_icons.py --only icons --preview`：`SOURCES` 里已经接好了，有这张图就用它、不再改色。
+`edit_image.py`，参考图 1 = `output/concepts/sea-dragon-v2/sea-dragon-growth-v2.png`，参考图 2 = `raw/heads_01.png`（上排火龙头像当圆章画风参考），参考图 3 = `raw/seaicons_01.png`（海龙头的画法）；16:9，2K。提示词（`.cache/art/ui/p4_seaheads.txt`）：
+
+```
+Image 1 is the character reference for the SEA DRAGON at three ages (top: baby, middle: teen, bottom: adult): a sleek WINGLESS Western sea dragon with DEEP NAVY-BLUE scales speckled with small turquoise dots, swept-back teal-turquoise fin spikes with copper-orange tips along the head and neck, pale tan swept-back horn fins behind the head on the older ages, a PALE CREAM throat and belly with soft scale lines, small teal eyes. Image 2 is a sheet of six round game badge portraits: its TOP ROW (the three red fire dragon badges) is the EXACT STYLE reference for the badge itself. Image 3 is a sheet of painted game icons whose dragon heads show the correct painted look of this sea dragon (deep navy head, teal fins, cream jaw and throat).
+Paint a NEW image with exactly THREE round badge portraits of the SEA DRAGON side by side in ONE horizontal row, evenly spaced with big gaps: left = BABY, middle = TEEN, right = ADULT. Each badge must match the fire dragon badges in the top row of image 2 exactly: same round medallion size, same thick golden rim with a dark outline, same head-and-neck portrait framing (the head fills most of the badge, three-quarter view facing left, neck going down to the bottom edge of the circle), same thick dark outline around the silhouette, same painterly cel shading with warm light from the top-left. Backdrop inside each medallion: a soft deep TEAL to sea-green radial glow, slightly lighter in the centre (NOT pale sky blue).
+The dragon in every badge has DEEP NAVY-BLUE head and neck scales with small turquoise speckles, teal fin spikes with copper-orange tips, a PALE CREAM jaw, throat and belly plates, and teal eyes, faithful to image 1. It has NO wings. BABY: very cute, big round shiny teal eyes, round snout, tiny stubby fin spikes, small smile. TEEN: leaner and longer snout, confident look, medium fin crest. ADULT: majestic, longer jaw with small fangs, big swept-back fin crest and pale horn fins, calm strong look. The three must read clearly as the same dragon growing up, and clearly darker navy than the old pale-blue version.
+Plain flat pure white background around the badges. No text, no letters, no numbers, no title, no colour swatches, no grid lines.
+```
 
 ## 小贴士
 

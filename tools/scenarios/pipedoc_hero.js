@@ -3,6 +3,7 @@
 //   → 扎水再出水（火龙）/ 跃出再落水（海龙），都等到真的换了介质 → 再瞬移到开阔海面，镜头绕龙一圈
 // 终端里每段打印一行：帧号（对应 <out>_frames/ 里的文件名）、脖子各骨的偏航 / 俯仰、yawRate（sim 的转向速度）、
 //   lock（自动瞄准锁定的猎物 id，0 = 没锁）、看得见的嘴尖在前方几倍体长（括号里是 sim 判定嘴的 mouthK；转弯行再给「÷直行」的比例）、
+//   嘴差（看得见的嘴和 sim 判定嘴的三维距离，÷ 嘴半径，拆成前 / 上 / 左三项；最后一行汇总，直行合格线 ≤0.3×嘴半径）、
 //   静止网格长（从 glb 网格量的，和清单 length 无关）/ sim 体长、介质和高度、绘制调用和三角面
 // v2 有捕猎辅助（sim/assist.js，自动转向猎物）。不关掉它，「回正后脖子偏航回 0」这条判据会被自动转向带偏，
 //   所以剧本在 setStage 之后把 assist 的范围设成 0（只改这一局的 S.cfg 副本，不动 config/dragons.js）。
@@ -78,17 +79,30 @@ function restMeshLen() {
   return best;
 }
 let straightAhead = null;               // 直行时「嘴在前方」的值，转弯行拿它比
+// 嘴差：看得见的嘴（G.mouth()）和 sim 判定的嘴之间的三维距离。sim 的判定嘴 = 身体位置 + 朝向 × mouthK × 体长（src/sim/hero.js 的 heroMouth），
+//   这里用渲染出来的身体位置当基准（猎物也是按渲染位置画的，玩家看到的就是这个差）。÷ 嘴半径（S.cfg.mouthR × sizeK，吃到的距离 = 它 + 猎物半径）。
+//   拆成三项（龙自己的坐标，正 = 看得见的嘴更靠 前 / 上 / 左）：前后多 → 清单 mouth / pivot；上下多 → sim 不管嘴的高度；左右多 → 转弯时脖子转太多
+const mouthGaps = [];                   // [tag, 嘴差÷嘴半径, yawRate]，最后汇总
+function mouthGap(h, f) {
+  const mR = (D.S.cfg.mouthR || 0) * (h.sizeK || 1);
+  const sim = G.root.position.clone().addScaledVector(f, (h.mouthK || .47) * h.len);
+  const g = G.mouth(new V3()).sub(sim), q = G.root.quaternion;
+  const up = new V3(0, 1, 0).applyQuaternion(q), left = new V3(1, 0, 0).applyQuaternion(q);
+  const d = g.length(), r = mR ? d / mR : 0, s = x => (x >= 0 ? '+' : '') + x.toFixed(2);
+  return { r, txt: `嘴差 ${d.toFixed(2)}m=${r.toFixed(2)}×嘴半径${mR.toFixed(1)}m(前${s(g.dot(f))} 上${s(g.dot(up))} 左${s(g.dot(left))})` };
+}
 function report(tag, note = '') {
   const h = D.S.hero, parts = neckNames.map(n => `${n}${JSON.stringify(dirOf(n))}`).join(' ');
   // 嘴：看得见的嘴尖在身体中心前方多远（÷ sim 体长）；sim 的判定嘴在 mouthK × 体长（main.js 按清单算好传给 S.hero.mouthK，没清单时 0.47）
   const m = G.mouth(new V3()).sub(G.root.position), f = G.forward(new V3());
   const ahead = m.dot(f) / h.len;
+  const mg = mouthGap(h, f); mouthGaps.push([tag.trim(), mg.r, h.yawRate || 0]);
   const ri = D.renderer.info.render, yr = h.yawRate || 0, turning = Math.abs(yr) >= .05;
   if (!turning && h.medium === (kind === 'fire' ? 'air' : 'water') && straightAhead === null) straightAhead = ahead;
   const ratio = turning && straightAhead ? ` ÷直行 ${(ahead / straightAhead).toFixed(2)}${ahead / straightAhead < .9 ? ' <0.9 嘴跑到侧面了' : ''}` : '';
   const flag = turning ? ' (在转向，偏航判据不看这行)' : '';
   const rest = restMeshLen();
-  __log(`${tag.padEnd(9)} f${String(n).padStart(4, '0')} ${parts} | yawRate ${yr.toFixed(3)} lock ${h.lock || 0}${flag} | 嘴在前方 ${ahead.toFixed(2)}×体长(sim ${(h.mouthK || .47).toFixed(2)})${ratio} | 静止网格长 ${rest.toFixed(2)}m sim长 ${h.len.toFixed(2)}m${Math.abs(rest / h.len - 1) > .02 ? ' 差>2%：清单 length 过时？' : ''} | ${h.medium} y=${h.y.toFixed(1)} | calls ${ri.calls} tris ${(ri.triangles / 1000).toFixed(1)}k${note}`);
+  __log(`${tag.padEnd(9)} f${String(n).padStart(4, '0')} ${parts} | yawRate ${yr.toFixed(3)} lock ${h.lock || 0}${flag} | 嘴在前方 ${ahead.toFixed(2)}×体长(sim ${(h.mouthK || .47).toFixed(2)})${ratio} | ${mg.txt} | 静止网格长 ${rest.toFixed(2)}m sim长 ${h.len.toFixed(2)}m${Math.abs(rest / h.len - 1) > .02 ? ' 差>2%：清单 length 过时？' : ''} | ${h.medium} y=${h.y.toFixed(1)} | calls ${ri.calls} tris ${(ri.triangles / 1000).toFixed(1)}k${note}`);
 }
 let n = 0;
 async function cap() { if (FAST) { if (n % 30 === 0) await __shot('f' + String(n).padStart(4, '0')); } else await __frame(); n++; }
@@ -159,4 +173,11 @@ await play(5, () => ({}), t => {
   D.camera.lookAt(h.x, h.y, h.z); D.render();
 });
 report('绕一圈后');
+// 嘴差汇总：直行（不转向的平飞 / 平游行）的最大值要 ≤0.3 倍嘴半径；满舵那行也报出来（超了多半是 dragon.js 的脖子叠加，文档 §8.2）
+{
+  const flat = mouthGaps.filter(([t, , yr]) => Math.abs(yr) < .05 && /^(直行|回正|动作键|绕一圈后)/.test(t)).map(x => x[1]);
+  const full = mouthGaps.filter(([t]) => t.startsWith('满舵')).map(x => x[1]);
+  const mx = a => a.length ? Math.max(...a) : NaN;
+  __log(`嘴差汇总 直行最大 ${mx(flat).toFixed(2)}×嘴半径（合格线 ≤0.30${mx(flat) > .3 ? '，超了：看上面各行是前后 / 上下 / 左右哪一项大' : '，过'}） | 满舵 ${mx(full).toFixed(2)}×嘴半径${mx(full) > 1 ? '（比嘴半径还大：猎物会在头旁边消失）' : ''}`);
+}
 await __done();

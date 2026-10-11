@@ -7,8 +7,10 @@
 #   smooth_weights  某几根骨的权重做拉普拉斯平滑（去膝盖折痕），之后每个顶点重新归一
 #   smooth_normals  清掉自定义法线，全部平滑着色（焊接后 = 每个位置一个法线，描边壳不会裂）
 #   bake_quantize   导出后调用系统 python 跑 glb_quantize.py
-#   rebuild_club / club_texture   v3：尾锤删掉重做成竖菱形晶块 + 在图集空地上画玄武岩 / 熔岩裂纹贴图（见文件末尾）
+#   rebuild_club / club_texture   v3：尾锤删掉重做成竖菱形晶块 + 在图集空地上画玄武岩 / 熔岩裂纹贴图（见文件末尾；画法在 club_paint.py）
+#   glb_tris        导出后 glb 里实际的三角形数（清单用）
 import bpy, bmesh, os, subprocess, json, math
+import club_paint as CP
 from mathutils import Vector
 from mathutils.geometry import intersect_point_line
 
@@ -221,9 +223,11 @@ def side_angle_deg(d):
 # 追尾镜头正对着它，读起来像屁股上一块黑斑。做法：
 #   rebuild_club：删掉尾锤的旧面，从尾杆末端那一圈（边界环）往后接一个「八面体」菱形：
 #     尾杆末端环 → 最宽一圈（竖着的菱形截面，四个角对正上 / 正下 / 左右）→ 尾尖一个点；
-#     新顶点的序号记在返回值里（权重全给尾锤骨，刚体），新面打上 '_club' 面属性，归一化的展开坐标存在 '_clubuv' UV 层
+#     新顶点的序号记在返回值里（权重全给尾锤骨，刚体），新面打上 '_club' 面属性，归一化的展开坐标存在 '_clubuv' UV 层；
+#     v4：展开坐标和 3D 切面只差一个缩放（见函数里），返回值带切面尺寸 'geom'
 #   club_texture：在图集里找一块没有别的面用的空地（栅格化所有非尾锤面的 UV），把尾锤的展开坐标放进去，
-#     并在这块空地上画：深色玄武岩底（上面两片亮、下面两片暗，像切面）、浅色棱边、发光的橙黄熔岩裂纹（背面多，追尾镜头看得到）
+#     并在这块空地上画（club_paint.paint）：深的暖灰玄武岩（上切面亮、下切面明显暗，像切面）+ 每片 2~3 条折来折去带分叉的橙红熔岩裂纹
+#     （v3 是金铜色 + 浅色棱边围成的框 + 又长又直的裂纹，镜像以后像字，复审 .cache/docs/v3 复审意见见 club_paint.py 文件头）
 
 CLUB_ATTR, CLUB_UV = '_club', '_clubuv'
 
@@ -297,8 +301,23 @@ def rebuild_club(obj, origin, axis, cut_a, mid_a, tip_a, half_up, half_side, vm=
     tip = bm.verts.new(C0 + D * (tip_a - a0))
     lay = bm.faces.layers.int.get(CLUB_ATTR) or bm.faces.layers.int.new(CLUB_ATTR)
     uvl = bm.loops.layers.uv.get(CLUB_UV) or bm.loops.layers.uv.new(CLUB_UV)
-    if mirror: u = [x / math.pi if x <= math.pi + 1e-9 else (2 * math.pi - x) / math.pi for x in t] + [0.0]
-    else: u = [x / (2 * math.pi) for x in t] + [1.0]
+    # v4 展开坐标：u 按菱形棱上的实际位置（每条棱上按长度等分；v3 按极角，棱中间的点会把切面剪切歪），
+    # 尾尖在每个三角形里的 UV 放在它那片切面的「垂足」上（v3 放在每个小三角形的正中，左右两边三角形切法不同，贴图对不上）
+    # → 每片后切面在展开图里是三角形 (0,vm)-(1,vm)-(垂足,1)，和 3D 里那片三角形只差一个缩放，左右镜像也一致
+    def edge_t(a):
+        a = a % (2 * math.pi); q = min(3, int(a // (math.pi / 2)))
+        r = rhombus(a); sd, up = r * math.sin(a), r * math.cos(a)
+        f = (sd / half_side, -up / half_up, -sd / half_side, up / half_up)[q]
+        return (q + min(1.0, max(0.0, f))) * math.pi / 2
+    te = [edge_t(a) for a in t]
+    if mirror: uf = lambda x: x / math.pi if x <= math.pi + 1e-9 else (2 * math.pi - x) / math.pi
+    else: uf = lambda x: x / (2 * math.pi)
+    u = [uf(x) for x in te] + [0.0 if mirror else 1.0]
+    fup = half_up ** 2 / (half_up ** 2 + half_side ** 2)     # 尾尖在上切面上的垂足（从顶角沿棱量）
+    def apex_u(i):
+        tj = te[i + 1] if i + 1 < n else 2 * math.pi
+        q = min(3, int(((te[i] + tj) / 2) // (math.pi / 2)))
+        return uf((q + (fup if q in (0, 2) else 1 - fup)) * math.pi / 2)
     # 绕向：尾杆那边的面里这条边是 a→b，新面要 b→a
     e0 = bm.edges.get((ring[0], ring[1])); l0 = e0.link_loops[0]
     flip = l0.vert is ring[0]
@@ -306,7 +325,7 @@ def rebuild_club(obj, origin, axis, cut_a, mid_a, tip_a, half_up, half_side, vm=
     for i in range(n):
         j = (i + 1) % n
         q = [(ring[i], (u[i], 0.0)), (ring[j], (u[i + 1], 0.0)), (mid[j], (u[i + 1], vm)), (mid[i], (u[i], vm))]
-        tr = [(mid[i], (u[i], vm)), (mid[j], (u[i + 1], vm)), (tip, ((u[i] + u[i + 1]) / 2, 1.0))]
+        tr = [(mid[i], (u[i], vm)), (mid[j], (u[i + 1], vm)), (tip, (apex_u(i), 1.0))]
         for poly in (q, tr):
             if flip: poly = poly[::-1]
             f = bm.faces.new([p[0] for p in poly]); f[lay] = 1
@@ -317,10 +336,13 @@ def rebuild_club(obj, origin, axis, cut_a, mid_a, tip_a, half_up, half_side, vm=
     for f in newf: f.material_index = mi
     bm.verts.index_update()
     new_idx = [v.index for v in mid] + [tip.index]
+    r0 = sum(((v.co - C0) - D * (v.co - C0).dot(D)).length for v in ring) / n    # 尾杆末端那圈的半径
+    geom = CP.club_geom(half_up, half_side, mid_a, tip_a, a0, r0)
     bm.normal_update(); bm.to_mesh(me); bm.free(); me.update()
     main = next(i for i, l in enumerate(me.uv_layers) if l.name != CLUB_UV)
     me.uv_layers.active_index = main; me.uv_layers[main].active_render = True
-    return {'deleted_faces': n_del, 'ring': n, 'new_verts': new_idx, 'center': tuple(round(c, 4) for c in Cm)}
+    return {'deleted_faces': n_del, 'ring': n, 'new_verts': new_idx, 'center': tuple(round(c, 4) for c in Cm),
+            'geom': {k: round(x, 5) for k, x in geom.items()}}
 
 
 def _raster(mask, tris):
@@ -343,16 +365,22 @@ def _raster(mask, tris):
         mask[y0:y1 + 1, x0:x1 + 1] |= (l1 >= -e) & (l2 >= -e) & (l3 >= -e)
 
 
-def club_texture(obj, img, aspect=2.6, res=512, margin=3, seed=7, palette=None, vm=0.42, out_res=1024, mirror=True):
-    """把 '_club' 面的 '_clubuv' 坐标放进图集里的一块空地，并在空地上画尾锤的贴图。
-    aspect = 尾锤一圈周长 / 长度（展开后贴图不拉伸）；margin = 空地四周留几格（res 格）不让别的面挨着，留边也涂底色（缩小 / mipmap 不渗色）。
-    裂纹粗细按导出后的贴图分辨率（out_res）算像素，游戏里一个尾锤也就几十个像素，裂纹要粗"""
-    import numpy as np, random
+def club_texture(obj, img, geom, res=512, margin=3, seed=7, palette=None, vm=0.42, out_res=1024, mirror=True, src=None, parts=None, flip=1):
+    """把 '_club' 面的 '_clubuv' 坐标放进图集里的空地，并在空地上画尾锤的贴图（画法见 club_paint.py）。
+    geom = rebuild_club 返回的切面尺寸：空地的长宽比按它定（后切面在导出贴图里不拉伸）；
+    parts：切面怎么分到几块空地里，例如 [[3, 0], [1, 2]] = 两块：第一块（最大的空地）放左上、右上两片（追尾镜头在上方，上切面最显眼），
+      第二块放下面两片；每块里的切面按列表顺序从左到右排。不给 = 一块，按展开顺序。图集里没有一整块够大的空地时，分两块像素能多一倍；
+    margin = 空地四周留几格（res 格）不让别的面挨着，留边也涂底色（缩小 / mipmap 不渗色）。
+    palette：{'upper','lower','glow','core'}（sRGB 0..1），不给就用 club_paint.PALETTE；flip = ±1 裂纹左右翻"""
+    import numpy as np
     me = obj.data
     main = next(l for l in me.uv_layers if l.name != CLUB_UV)
     cuv = me.uv_layers[CLUB_UV]
     flag = me.attributes[CLUB_ATTR].data
     club_polys = [p for p in me.polygons if flag[p.index].value]
+    NS = 2 if mirror else 4
+    parts = parts or [list(range(NS))]
+    def aspect_of(n): return n * geom['E'] * (1 - vm) / geom['Hb']   # 空地宽 / 高：后切面（追尾镜头正对着）在贴图里横竖一样密
     # 1) 非尾锤面的 UV 覆盖（res×res，v 朝上：行 0 = v 0）
     tris = []
     for p in me.polygons:
@@ -367,97 +395,68 @@ def club_texture(obj, img, aspect=2.6, res=512, margin=3, seed=7, palette=None, 
             pad |= np.roll(np.roll(cov, dy, 0), dx, 1)
     free = ~pad
     free[:margin], free[-margin:], free[:, :margin], free[:, -margin:] = False, False, False, False
-    I = np.pad(free.astype(np.int32), ((1, 0), (1, 0))).cumsum(0).cumsum(1)
-    best, best_q = None, -1
-    for asp in (aspect, aspect * 0.75, aspect * 0.55, aspect * 1.3):   # 几种长宽比都试，取展开后像素最多的
-        for h in range(3, res):
-            w = max(3, int(round(h * asp)))
-            if w >= res: break
-            tot = I[h:, w:] - I[:-h, w:] - I[h:, :-w] + I[:-h, :-w]
-            ok = np.argwhere(tot == h * w)
-            if not len(ok): break
-            q = min(w / aspect, h)
-            if q > best_q: best_q, best = q, (int(ok[0][1]), int(ok[0][0]), w, h)
-    if best is None: raise RuntimeError('no free space in the UV atlas for the club')
-    bx, by, bw, bh = best
-    u0, v0, uw, vh = bx / res, by / res, bw / res, bh / res
+    def find_rect(aspect):
+        I = np.pad(free.astype(np.int32), ((1, 0), (1, 0))).cumsum(0).cumsum(1)
+        best, best_q = None, -1
+        for asp in (aspect, aspect * 0.75, aspect * 0.55, aspect * 1.3):   # 几种长宽比都试，取展开后像素最多的
+            for h in range(3, res):
+                w = max(3, int(round(h * asp)))
+                if w >= res: break
+                tot = I[h:, w:] - I[:-h, w:] - I[h:, :-w] + I[:-h, :-w]
+                ok = np.argwhere(tot == h * w)
+                if not len(ok): break
+                q = min(w / aspect, h)
+                if q > best_q: best_q, best = q, (int(ok[0][1]), int(ok[0][0]), w, h)
+        if best is None: raise RuntimeError('no free space in the UV atlas for the club')
+        return best
+    rects = []
+    for part in parts:
+        bx, by, bw, bh = find_rect(aspect_of(len(part))); rects.append((bx, by, bw, bh))
+        free[max(0, by - 2 * margin):by + bh + 2 * margin, max(0, bx - 2 * margin):bx + bw + 2 * margin] = False   # 两块之间也留边
     inset = 0.03
+    where = {q: (k, part.index(q)) for k, part in enumerate(parts) for q in part}   # 切面 → (第几块, 块里第几列)
     for p in club_polys:
+        uc = sum(cuv.data[li].uv[0] for li in p.loop_indices) / len(p.loop_indices)
+        q = min(NS - 1, int(uc * NS))                           # 每个面整个在一片切面里（四个角都是顶点），按面中心分
+        k, col_i = where[q]; n = len(parts[k])
+        bx, by, bw, bh = rects[k]; u0, v0, uw, vh = bx / res, by / res, bw / res, bh / res
         for li in p.loop_indices:
-            cu, cv = cuv.data[li].uv
-            main.data[li].uv = (u0 + uw * (inset + (1 - 2 * inset) * cu), v0 + vh * (inset + (1 - 2 * inset) * cv))
-    # 2) 画（贴图分辨率）。先把「空地 + 四周留边」整块涂底色，再在空地里画图案
+            cu, cv = cuv.data[li].uv; lu = (col_i + (cu * NS - q)) / n
+            main.data[li].uv = (u0 + uw * (inset + (1 - 2 * inset) * lu), v0 + vh * (inset + (1 - 2 * inset) * cv))
+    # 2) 画（贴图分辨率）。先把「空地 + 四周留边」整块涂成暗面的颜色（不画浅色边框），再在空地里画切面和裂纹
     W, H = img.size
     px = np.empty(W * H * 4, dtype=np.float32); img.pixels.foreach_get(px); px = px.reshape(H, W, 4)
-    P = palette or {}
-    hi = np.array(P.get('upper', (0.38, 0.28, 0.26))); lo = np.array(P.get('lower', (0.25, 0.18, 0.17)))
-    edge = np.array(P.get('edge', (0.56, 0.42, 0.36)))
-    glow = np.array(P.get('glow', (0.88, 0.30, 0.06))); core = np.array(P.get('core', (1.0, 0.78, 0.32)))
+    Pal = dict(CP.PALETTE); Pal.update(palette or {})
     mpx = margin * W // res
-    X0, Y0 = int(u0 * W), int(v0 * H); X1, Y1 = int((u0 + uw) * W), int((v0 + vh) * H)
-    px[max(0, Y0 - mpx):Y1 + mpx, max(0, X0 - mpx):X1 + mpx, :3] = lo
-    px[max(0, Y0 - mpx):Y1 + mpx, max(0, X0 - mpx):X1 + mpx, 3] = 1.0
-    xs, ys = np.meshgrid(np.arange(X0, X1) + .5, np.arange(Y0, Y1) + .5)
-    cu = ((xs / W - u0) / uw - inset) / (1 - 2 * inset); cv = ((ys / H - v0) / vh - inset) / (1 - 2 * inset)
-    k = out_res / W                                      # 2048 → 导出 1024：1 个导出像素 = 1/k 个这里的像素
-    sx, sy = uw * W * k * (1 - 2 * inset), vh * H * k * (1 - 2 * inset)   # 展开坐标 1 = 导出贴图里多少像素
-    NS = 2 if mirror else 4                              # 展开里有几片（镜像时：上半片 + 下半片）
-    cuc = np.clip(cu, 0, 0.9999); sector = np.floor(cuc * NS)
-    upper = (sector == 0) | (sector == NS - 1) if NS == 4 else (sector == 0)
-    col = np.where(upper[..., None], hi, lo).astype(np.float64)
-    col *= np.where(cv < vm, 0.9, 1.0)[..., None]         # 前半（对着尾巴）暗一点，追尾镜头看的背面亮一点
-    rng = random.Random(seed)
-    noise = np.zeros_like(cu)
-    for _ in range(6):   # 低频斑驳（像手绘的石头）
-        fx, fy, ph = rng.uniform(1.5, 5), rng.uniform(1.5, 4), rng.uniform(0, 6.3)
-        noise += np.sin(cu * fx * 6.28 + ph) * np.sin(cv * fy * 6.28 + ph * 1.7) / 6
-    col *= (1 + 0.12 * noise)[..., None]
-    # 棱边（四个角的棱、最宽一圈）提亮，约 1.2 个导出像素宽
-    du = np.abs(((cuc * NS + .5) % 1) - .5) / NS * sx
-    dv = np.abs(cv - vm) * sy
-    e = np.clip(1 - np.minimum(du, dv) / 1.3, 0, 1)
-    col = col * (1 - 0.6 * e[..., None]) + edge * 0.6 * e[..., None]
-    # 熔岩裂纹：每片背面一条主裂纹 + 一条分叉，前面短的一条；核心约 1 像素、橙色光晕约 3 像素（导出贴图里）
-    dist = np.full(cu.shape, 99.0)
-    def seg_dist(pts):
-        out = np.full(cu.shape, 99.0)
-        for (ax, ay), (bx2, by2) in zip(pts, pts[1:]):
-            pxv, pyv = (cu - ax) * sx, (cv - ay) * sy; qx, qy = (bx2 - ax) * sx, (by2 - ay) * sy
-            tt = np.clip((pxv * qx + pyv * qy) / max(qx * qx + qy * qy, 1e-12), 0, 1)
-            out = np.minimum(out, np.hypot(pxv - tt * qx, pyv - tt * qy))
-        return out
-    # 裂纹沿切面往尾尖方向放射（不走锯齿：镜像以后锯齿会拼成 V / M 一样的字形）
-    def wig(pts0, amp):
-        out = [pts0[0]]
-        for (ax, ay), (bx2, by2) in zip(pts0, pts0[1:]):
-            for f in (0.3, 0.65):   # 抖动要小：贴图分辨率低，抖得多了放大后像一串珠子
-                out.append((ax + (bx2 - ax) * f + rng.uniform(-amp, amp), ay + (by2 - ay) * f))
-            out.append((bx2, by2))
-        return out
-    for s4 in range(NS):
-        wd = 1 / NS; lo_u = s4 * wd; c = lo_u + wd / 2
-        x0 = lo_u + wd * rng.uniform(.38, .62)
-        main = wig([(x0, vm + .02), (c + wd * rng.uniform(-.08, .08), .84)], .025 * wd)
-        dist = np.minimum(dist, seg_dist(main))
-        side = rng.choice((.18, .82)); xs0 = lo_u + wd * side
-        sec = wig([(xs0, vm + .04), (xs0 + (c - xs0) * .55, .62)], .02 * wd)
-        dist = np.minimum(dist, seg_dist(sec) + 0.3)
-        k = len(main) // 2; bx_, by_ = main[k]
-        br = [(bx_, by_), (bx_ + (xs0 - bx_) * .35, by_ + .12)]
-        dist = np.minimum(dist, seg_dist(br) + 0.45)
-        xf = lo_u + wd * rng.uniform(.3, .7)
-        fr = wig([(xf, .06), (xf + wd * rng.uniform(-.1, .1), vm - .03)], .02 * wd)
-        dist = np.minimum(dist, seg_dist(fr) + 0.35)
-    # 线要粗一点、边要软：导出是 WEBP q85（4:2:0 色度减半），1 像素的亮线会被压成一串珠子
-    grad = min(2.8, max(1.8, 0.12 * sx / NS))          # 光晕半径跟一片切面的像素宽走：贴图小的时候光晕不能把整片糊成金色
-    gl = np.clip(1 - dist / grad, 0, 1) ** 1.3
-    cr = np.clip(1.7 - dist / 0.85, 0, 1)
-    col = col * (1 - 0.9 * gl[..., None]) + glow * 0.9 * gl[..., None]
-    col = col * (1 - cr[..., None]) + core * cr[..., None]
-    px[Y0:Y1, X0:X1, :3] = np.clip(col, 0, 1).astype(np.float32)
+    k_out = out_res / W                                  # 2048 → 导出 1024：1 个导出像素 = 1/k 个这里的像素
+    info = []
+    for (bx, by, bw, bh), part in zip(rects, parts):
+        u0, v0, uw, vh = bx / res, by / res, bw / res, bh / res
+        X0, Y0 = int(u0 * W), int(v0 * H); X1, Y1 = int((u0 + uw) * W), int((v0 + vh) * H)
+        px[max(0, Y0 - mpx):Y1 + mpx, max(0, X0 - mpx):X1 + mpx, :3] = np.array(Pal['lower']) * 0.86
+        px[max(0, Y0 - mpx):Y1 + mpx, max(0, X0 - mpx):X1 + mpx, 3] = 1.0
+        xs, ys = np.meshgrid(np.arange(X0, X1) + .5, np.arange(Y0, Y1) + .5)
+        lu = ((xs / W - u0) / uw - inset) / (1 - 2 * inset); cv = ((ys / H - v0) / vh - inset) / (1 - 2 * inset)
+        n = len(part); xcol = np.clip(lu, 0, 0.99999) * n; ci = np.floor(xcol).astype(int)
+        cu = (np.array(part)[ci] + (xcol - ci)) / NS            # 块里的列 → 展开坐标
+        sx = uw * W * k_out * (1 - 2 * inset) / n * NS; sy = vh * H * k_out * (1 - 2 * inset)   # 展开坐标 1 = 导出贴图里多少像素
+        col, st = CP.paint(cu, cv, sx, sy, geom, vm, mirror=mirror, seed=seed, palette=palette, src=src, flip=flip)
+        px[Y0:Y1, X0:X1, :3] = col.astype(np.float32)
+        info.append({'facets': part, 'rect_px': (X0, Y0, X1 - X0, Y1 - Y0), 'export_px': (round(sx * n / NS), round(sy)), **st})
     img.pixels.foreach_set(px.ravel()); img.update()
     # 临时层不导出
     me.uv_layers.remove(me.uv_layers[CLUB_UV])
     if CLUB_ATTR in me.attributes: me.attributes.remove(me.attributes[CLUB_ATTR])
-    return {'rect_uv': (round(u0, 4), round(v0, 4), round(uw, 4), round(vh, 4)), 'rect_px': (X0, Y0, X1 - X0, Y1 - Y0),
-            'export_px': (round(sx), round(sy)), 'club_faces': len(club_polys)}
+    return {'parts': info, 'club_faces': len(club_polys)}
+
+
+def glb_tris(path):
+    """导出（量化）后的 glb 里实际的三角形数（清单的 tris 用它：glTF 导出会丢掉退化三角形，比 Blender 里少一两个）"""
+    import struct
+    with open(path, 'rb') as f:
+        f.read(12); n, _ = struct.unpack('<II', f.read(8)); j = json.loads(f.read(n))
+    t = 0
+    for m in j['meshes']:
+        for p in m['primitives']:
+            if p.get('mode', 4) == 4: t += j['accessors'][p['indices']]['count'] // 3 if 'indices' in p else j['accessors'][p['attributes']['POSITION']]['count'] // 3
+    return t

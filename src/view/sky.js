@@ -1,5 +1,5 @@
 // 天空、光、雾。水下时由 sea.js 改雾，这里只管天上。
-// 天空球：天顶深蓝 → 中段亮蓝 → 地平线的薄雾（朝太阳那边偏暖、背着太阳偏冷）+ 太阳的光盘 / 光晕 + 9 缕高空卷云（云图集里的画）。
+// 天空球：天顶深蓝 → 中段亮蓝 → 地平线的薄雾（朝太阳那边偏暖、背着太阳偏冷）+ 太阳的光盘 / 光晕 + 9 片高空卷云（云图集里的画）。
 // 地平线颜色 = 雾的颜色：本文件一加载就改 three 的雾代码块（ShaderChunk），所有用雾的材质（岛、龙、海底、描边、海、云）
 // 都按视线方向把雾染成和天空地平线一样的冷暖，远处的东西和天接得上。水下（雾色离空气雾色远）时不染。
 import * as THREE from 'three';
@@ -108,7 +108,7 @@ void main(){
   gl_FragColor.rgb += (hash12(gl_FragCoord.xy) - 0.5) / 255.0;   // 抖动：大面积渐变不出色阶
 }`;
 
-export function createSky({ scene, renderer }) {
+export function createSky({ scene }) {   // 不做 PMREM：材质全是卡通的，没人用它
   scene.fog = new THREE.Fog(SKY.mid.clone(), 180, 900);
   const W = WISPS.length ? WISPS : [{ id: '', az: 0, el: 1, w: .1, a: 0 }];
   const wRect = W.map(() => new THREE.Vector4()), wC = W.map(() => new THREE.Vector3()), wR = W.map(() => new THREE.Vector3()), wU = W.map(() => new THREE.Vector3());
@@ -130,11 +130,6 @@ export function createSky({ scene, renderer }) {
   const skyMat = new THREE.ShaderMaterial({ side: THREE.BackSide, depthWrite: false, fog: false, uniforms: U, vertexShader: VERT, fragmentShader: FRAG });
   const sky = new THREE.Mesh(new THREE.SphereGeometry(1400, 32, 16), skyMat);
   sky.frustumCulled = false; sky.renderOrder = -10; sky.name = 'sky'; scene.add(sky);
-  {
-    const pm = new THREE.PMREMGenerator(renderer), s2 = new THREE.Scene();
-    s2.add(new THREE.Mesh(new THREE.SphereGeometry(100, 32, 16), skyMat));
-    scene.environment = pm.fromScene(s2, .02).texture; pm.dispose();
-  }
   const hemi = new THREE.HemisphereLight(0xdcecff, 0x6b5a4a, .9); scene.add(hemi);
   const sun = new THREE.DirectionalLight(0xfff0d8, 2.6); sun.position.copy(SUN).multiplyScalar(100); scene.add(sun);
   const ready = loadCloudAtlas().then(a => {

@@ -45,9 +45,9 @@
     "Idle": 3.0
   },
   "flapHz": 1.0,
-  "tris": 6391,
+  "tris": 6390,
   "bones": 38,
-  "bytes": 447684,
+  "bytes": 450372,
   "extents": {
     "x": [
       -0.249,

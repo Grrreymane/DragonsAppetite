@@ -3,13 +3,17 @@
 
     PYTHONIOENCODING=utf-8 python D:/Minigame/Dragon/tools/hero_status.py
 
-表格列：名字 | 清单或 glb 最后修改时间 | 三角面/预算 | glb KiB/预算 | 骨头/上限 | 嘴K | 体长(米) | 翼展(米，火龙) | 满舵头偏(度) | 动作
+表格列：名字 | 清单或 glb 最后修改时间 | 三角面/预算 | glb KiB/预算 | 骨头/上限 | 嘴K | 嘴高(米) | 体长(米) | 翼展(米，火龙) | 满舵头偏(度) | 动作
 - 三角面、骨头数、长度都从 glb 里数（不信清单里记的）。大小单位 KiB（÷1024）；GDD 写的是 KB，按同一个数比。
 - 「超」= 超预算。「缺 glb」= 清单指向的 glb 不存在（游戏会加载失败）。
 - 嘴K = (mouth.x − pivot.x) / length：看得见的嘴尖在转轴前方几倍体长。sim 用它判定吃东西（main.js 把 dragon.mouthK 传给 S.hero.mouthK）。
+- 嘴高 = (mouth.z − pivot.z) / length × 体长：静止姿势下嘴比转轴高几米。sim 的判定嘴只往正前方放、不管高度（src/sim/hero.js 的 heroMouth），
+  所以这个数就是「看得见的嘴」和「判定的嘴」上下差多少（游戏里飞行姿势会再变一点，实测看 pipedoc_hero.js 的「嘴差」）。
 - 体长来自 src/config/dragons.js 的 len；游戏缩放 = len ÷ 清单 length。三个阶段在屏幕上的大小要递进（幼 < 少年 < 成）。
 - 满舵头偏 = 摇杆打满时头相对身体的偏航估算 = turn × (neckBones 节数 × 脖子系数 + spineBones 节数 × 脊柱系数)，
-  系数从 src/view/dragon.js 里读（读不到显示 ?）。超过约 25° 时看得见的嘴会跑到侧面、和 sim 的判定嘴对不上（文档 §8.2）。
+  系数从 src/view/dragon.js 里读（读不到显示 ?）。头偏大了，看得见的嘴跑到侧面、sim 的判定嘴还在正前方。
+  标「注意」（> 35°，实测火龙少年 33° 时嘴还在直行时的 0.94，幼火龙 39° 时掉到 0.89）= dragon.js 的叠加系数问题，归主程序（文档 §8.2 第 10 条），
+  **不是模型的问题，不算「超」**，做模型的人不用为它改模型。
 表格下面是逐项核对：清单的 tris / bytes / length 和 glb 对不上、火龙收腿目标和用户认可值的偏离、neckBones、flapHz。
 用户有没有点过头，这里看不出来：以和用户的对话为准，没有记录就当没过。
 """
@@ -24,7 +28,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BUD = {'baby': (5000, 450), 'teen': (6500, 550), 'adult': (8000, 700)}   # 三角面、glb KB（GDD §12.2）
 BONES = {'fire': 39, 'sea': 44}
 STAGES = ('baby', 'teen', 'adult')
-HEAD_YAW_MAX = 25            # 度：满舵时头相对身体的总偏航建议上限（v2_review_pipedoc 第 2 条）
+HEAD_YAW_WARN = 35           # 度：满舵头偏超过它标「注意」（归 dragon.js，见文档 §8.2 第 10 条；不是模型预算）
 # 用户认可的火龙飞行收腿（成龙定稿，侧视朝向角：0 朝前、-90 朝下、±180 朝后）
 OK_ARM = [-110, -40, -70, -145]          # 上臂 / 前臂 / 爪掌 / 爪趾：肘 70、腕垂 30、松拳 75
 OK_LEG = [-75, -165, -110, -147]         # 大腿 / 小腿 / 脚掌 / 脚趾：膝 90、踝 55、趾 37
@@ -86,7 +90,7 @@ bends = lambda a: [round(abs(a[i] - a[i + 1])) for i in range(len(a) - 1)]
 elev = lambda th: 180 - th if th > 0 else -(180 + th)       # 尾巴朝向角 → 仰角
 fmt = lambda a: '/'.join(f'{x:g}' for x in a)
 
-print(f"{'名字':<10} {'修改时间':<11} {'三角面':>12}   {'glb KiB':>9}   {'骨':>5}  {'嘴K':>5}  {'体长':>5}  {'翼展':>5}  {'满舵头偏':>6}  动作")
+print(f"{'名字':<10} {'修改时间':<11} {'三角面':>12}   {'glb KiB':>9}   {'骨':>5}  {'嘴K':>5}  {'嘴高':>5}  {'体长':>5}  {'翼展':>5}  {'满舵头偏':>6}  动作")
 rows = sorted(glob.glob(os.path.join(ROOT, 'models/*.json')))
 for k in ('fire', 'sea'):                     # 没清单但有 glb 的（fire_adult 老导出）也列出来
     for s_ in STAGES:
@@ -117,19 +121,22 @@ for f in rows:
     if bad: notes.append(f"{n}: " + '；'.join(bad))
     mk = (m['mouth'][0] - m['pivot'][0]) / m['length'] if m.get('mouth') and m.get('pivot') and m.get('length') else None
     sc = STAGE_CFG.get(n, {}); L = sc.get('len')
+    mz = (m['mouth'][2] - m['pivot'][2]) / m['length'] * L if m.get('mouth') and m.get('pivot') and m.get('length') and L else None
     ws = (m.get('extents') or {}).get('wingspan')
     span = f"{L * ws / m['length']:5.1f}" if (L and ws and m.get('length')) else '    -'
     hy = None
     if NK and sc.get('turn'):
         hy = sc['turn'] * (len(m.get('neckBones') or OK_NECK_FIRE) * NK.get(kind, 0) + len(m.get('spineBones') or []) * SK) * 57.2958
     flag = lambda v, lim: '超' if lim and v > lim else '  '
+    warn = lambda v: '注意' if v > HEAD_YAW_WARN else '    '
     tag = n + ('*' if bad else '')
     print(f"{tag:<10} {t:<11} {tris:>5}/{tb:<5}{flag(tris, tb)} " + (f"{size / 1024:>4.0f}/{kb:<4}{flag(size / 1024, kb)}" if has else f"{'缺 glb':>6}/{kb:<4}  ") +
-          f" {nb:>2}/{BONES.get(kind, 0):<2}  {(f'{mk:.3f}' if mk is not None else '  -  ')}  {(f'{L:5.1f}' if L else '    -')}  {span}  "
-          f"{(f'{hy:5.0f}°' + flag(hy, HEAD_YAW_MAX)) if hy is not None else '    ?   '}  {','.join(m.get('actions', {}))}")
+          f" {nb:>2}/{BONES.get(kind, 0):<2}  {(f'{mk:.3f}' if mk is not None else '  -  ')}  {(f'{mz:+5.2f}' if mz is not None else '    -')}  {(f'{L:5.1f}' if L else '    -')}  {span}  "
+          f"{(f'{hy:5.0f}°' + warn(hy)) if hy is not None else '    ?     '}  {','.join(m.get('actions', {}))}")
 missing = [f'{k}_{s}' for k in ('fire', 'sea') for s in STAGES if not os.path.exists(os.path.join(ROOT, f'models/{k}_{s}.json'))]
-print('没有清单的：', ', '.join(missing) or '无', '（fire_adult 用 dragon.js 里写死的默认清单，不算临时）' if 'fire_adult' in missing else '')
-print('名字后面带 * = 清单和 glb 对不上，见下面「清单核对」')
+print('没有清单的：', ', '.join(missing) or '无', '（fire_adult 用 dragon.js 里写死的默认清单：不算临时，但 mouth 是空的，sim 用默认嘴K 0.47，'
+      '看得见的嘴实测约 0.34，判定点靠前约 1.3 米；补一个只写 pivot / mouth / length 的 models/fire_adult.json，见文档 §8.2）' if 'fire_adult' in missing else '')
+print('名字后面带 * = 清单和 glb 对不上，见下面「清单核对」。「超」= 超 GDD 预算（模型的事）；「注意」= 满舵头偏大（dragon.js 的事，不是模型的事）')
 
 print('\n清单核对（tris / bytes / length 和 glb 比）：')
 for x in notes or ['全部对得上']: print('  ' + x)

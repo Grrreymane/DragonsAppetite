@@ -161,6 +161,15 @@
 .dui .d-gstun > i{ position:absolute; right:calc(-13px * var(--s)); top:calc(-14px * var(--s)); }
 .dui .d-gstun > i .ic{ font-size:calc(20px * var(--s)); }
 .dui .d-x{ font:normal 36px/1 var(--fT); color:var(--gold); text-shadow:var(--o2); }
+/* 「长大」目标：下一阶段的头像（画的金框圆章）+ 右下角绿色上箭头；不写数字，卡片只剩头像 */
+.dui .d-ggrow{ position:relative; display:flex; }
+.dui .d-gpic .d-ggrow > .ic{ font-size:calc(50px * var(--s)); }
+.dui .d-ggrow > i{ position:absolute; right:calc(-7px * var(--s)); bottom:calc(-5px * var(--s)); width:calc(22px * var(--s)); height:calc(22px * var(--s)); border-radius:50%;
+  display:flex; align-items:center; justify-content:center; background:linear-gradient(180deg,#8ff0a0,#2fae54); border:2px solid var(--ink); box-shadow:0 2px 0 var(--ink); }
+.dui .d-gpic .d-ggrow > i .ic{ font-size:calc(14px * var(--s)); color:#fff; stroke-width:3; }
+.dui .d-goal.grow{ padding-right:7px; }
+.dui .d-goal.grow .d-gnum{ display:none; }
+.dui .d-goal.grow .d-gpic{ background:none; box-shadow:none; }
 .dui .d-gnum{ display:flex; align-items:baseline; min-width:0; overflow:hidden; font-size:24px; line-height:26px; white-space:nowrap; }
 .dui .d-gnum b{ font-weight:normal; display:inline-block; color:var(--kt); }
 .dui .d-gnum i{ font-style:normal; color:var(--txt2); }
@@ -347,6 +356,13 @@
 .dui .d-abil.two .d-abtx{ align-items:center; gap:4px; }
 .dui .d-abil.two .d-abtx span{ max-width:100%; }
 .dui .d-abil.two .d-abtx b{ font-size:calc(28px * var(--s)); }
+/* 手机宽度（< 480px）：每列「图标 + 名字」一行、一句话在下面（卡片从约 186px 高降到约 145px，不挡刚换好模型的龙头） */
+.dui:not(.d-wide) .d-abil.two .d-abrow{ display:grid; grid-template-columns:auto auto; justify-content:center; align-items:center; column-gap:6px; row-gap:4px; }
+.dui:not(.d-wide) .d-abil.two .d-abtx{ display:contents; }
+.dui:not(.d-wide) .d-abil.two .d-abic{ width:calc(44px * var(--s)); height:calc(44px * var(--s)); }
+.dui:not(.d-wide) .d-abil.two .d-abic > .ic{ font-size:calc(40px * var(--s)); }
+.dui:not(.d-wide) .d-abil.two .d-abtx b{ text-align:left; }
+.dui:not(.d-wide) .d-abil.two .d-abtx span{ grid-column:1 / -1; text-align:center; }
 .dui .d-rays{ position:absolute; inset:-30%; background:repeating-conic-gradient(rgba(255,255,255,.55) 0 10deg,transparent 10deg 30deg); animation:d-spin 9s linear infinite; }
 .dui .d-abtx{ display:flex; flex-direction:column; gap:6px; min-width:0; }
 .dui .d-abtx b{ font:normal calc(36px * var(--s))/1 var(--fT); color:var(--kt); white-space:nowrap; }

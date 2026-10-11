@@ -2,14 +2,19 @@
 #
 #   探查（打印尺寸 / 按高度的颜色表，渲染几张检查图，帮着定海平面）：
 #     blender -b --factory-startup -P env_island.py -- probe <tripo.glb> <out_dir>
-#   生成：
+#   生成（一般用 blender/env_build.py 一键跑全部形状，它还会把 glb 量化瘦身）：
 #     blender -b --factory-startup -P env_island.py -- build <tripo.glb> <out.glb> <out.json> <sea> [key=value ...]
 #       sea：海平面在原始模型里的高度，按包围盒高度的比例（0 = 最低点，1 = 最高点）
-#       可选：tris=4600（LOD0 三角面上限）lod1=0.3 lod2=0.09（LOD1 / LOD2 相对 LOD0 的比例）tex=1024 n=48（高度图格数）
-#             rot=0（绕竖轴先转多少度）kind=volcano|green|spire  rq=0.75（岸线半径取第几分位）
-#             rx= ry=（先绕 X / Y 轴转几度，把歪的岛面摆平）vgf=0.25（水下优先减面的力度）q=82（WebP 质量）
+#       可选：tris=3300（Tripo 那部分（水上）的三角面上限；水下岩基另算）lod1=0.3 lod2=0.09 tex=1024 q=82（WebP 质量）
+#             n=48（高度图格数）pool=0.3（高度图取周围最高的范围，格）kind=volcano|green|spire rq=0.75（岸线半径取第几分位）
+#             rot=0（绕竖轴先转多少度）rx= ry=（先绕 X / Y 轴转几度，把歪的岛面摆平）seaR=（量岸线半径用的高度，默认 = sea）
+#             cut=-0.01（Tripo 原模在海平面下多深切掉，模型单位）envup=0.004 bot=-1.3 flare=1 skm=64（岩基的列数）
 #
-# 归一化：岸线（海平面那一圈）的半径 = 1，海平面 y = 0（glTF 是 y 朝上）；水下的岩基照样保留在 y < 0。
+# 归一化：岸线（海平面那一圈）的半径 = 1，海平面 y = 0（glTF 是 y 朝上）。
+# 水下：Tripo 原模在 cut（海平面下约半米）以下全部切掉（减面后的水下部分是破三角 + 海草片，还有洞），换成程序化的岩基：
+#   顶圈半径 = 原模在 [cut, envup] 这段高度里每个方向最外面的半径（原模的岸边台子不会伸出去变成「桌面」），
+#   切口用一块水平的盖子封住（原模水线附近的洞后面不再是空的），往下一圈圈台阶状张开，每列的台阶高低不同，
+#   再加几层径向起伏、几条往下伸的石脊（扶壁）和几块鼓包（大石头），最后一段缓坡斜插进海底。
 # 高度图：在 [-ext, ext]² 上 n×n 个点从上往下打射线，记最高的表面（水上是岛面，岸线外是水下岩基的顶面），
 #   没打到 = -9999。整数，单位 q（模型单位）。由 blender/env_shapes.py 汇总进 src/config/island-shapes.js。
 import bpy, bmesh, sys, os, math, json, mathutils
@@ -160,16 +165,17 @@ if MODE == 'probe':
     sys.exit(0)
 
 # ---------------------------------------------------------------- build
+import random
+
 src, out_glb, out_json, sea_frac = argv[1], argv[2], argv[3], float(argv[4])
 O = kv(argv[5:])
-TRIS = int(O.get('tris', 4600)); LOD1 = float(O.get('lod1', .3)); LOD2 = float(O.get('lod2', .09)); TEX = int(O.get('tex', 1024)); N = int(O.get('n', 48))
-VGF = float(O.get('vgf', .25)); ROT = float(O.get('rot', 0)); KIND = O.get('kind', 'green'); RQ = float(O.get('rq', .75))
-# 程序化岩基（skirt=1，默认开）：Tripo 的水下部分在 cut（归一化后的高度）以下切掉，换成一圈按岸线轮廓往下、往外台阶状张开的岩基，
-#   一直到 bot；flare = 张开的力度（1 = 底部约 1.6 倍岸线半径）。Tripo 给水下的面少、减面后是一片片破碎的大三角 + 海草片，水下看很糙。
-SKIRT = O.get('skirt', '1') != '0'; CUT = float(O.get('cut', -.08)); BOT = float(O.get('bot', -1.3)); FLARE = float(O.get('flare', 1))
-SKM = int(O.get('skm', 48))
+TRIS = int(O.get('tris', 3300)); LOD1 = float(O.get('lod1', .3)); LOD2 = float(O.get('lod2', .09)); TEX = int(O.get('tex', 1024)); N = int(O.get('n', 48))
+ROT = float(O.get('rot', 0)); KIND = O.get('kind', 'green'); RQ = float(O.get('rq', .75))
+CUT = float(O.get('cut', -.01)); ENVUP = float(O.get('envup', .004)); BOT = float(O.get('bot', -1.3)); FLARE = float(O.get('flare', 1))
+SKM = int(O.get('skm', 64))
 # seaR：量岸线半径用的高度（比例，默认 = sea）。海平面往上挪（把露出水面的台座 / 墙压进水里）时，岸线半径仍按原来的墙量，岛的大小不变
 SEA_R = float(O.get('seaR', sea_frac))
+QS = 4.0                      # 导出时顶点坐标除以 QS、节点缩放 = QS：坐标落进 ±1，glb_quantize.py 才能量化成 16 位
 chk = os.path.join(os.path.dirname(out_json), 'check'); os.makedirs(chk, exist_ok=True)
 name = os.path.splitext(os.path.basename(out_glb))[0]
 ob = load(src)
@@ -204,20 +210,19 @@ if tn:
 mat.name = name
 while len(ob.data.materials) > 1: ob.data.materials.pop(index=1)
 
-# 减面：水下（y < -0.08）优先减，水上细节留着
-def decimate(o, target, weighted=True):
-    me = o.data
-    vg = o.vertex_groups.get('under') or o.vertex_groups.new(name='under')
-    vg.add([v.index for v in me.vertices if v.co.z < -.08], 1.0, 'REPLACE')
-    vg.add([v.index for v in me.vertices if v.co.z >= -.08], .1, 'REPLACE')   # 0 = 完全不减（Blender 的规则），所以给一点点
-    cur = sum(len(p.vertices) - 2 for p in me.polygons)
+
+def tri_count(o): return sum(len(p.vertices) - 2 for p in o.data.polygons)
+
+
+def decimate(o, target):
+    cur = tri_count(o)
     if cur <= target: return cur
     md = o.modifiers.new('dec', 'DECIMATE'); md.decimate_type = 'COLLAPSE'; md.ratio = target / cur
-    if weighted: md.vertex_group = 'under'; md.vertex_group_factor = VGF
     md.use_collapse_triangulate = True
     bpy.context.view_layer.objects.active = o
     bpy.ops.object.modifier_apply(modifier=md.name)
-    return sum(len(p.vertices) - 2 for p in o.data.polygons)
+    return tri_count(o)
+
 
 def counts(o):
     a = b = 0
@@ -226,124 +231,177 @@ def counts(o):
         else: a += len(p.vertices) - 2
     return a, b
 
-import random
 
-def cut_below(o, zc):
-    """在 zc 处水平切开，扔掉下面的部分；再扔掉切完后整块都在水下的小碎片（海草片、碎石）。"""
+def cut_below(o, zc, frag=True):
+    """在 zc 处水平切开，扔掉下面的部分；再扔掉切完后整块都在水下的小碎片（海草片、碎石、水线下的薄台子）。
+    切口边上的点（减面会把它们挪开一点）压回 zc：和岩基的盖子严丝合缝。"""
     bm = bmesh.new(); bm.from_mesh(o.data)
     bmesh.ops.bisect_plane(bm, geom=bm.verts[:] + bm.edges[:] + bm.faces[:], plane_co=(0, 0, zc), plane_no=(0, 0, 1), clear_inner=True)
-    seen = set(); kill = []
-    for f in bm.faces:
-        if f in seen: continue
-        comp = []; stack = [f]; seen.add(f)
-        while stack:
-            g = stack.pop(); comp.append(g)
-            for e in g.edges:
-                for h in e.link_faces:
-                    if h not in seen: seen.add(h); stack.append(h)
-        if len(comp) < 400 and max(v.co.z for g in comp for v in g.verts) < 0: kill += comp
-    if kill: bmesh.ops.delete(bm, geom=kill, context='FACES')
+    kill = []
+    if frag:
+        seen = set()
+        for f in bm.faces:
+            if f in seen: continue
+            comp = []; stack = [f]; seen.add(f)
+            while stack:
+                g = stack.pop(); comp.append(g)
+                for e in g.edges:
+                    for h in e.link_faces:
+                        if h not in seen: seen.add(h); stack.append(h)
+            if len(comp) < 400 and max(v.co.z for g in comp for v in g.verts) < 0: kill += comp
+        if kill: bmesh.ops.delete(bm, geom=kill, context='FACES')
     loose = [v for v in bm.verts if not v.link_faces]
     if loose: bmesh.ops.delete(bm, geom=loose, context='VERTS')
+    eps = max(.002, abs(zc) * .5); snapped = 0
+    for e in bm.edges:
+        if not e.is_boundary: continue
+        for v in e.verts:
+            if zc < v.co.z < zc + eps: v.co.z = zc; snapped += 1
+    bmesh.ops.triangulate(bm, faces=bm.faces[:])
     bm.to_mesh(o.data); bm.free(); o.data.update()
-    print('CUT at', zc, 'removed fragments', len(kill))
+    print('CUT at', zc, 'removed fragments', len(kill), 'snapped', snapped)
 
 
-def build_skirt(o, M):
-    """岸线轮廓（切口上方一点，水平往里打射线量半径）→ 一圈圈往下、往外台阶状张开的岩基网格，并进 o。"""
-    me = o.data
+def envelope(o, M):
+    """每一列（方向）原模在 [CUT, ENVUP] 高度里最外面的半径：水平射线从外往岛心打，5 根子射线盖住这一列的扇区 × 5 个高度取最大。"""
     dg = bpy.context.evaluated_depsgraph_get(); bvh = BVHTree.FromObject(o, dg)
-    Rf = max(math.hypot(v.co.x, v.co.y) for v in me.vertices) * 1.3 + 1
+    Rf = max(math.hypot(v.co.x, v.co.y) for v in o.data.vertices) * 1.3 + 1
+    zs = [CUT + .0006 + (ENVUP - CUT - .0006) * k / 4 for k in range(5)]
     rt = []
     for i in range(M):
-        a = 2 * math.pi * i / M; d = mathutils.Vector((-math.cos(a), -math.sin(a), 0))
-        hs = []
-        for zc in (CUT + .012, CUT + .03, CUT + .055):
-            hit = bvh.ray_cast(mathutils.Vector((math.cos(a) * Rf, math.sin(a) * Rf, zc)), d, Rf)
-            if hit[0] is not None: hs.append(Rf - hit[3])
-        rt.append(sorted(hs)[len(hs) // 2] if hs else None)
+        best = None
+        for s in range(5):
+            a = 2 * math.pi * (i + (s - 2) / 5) / M
+            d = mathutils.Vector((-math.cos(a), -math.sin(a), 0))
+            for z in zs:
+                hit = bvh.ray_cast(mathutils.Vector((math.cos(a) * Rf, math.sin(a) * Rf, z)), d, Rf)
+                if hit[0] is not None:
+                    r = Rf - hit[3]; best = r if best is None else max(best, r)
+        rt.append(best)
     ok = [r for r in rt if r is not None]
-    if not ok: rt = [1.0] * M
-    else:
-        for i in range(M):                  # 没打到的方向：用两边最近的补上
-            if rt[i] is None:
-                for k in range(1, M):
-                    a, b = rt[(i - k) % M], rt[(i + k) % M]
-                    if a is not None or b is not None: rt[i] = a if b is None else b if a is None else (a + b) / 2; break
-    # 去掉尖刺（伸出去的海草、碎石）：环形中值滤波，再平滑两遍
-    rt = [sorted(rt[(i + k) % M] for k in range(-2, 3))[2] for i in range(M)]
-    for _ in range(2): rt = [(rt[(i - 1) % M] + 2 * rt[i] + rt[(i + 1) % M]) / 4 for i in range(M)]
-    # 台阶：陡壁和往外的平台交替（t = 从切口往下到底的比例，f = 半径倍数）；第一圈在切口上方、缩在墙里面，把接缝藏住
-    # 最后一段是缓坡（裙边）：岩基和海底斜着相交，海底网格（5 米一格）在交界处不会戳出一排尖牙
-    RINGS = [(-1, .9), (0, 1.0), (.06, 1.03), (.15, 1.1), (.22, 1.13), (.38, 1.21), (.45, 1.25), (.62, 1.35), (.7, 1.39), (.86, 1.5), (1, 1.85)]
-    rnd = random.Random(name)
-    p = [rnd.uniform(0, 6.283) for _ in range(6)]
-    lob = lambda a: .08 * math.sin(3 * a + p[0]) + .05 * math.sin(5 * a + p[1]) + .03 * math.sin(9 * a + p[2])
-    # 贴图坐标：整圈岩基用同一个点——切口附近原模表面颜色的「中位数」那个像素（贴图是 Tripo 的图集，
-    #   相邻两列各取各的 UV 会在面上插值穿过整张图集，出来一道道彩条）。水下的颜色由着色器画，这里只要接缝处颜色接得上
-    uvl = me.uv_layers.active
+    if not ok: return [1.0] * M
+    for i in range(M):                  # 没打到的方向：用两边最近的补上
+        if rt[i] is None:
+            for k in range(1, M):
+                a, b = rt[(i - k) % M], rt[(i + k) % M]
+                if a is not None or b is not None: rt[i] = a if b is None else b if a is None else (a + b) / 2; break
+    # 只往外放一点（顶圈的折线在两列之间是直线，略放大才包得住原模）；窄的凹口填平一半（岩基顶上不出现细缝）
+    rt = [r * 1.012 + .004 for r in rt]
+    rt = [max(rt[i], .5 * (rt[i - 1] + rt[(i + 1) % M]) * .985) for i in range(M)]
+    print('ENVELOPE cols', M, 'r min/med/max %.3f/%.3f/%.3f' % (min(rt), sorted(rt)[M // 2], max(rt)))
+    return rt
+
+
+def cut_uv(o):
+    """岩基的贴图坐标：整圈用同一个点——切口附近原模颜色的中位数那个像素（水下的颜色由 islands.js 的着色器画，这里只要不出彩条）。"""
+    me = o.data; uvl = me.uv_layers.active
     mt, bs, tn_ = base_image(o); at = tex_sampler(tn_.image) if tn_ else None
     cand = []
     if at:
         for poly in me.polygons:
-            if CUT - .01 <= poly.center.z <= CUT + .12:
+            if CUT - .001 <= poly.center.z <= CUT + .05:
                 for li in poly.loop_indices:
                     u, v = uvl.data[li].uv; c = at(u, v); cand.append((sum(c) / 3, (u, v)))
     cand.sort()
-    one_uv = cand[len(cand) // 2][1] if cand else (.5, .5)
-    print('SKIRT uv', [round(x, 3) for x in one_uv], 'lum', round(cand[len(cand) // 2][0], 3) if cand else None)
-    bm = bmesh.new(); uvb = bm.loops.layers.uv.new(uvl.name)
-    grid = []; col_uv = [one_uv] * M
-    for j, (t, f) in enumerate(RINGS):
-        row = []
+    return cand[len(cand) // 2][1] if cand else (.5, .5)
+
+
+def wrap_d(a, b):
+    d = (a - b) % (2 * math.pi)
+    return d - 2 * math.pi if d > math.pi else d
+
+
+def smooth01(e0, e1, x):
+    t = min(1, max(0, (x - e0) / (e1 - e0))); return t * t * (3 - 2 * t)
+
+
+def build_skirt(o, rt, uv0):
+    """顶圈（= 原模外轮廓，在 CUT）→ 一圈圈往下、往外台阶状张开的岩基 + 封口的盖子，并进 o。"""
+    M = len(rt)
+    rnd = random.Random(name)
+    # 台阶剖面 (t, f)：t = 从 CUT 往下到 BOT 的比例，f = 半径倍数（相对顶圈）。陡壁和往外的平台交替，最后两段是缓坡裙边，
+    # 斜着插进海底（海底网格 5 米一格，和陡壁相交会戳出一排尖牙）
+    PROF = [(0, 1.0), (.035, 1.02), (.065, 1.1), (.17, 1.13), (.215, 1.22), (.36, 1.26), (.41, 1.35), (.57, 1.39), (.625, 1.49), (.78, 1.54), (.89, 1.68), (1, 1.95)]
+    ph = [rnd.uniform(0, 2 * math.pi) for _ in range(24)]
+    # 三层径向起伏（越往下越明显）
+    wave = lambda a, t: .09 * math.sin(3 * a + ph[0] + 1.3 * t) + .06 * math.sin(7 * a + ph[1] - 2.1 * t) + .035 * math.sin(13 * a + ph[2] + 3.7 * t)
+    # 每圈台阶的高低沿着一圈慢慢变（相邻列接近，一圈下来高低错开）
+    tj = lambda a, j: .03 * math.sin(2 * a + ph[3 + j]) + .018 * math.sin(5 * a + ph[10 + j])
+    # 石脊（扶壁）：从某个深度开始往外鼓、一直伸到底；大石头：某个深度附近的一个鼓包
+    ribs = [(rnd.uniform(0, 2 * math.pi), rnd.uniform(.1, .2), rnd.uniform(.16, .32), rnd.uniform(.03, .3)) for _ in range(rnd.randint(5, 7))]
+    lumps = [(rnd.uniform(0, 2 * math.pi), rnd.uniform(.12, .9), rnd.uniform(.07, .12), rnd.uniform(.08, .16)) for _ in range(12)]
+
+    def radius(i, a, t, last):
+        f = 1 + (fp(t) - 1) * FLARE
+        ramp = smooth01(0, .22, t)
+        f += ramp * wave(a, t)
+        for a0, w, amp, t0 in ribs:
+            f += amp * math.exp(-(wrap_d(a, a0) / w) ** 2) * smooth01(t0, t0 + .22, t)
+        for a0, t0, w, amp in lumps:
+            f += amp * math.exp(-(wrap_d(a, a0) / w) ** 2 - ((t - t0) / .07) ** 2)
+        if 0 < t and not last: f += rnd.uniform(-.022, .022) * ramp
+        return rt[i] * f
+
+    def fp(t):                          # 剖面插值
+        for (t0, f0), (t1, f1) in zip(PROF, PROF[1:]):
+            if t <= t1: return f0 + (f1 - f0) * (t - t0) / max(1e-6, t1 - t0)
+        return PROF[-1][1]
+
+    bm = bmesh.new(); uvb = bm.loops.layers.uv.new(o.data.uv_layers.active.name)
+    grid = []
+    tprev = [0.0] * M
+    for j, (T, F) in enumerate(PROF):
+        last = j == len(PROF) - 1; row = []
         for i in range(M):
             a = 2 * math.pi * i / M
-            tt = max(0, t)
-            y = CUT + .05 if t < 0 else CUT + (BOT - CUT) * t
-            ff = 1 + (f - 1) * FLARE
-            r = rt[i] * ff * (1 + tt * lob(a) * FLARE) + (.03 * tt * math.sin(a * 13 + j * 2.1) if 0 < t < 1 else 0)
-            row.append(bm.verts.new((math.cos(a) * r, math.sin(a) * r, y)))
+            if j == 0: t = 0
+            elif last: t = 1
+            else: t = max(tprev[i] + .012, min(.97, T + tj(a, j) + rnd.uniform(-.006, .006)))
+            tprev[i] = t
+            r = rt[i] if j == 0 else radius(i, a, t, last)
+            row.append(bm.verts.new((math.cos(a) * r, math.sin(a) * r, CUT + (BOT - CUT) * t)))
         grid.append(row)
-    for j in range(len(RINGS) - 1):
+    for j in range(len(PROF) - 1):
         for i in range(M):
             k = (i + 1) % M
-            fc = bm.faces.new((grid[j][i], grid[j + 1][i], grid[j + 1][k], grid[j][k]))
-            for lp, ii in zip(fc.loops, (i, i, k, k)): lp[uvb].uv = col_uv[ii]
-            fc.smooth = True
+            bm.faces.new((grid[j][i], grid[j + 1][i], grid[j + 1][k], grid[j][k]))
+    # 盖子：顶圈围起来的一整块水平面（朝上），把原模切口和顶圈之间的缝全封住
+    c = bm.verts.new((0, 0, CUT))
+    for i in range(M): bm.faces.new((c, grid[0][i], grid[0][(i + 1) % M]))
     bmesh.ops.triangulate(bm, faces=bm.faces[:])
+    for f in bm.faces:
+        f.smooth = True
+        for lp in f.loops: lp[uvb].uv = uv0
     sm = bpy.data.meshes.new(name + '_skirt'); bm.to_mesh(sm); bm.free()
-    sm.materials.append(me.materials[0])
+    sm.materials.append(o.data.materials[0])
     so = bpy.data.objects.new('skirt', sm); bpy.context.scene.collection.objects.link(so)
     bpy.ops.object.select_all(action='DESELECT'); so.select_set(True); o.select_set(True); bpy.context.view_layer.objects.active = o
     bpy.ops.object.join()
-    print('SKIRT rings', len(RINGS), 'cols', M, 'r_top min/med/max %.3f/%.3f/%.3f' % (min(rt), sorted(rt)[M // 2], max(rt)))
-    return (len(RINGS) - 1) * M * 2
+    n = (len(PROF) - 1) * M * 2 + M
+    print('SKIRT rings', len(PROF), 'cols', M, 'tris', n, 'ribs', len(ribs))
+    return n
 
 
 bpy.ops.object.select_all(action='DESELECT'); ob.select_set(True); bpy.context.view_layer.objects.active = ob
-if SKIRT: cut_below(ob, CUT)
-# 三角化（Tripo 是四边面）
-bm = bmesh.new(); bm.from_mesh(ob.data); bmesh.ops.triangulate(bm, faces=bm.faces[:]); bm.to_mesh(ob.data); bm.free()
-skt = (11 - 1) * SKM * 2 if SKIRT else 0
-t = decimate(ob, TRIS - skt)
-if SKIRT:
-    build_skirt(ob, SKM); ob = bpy.context.view_layer.objects.active
-    for p in ob.data.polygons: p.use_smooth = True
-    t = sum(len(p.vertices) - 2 for p in ob.data.polygons)
+cut_below(ob, CUT)
+t_trip = decimate(ob, TRIS)
+cut_below(ob, CUT, frag=False)          # 减面把切口上的点挪开了：再切一刀、压回切口平面
+print('TRIPO tris', tri_count(ob), '(target', TRIS, ')')
+rt = envelope(ob, SKM)
+build_skirt(ob, rt, cut_uv(ob)); ob = bpy.context.view_layer.objects.active
+t = tri_count(ob)
 z0, z1, _ = stats(ob)
 print('LOD0 tris', t, 'above/below', counts(ob), 'z', round(z0, 3), round(z1, 3))
-# 平滑法线（描边壳沿法线外扩，不能有断开的法线）。glb 里不存法线：three.js 端按位置焊接后重算（省 1/3 体积）
 for p in ob.data.polygons: p.use_smooth = True
 ob.name = 'lod0'; ob.data.name = name + '_lod0'
-# LOD1
+# LOD1 / LOD2（整块一起减面；远处看不出岩基和原模的接缝）
 l1 = ob.copy(); l1.data = ob.data.copy(); bpy.context.scene.collection.objects.link(l1)
 l1.name = 'lod1'; l1.data.name = name + '_lod1'
-decimate(l1, int(t * LOD1)); t1 = decimate(l1, int(t * LOD1), weighted=False)
+t1 = decimate(l1, int(t * LOD1))
 print('LOD1 tris', t1, 'above/below', counts(l1))
-# LOD2（很远：450 米外）
 l2 = ob.copy(); l2.data = l1.data.copy(); bpy.context.scene.collection.objects.link(l2)
 l2.name = 'lod2'; l2.data.name = name + '_lod2'
-t2 = decimate(l2, int(t * LOD2), weighted=False)
+t2 = decimate(l2, int(t * LOD2))
 print('LOD2 tris', t2, 'above/below', counts(l2))
 for o in (ob, l1, l2):
     for g in list(o.vertex_groups): o.vertex_groups.remove(g)
@@ -359,8 +417,8 @@ ext = math.ceil(max(max(abs(x) for x in xs), max(abs(y) for y in ys)) * 1.02 * 2
 Q = .004
 hm = []
 top = z1 + 1
-# 每个格点取它和周围 4 个点（±pool 格，斜向）里最高的表面：双线性插值后不会比尖的山脊、树冠低太多（龙不会蹭进石头），
-# 代价是陡壁往外挪 pool 格（默认 0.3 格：石柱 r=14 时约 0.4 米，大火山约 1.5 米）
+# 每个格点取它和周围 4 个点（±pool 格，斜向）里最高的表面：双线性插值后不会比尖的山脊、树冠、火山口沿低太多（龙不会蹭进石头），
+# 代价是陡壁往外挪 pool 格
 POOL = float(O.get('pool', .3)); cell = 2 * ext / (N - 1)
 offs = [(0, 0)] + ([(POOL * cell * a, POOL * cell * b) for a in (-1, 1) for b in (-1, 1)] if POOL > 0 else [])
 for j in range(N):           # j → glTF z（= -blender y）
@@ -402,7 +460,7 @@ if KIND == 'volcano':
     crater = [round(u, 3), round(max(cy_, zt * .82), 3), round(v, 3)]
     print('CRATER', crater, 'rim top', round(zt, 3))
 
-info = {'name': name, 'kind': KIND, 'n': N, 'ext': ext, 'q': Q, 'top': round(z1, 3), 'bottom': round(z0, 3),
+info = {'name': name, 'kind': KIND, 'n': N, 'ext': ext, 'q': Q, 'top': round(z1, 3), 'bottom': round(z0, 3), 'cut': CUT,
         'tris': [t, t1, t2], 'crater': crater, 'h': hm}
 with open(out_json, 'w', encoding='utf-8') as f: json.dump(info, f)
 
@@ -410,9 +468,11 @@ with open(out_json, 'w', encoding='utf-8') as f: json.dump(info, f)
 views(ob, chk, name, sea_z=0, R=1)
 l1.hide_render = True; l2.hide_render = True
 
-# 导出：三个网格节点 lod0 / lod1 / lod2，共用一个材质（底色贴图 WebP）
+# 导出：三个网格节点 lod0 / lod1 / lod2，共用一个材质（底色贴图 WebP）。顶点坐标 ÷ QS、节点缩放 QS（量化要坐标在 ±1 内）
 for o in list(bpy.context.scene.objects):
     if o.type != 'MESH' or o.name not in ('lod0', 'lod1', 'lod2'): bpy.data.objects.remove(o, do_unlink=True)
+for o in (ob, l1, l2):
+    o.data.transform(mathutils.Matrix.Scale(1 / QS, 4)); o.data.update(); o.scale = (QS, QS, QS)
 bpy.ops.object.select_all(action='DESELECT'); ob.select_set(True); l1.select_set(True); l2.select_set(True)
 bpy.ops.export_scene.gltf(filepath=out_glb, export_format='GLB', use_selection=True, export_yup=True, export_apply=True,
                           export_image_format='WEBP', export_image_quality=int(O.get('q', 82)), export_texcoords=True, export_normals=False,

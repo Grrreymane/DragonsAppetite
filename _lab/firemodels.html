@@ -24,6 +24,7 @@ canvas{display:block}
 //   &hide=tail6                            调试：把某根骨头缩没（看是哪块挡住了）
 //   &zoom=2                                追尾镜头放大倍数（只缩小视角，机位不变）；&bg=0|1 去掉海面（纯天空色）
 //   &aim=tail6                             追尾镜头对准某根骨头（配合 zoom 看尾锤 / 背刺特写；机位不变）
+//   &probe=tail6                           自查：每格记下「权重 > 0.9 跟这根骨头走」的顶点投到画面上的像素位置（window.__fm.probe[格]），量尾锤颜色用
 import * as THREE from 'three';
 import { createDragonView, loadModel } from '../src/view/dragon.js';
 import { SUN } from '../src/view/sky.js';
@@ -38,6 +39,7 @@ const LEN = {}; for (const st of DRAGONS.fire.stages) LEN[st.model] = st.len;
 const lens = Q.get('len') ? Q.get('len').split(',').map(Number) : null;
 const HIDE = (Q.get('hide') || '').split(',').filter(Boolean);   // 调试：把这些骨头缩成一点（看某个部位挡不挡）
 const AIM = Q.get('aim');
+const PROBE = Q.get('probe');
 const CW = +(Q.get('cw') || 270), CH = +(Q.get('ch') || 480), ZOOM = +(Q.get('zoom') || 1);
 const cells = [];
 for (const nm of names) for (const v of views) for (const t of times) cells.push({ nm, v, t });
@@ -109,10 +111,31 @@ function render() {
     const y = (rows - 1 - row) * CH;
     renderer.setViewport(col * CW, y, CW, CH); renderer.setScissor(col * CW, y, CW, CH);
     renderer.render(scene, camera);
+    if (PROBE) out.probe[i] = probeBone(D, PROBE, col * CW, row * CH);
     const d = document.createElement('div'); d.className = 'lb'; d.style.left = col * CW + 4 + 'px'; d.style.top = row * CH + 4 + 'px';
     d.textContent = `${c.nm.replace('fire_', '')} ${c.v} ${ACT} t${c.t}`; lab.appendChild(d);
   });
 }
+// 跟某根骨头走的顶点（蒙皮以后）投到画面上：[[x, y], ...]（整张画布的像素坐标）
+function probeBone(D, name, ox, oy) {
+  const pts = [], v = new THREE.Vector3();
+  D.model.updateMatrixWorld(true);
+  D.model.traverse(o => {
+    if (!o.isSkinnedMesh || o.material.type !== 'MeshToonMaterial') return;
+    const bi = o.skeleton.bones.findIndex(b => b.name === name || b.name === name.replace('.', ''));
+    if (bi < 0) return;
+    o.skeleton.update();
+    const si = o.geometry.attributes.skinIndex, sw = o.geometry.attributes.skinWeight;
+    for (let k = 0; k < si.count; k++) {
+      let w = 0; for (let c = 0; c < 4; c++) if (si.getComponent(k, c) === bi) w += sw.getComponent(k, c);
+      if (w < .9) continue;
+      o.getVertexPosition(k, v); v.applyMatrix4(o.matrixWorld).project(camera);
+      pts.push([+(ox + (v.x + 1) / 2 * CW).toFixed(1), +(oy + (1 - v.y) / 2 * CH).toFixed(1)]);
+    }
+  });
+  return pts;
+}
+out.probe = {};
 render();
 out.ready = true; out.render = render;
 </script>

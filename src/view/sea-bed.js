@@ -2,7 +2,7 @@
 // 颜色按区域：翠岛海沙地 + 海藻林、火山海黑石 + 微弱的暖色热泉、外海蓝灰深沟。焦散按 _lab/shade.js 的 patch() 做法。
 // 只有镜头在水下（或很低，提前建好）时才更新 / 显示。
 import * as THREE from 'three';
-import { seabedY, zoneAt, groundAt } from '../sim/world.js';
+import { seabedY, seabedBase, zoneAt, groundAt } from '../sim/world.js';
 import { GRAD as GRAD0, outlineMat as outline0, toonMat as toon0 } from './toon.js';
 
 const CH = 40, CELL = 5, NC = CH / CELL, NK = 6, VPC = (NC + 1) ** 2, NSLOT = NK * NK;
@@ -257,8 +257,8 @@ export function createSeabed(ctx) {
     const x0 = ci * CH, z0 = cj * CH, base = slot * VPC;
     // 岛的水下坡由 islands.js 自己画：这里在岛坡上把海底往下让 3 米，两层不打架（台阶藏在岛坡下面）
     for (let j = 0; j <= NC; j++) for (let i = 0; i <= NC; i++) {
-      const x = x0 + i * CELL, z = z0 + j * CELL, y = seabedY(x, z), g = groundAt(x, z);
-      H[j * (NC + 1) + i] = Math.min(g > -900 && g >= y - .01 ? y - 3 : y, -2.5);
+      const x = x0 + i * CELL, z = z0 + j * CELL;
+      H[j * (NC + 1) + i] = Math.min(seabedBase(x, z), -2.5);   // 岛的水下坡由 islands.js 画
     }
     const vents = [];
     for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) { const v = ventOf(ci + a, cj + b); if (v) vents.push(v); }

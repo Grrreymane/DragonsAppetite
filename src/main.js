@@ -280,7 +280,7 @@ function advance(dtReal) {
       if ((S.pts - a) / (b - a) > .5 && !preloaded[S.kind + S.stage]) { preloaded[S.kind + S.stage] = 1; heroFor(S.kind, S.stage + 1).catch(() => { }); }
     }
     saveT -= dtReal; if (saveT <= 0) { saveT = 5; persist(); }
-    if (resultTimer > 0) { resultTimer -= dtReal; if (resultTimer <= 0) showResult(); }
+    if (resultTimer > 0) { resultTimer -= dtReal; if (resultTimer <= 0) { if (ui.abilityLeft > 0) resultTimer = ui.abilityLeft + .15; else showResult(); } }
   }
   const alpha = S && state === 'play' ? acc / DT : 1;
   // 海浪的时间：海面按 sim 的时间画浪，镜头判断水线也要用同一个时间（否则镜头会卡在水线上一半水上一半水下）

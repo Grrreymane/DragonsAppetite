@@ -166,8 +166,9 @@ export function createHUD(root, api, G, pic) {
   }
   // 屏幕里的点（头顶箭头、大家伙的小牌）会不会压在顶栏 / 小目标卡 / 连吃上
   const underTop = (x, y, pad) => y < topZ() || belowCards(x, y, pad) !== y;
-  // 顶栏（菜单 / 成长条 / 下一阶段 / 小目标卡）的下沿：屏幕上的小标记别画到它后面去
-  const topZ = () => G.st + 6 + 128 * (G.s || 1);
+  // 顶栏（菜单 / 成长条 / 下一阶段 / 小目标卡）的下沿：屏幕上的小标记别画到它后面去。
+  // 「新能力」卡在的时候顶栏一直延到卡片下沿（G.abBot 由 ui.js 的 ResizeObserver 给）
+  const topZ = () => { const t = G.st + 6 + 128 * (G.s || 1); return G.abBot > t && root.classList.contains('d-abon') ? G.abBot : t; };
   // 背后判定：project 给了 behind 就用；没给就按龙的朝向估（追尾镜头，在龙后方十几米以外的算背后）
   const isBehind = (p, c, H0) => {
     if (p.behind != null) return !!p.behind;
@@ -232,16 +233,19 @@ export function createHUD(root, api, G, pic) {
     setOp(combo, cn >= 2 && ct > 0 ? Math.min(1, ct / .4) : 0);
 
     // 小目标卡
-    const g = S.goal;
+    // 「长大」（这一阶段的小目标和图鉴推荐都做完了）：画下一阶段的头像 + 绿色上箭头，不写「0/1」；成龙没有下一阶段，整张卡不显示
+    const g = S.goal && !(S.goal.type === 'grow' && st >= 2) ? S.goal : null;
     if (!g) { if (!goal.hidden) goal.hidden = true; }
     else {
       if (goal.hidden) goal.hidden = false;
-      const key = g.type + '|' + (g.sp || '') + '|' + g.n + '|' + g.icon + '|' + kind;
+      const key = g.type + '|' + (g.sp || '') + '|' + g.n + '|' + g.icon + '|' + kind + '|' + st;
       if (key !== C.gkey || C.gRetry > 0 && (C.gRetry -= dt) <= 0) {
         const fresh = key !== C.gkey; C.gkey = key; pic.miss = false;
-        gPic.innerHTML = goalPic(g, kind); C.gRetry = pic.miss ? .4 : 0;
+        gPic.innerHTML = goalPic(g, kind, st); C.gRetry = pic.miss ? .4 : 0;
         gN.textContent = '/' + g.n; C.ghave = -1;
-        if (fresh && C.gShown && goal.animate) goal.animate([{ transform: 'translateX(40px)', opacity: 0 }, { transform: 'none', opacity: 1 }], { duration: 300, easing: 'ease-out' });
+        const gr = g.type === 'grow'; if (gr !== C.gGrow) { C.gGrow = gr; goal.classList.toggle('grow', gr); }
+        // 换目标时从右边滑进来；新能力卡在的时候卡片本来就滑走了（d-abon），不放（卡片走了以后 CSS 过渡会把它滑回来）
+        if (fresh && C.gShown && goal.animate && !root.classList.contains('d-abon')) goal.animate([{ transform: 'translateX(40px)', opacity: 0 }, { transform: 'none', opacity: 1 }], { duration: 300, easing: 'ease-out' });
         C.gShown = true;
       }
       if (g.have !== C.ghave) { if (C.ghave >= 0 && g.have > C.ghave) pop(gHave, 1.5, 260); C.ghave = g.have; gHave.textContent = Math.min(g.have, g.n); }
@@ -266,7 +270,7 @@ export function createHUD(root, api, G, pic) {
     if (ne && tg && ne.id === tg.id) ne = null;
     if (lc && ne && ne.id === lc.id) ne = null;          // 已经锁定了，就不用再指「最近能吃的」
     placeArrow(arrows[0], tg, dt, H0, lc); placeArrow(arrows[1], ne, dt, H0, lc);
-    placeLock(lc, dt);
+    placeLock(lc, dt, H0, S);
 
     // 天敌「!」：头顶；在画面外时贴屏幕边
     for (let i = 0; i < 3; i++) {
@@ -336,8 +340,9 @@ export function createHUD(root, api, G, pic) {
   }
 
   // 锁定圈：跟着锁定的猎物，略大于它在屏幕上的大小（半径 14~32px）；换目标时从大圈收拢一下。
-  // 猎物贴近屏幕边（离边不到一个半径）时淡掉，不画半个圈。线宽按缩放反算，大圈小圈看起来一样粗（约 4 / 7.5px）
-  function placeLock(c, dt) {
+  // 猎物贴近屏幕边（离边不到一个半径）时淡掉，不画半个圈。线宽按缩放反算，大圈小圈看起来一样粗（约 4 / 7.5px）。
+  // 猎物已经到嘴边（离嘴不到 2 个 mouthR）或在屏幕上叠在龙身上时也淡掉：追尾镜头里圈会套在龙头 / 胸口上，像在瞄准玩家自己
+  function placeLock(c, dt, H0, S) {
     let p = null, edge = 1;
     if (c) { p = api.project(c.x, c.y, c.z); if (!onScreen(p, G)) p = null; }
     if (p) {
@@ -350,7 +355,7 @@ export function createHUD(root, api, G, pic) {
       setTf(lockEl, p.x, p.y, 0, sc);
       const k = Math.round(10 / sc) / 10; if (k !== LK.k) { LK.k = k; lockEl.style.setProperty('--lkw', k); }
       const d = Math.min(p.x - G.sl, G.W - G.sr - p.x, p.y - G.st, G.H - G.sb - p.y);
-      edge = clamp01((d - r * .4) / (r * .8));
+      edge = Math.min(clamp01((d - r * .4) / (r * .8)), nearHero(c, p, H0, S));
       LK.a = Math.min(1, LK.a + dt * 6);
     } else {
       LK.a = Math.max(0, LK.a - dt * 5);
@@ -358,6 +363,24 @@ export function createHUD(root, api, G, pic) {
     }
     if (p) LK.e = LK.e == null ? edge : LK.e + (edge - LK.e) * Math.min(1, dt * 12);   // 没目标时保持原值，跟着 LK.a 淡出
     setOp(lockEl, LK.a * (LK.e == null ? 1 : LK.e));
+  }
+
+  // 1 = 离龙远；0 = 在嘴边 / 屏幕上压在龙身上（中间平滑过渡）。
+  // 追尾镜头里龙前方十几米的猎物在屏幕上正好落在龙头上，所以「压在龙身上」按屏幕算：龙身中心 → 嘴 这一段、半径约 0.15 个身长的胶囊（再宽就会把刚好在龙头前面、没压着龙的也藏掉）
+  function nearHero(c, p, H0, S) {
+    let k = 1;
+    const m = H0.mouth, mR = ((S.cfg && S.cfg.mouthR) || 2) * (H0.sizeK || 1);
+    if (m) k = clamp01((Math.hypot(c.x - m.x, c.y - m.y, c.z - m.z) - 2 * mR) / (1.5 * mR));
+    const hp = api.project(H0.x, H0.y, H0.z);
+    if (hp && hp.visible !== false) {
+      const hq = api.project(H0.x, H0.y + (H0.len || 5) * .22, H0.z), hr = Math.hypot(hq.x - hp.x, hq.y - hp.y);
+      const mp = m ? api.project(m.x, m.y, m.z) : hp;
+      const ex = mp.x - hp.x, ey = mp.y - hp.y, L2 = ex * ex + ey * ey;
+      const t = L2 > 1 ? clamp01(((p.x - hp.x) * ex + (p.y - hp.y) * ey) / L2) : 0;
+      const ds = Math.hypot(p.x - hp.x - ex * t, p.y - hp.y - ey * t);
+      k = Math.min(k, clamp01((ds - hr * .7) / Math.max(8, hr * .4)));
+    }
+    return k;
   }
 
   // 箭头：猎物在画面外 → 贴边指过去；进了画面 → 头顶向下的小箭头，1 秒后淡出（被锁定的那只有锁定圈，不再画头顶箭头）
@@ -379,14 +402,14 @@ export function createHUD(root, api, G, pic) {
     setOp(A.e, A.a);
   }
 
-  function goalPic(g, kind) {
+  function goalPic(g, kind, st) {
+    if (g.type === 'grow') return `<span class="d-ggrow">${icon(`head_${kind === 'sea' ? 'sea' : 'fire'}${Math.min(2, (st || 0) + 1)}`)}<i>${icon('grow')}</i></span>`;
     const ic = g.icon || g.sp || g.type;
     if (SPECIES[ic]) return pic(ic);
     if (ic === 'cooked') return kind === 'fire' ? icon('fire') : `<span class="d-gstun">${icon('dash')}<i>${icon('star', 'stun')}</i></span>`;   // 海龙：撞晕（冲刺 + 星星）
     if (ic === 'cross') return icon(kind === 'fire' ? 'plunge' : 'breach');
     if (ic === 'skill') return icon(kind === 'fire' ? 'roar' : 'vortex');
     if (ic === 'combo') return '<b class="d-x">×</b>';
-    if (ic === 'grow') return icon('grow');
     if (ic === 'depth') return icon('down');
     if (ABILITIES[ic]) return icon(abIcon(ic, kind));
     return icon('star');

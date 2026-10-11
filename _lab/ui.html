@@ -207,6 +207,7 @@ function hudPose(kind, stage, pts, goalI, have) {
 }
 // 各个画面（截图脚本用 LAB.go(name)）
 function go(name) {
+  if (name === 'evo-blocked2') { hint2(name); return; }
   clearAll(); paused = true; S = null;
   if (name === 'load') { ui.setLoading(.45); draw(); return; }
   if (name === 'title') { draw(); ui.showTitle(save); return; }
@@ -227,10 +228,21 @@ function go(name) {
   if (name === 'hud-skill-sea') { hudPose('sea', 2, 200, 0, 3); S.hero.skill.cd = 0; run(2); }
   if (name === 'ability') { hudPose('fire', 1, 41, 0, 0); ui.showAbility([{ id: 'plunge', ...ABILITIES.plunge }]); run(1); }
   if (name === 'ability2') { hudPose('sea', 2, 161, 0, 0); ui.toast(STAGE_NAMES[2]); events.push({ type: 'unlock', abilities: ['vortex', 'gulp'] }); run(1); }
+  if (name === 'ability2-now' || name === 'ability2-fire') { hudPose(name === 'ability2-now' ? 'sea' : 'fire', 2, 161, 0, 0); events.push({ type: 'unlock', abilities: name === 'ability2-now' ? ['vortex', 'gulp'] : ['roar', 'gulp'] }); run(1); }   // 不放大字，卡片马上出
   if (name === 'blocked') { hudPose('fire', 0, 20, 0, 1); ui.hint('drag'); events.push({ type: 'blocked', ability: 'plunge' }); run(1); }
   if (name === 'blocked-sea') { hudPose('sea', 0, 20, 0, 1); ui.hint('blocked_breach'); run(1); }
+  // 「长大」目标：下一阶段头像 + 绿色上箭头（成龙不显示目标卡）
+  if (name === 'grow' || name === 'grow-fire1' || name === 'grow-adult') {
+    const [k, st] = name === 'grow' ? ['sea', 0] : name === 'grow-fire1' ? ['fire', 1] : ['fire', 2];
+    hudPose(k, st, st === 2 ? 210 : st ? 90 : 20, 0, 0); S.goal = { type: 'grow', n: 1, have: 0, done: false, icon: 'grow', extra: true }; S.eatT = -999; run(2);
+  }
+  // 进化：先大字 → 再「新能力」卡 → 最后才出「扎水」教学提示（截图脚本按时间连拍）
+  if (name === 'evo-hint') { hudPose('fire', 0, 30, 0, 0); S.eatT = -999; ui.hint('plunge'); run(1); S.pts = 41; ui.toast(STAGE_NAMES[1]); events.push({ type: 'unlock', abilities: ['plunge'] }); run(1); }
+  // 「长大后学会」正显示着，这时进化学会了扎水（再调 go('evo-blocked2')，不清场）：提示马上收掉，不和大字 / 卡片同时出
+  if (name === 'evo-blocked') { hudPose('fire', 0, 30, 0, 0); S.eatT = -999; events.push({ type: 'blocked', ability: 'plunge' }); run(1); }
   if (name === 'live') { hudPose(qs.get('kind') || 'fire', 0, 0, 0, 0); ui.hint('drag'); paused = false; }
 }
+function hint2(name) { if (name === 'evo-blocked2') { S.pts = 41; ui.toast(STAGE_NAMES[1]); events.push({ type: 'unlock', abilities: ['plunge'] }); run(1); } }
 let last = performance.now();
 function loop(now) {
   const dt = Math.min(.05, (now - last) / 1000); last = now;
@@ -265,7 +277,7 @@ function pinTest(left = false, stage = 2) {
   return { W, H, colW, colH, n: pts.length, bad };
 }
 window.LAB = { ui, go, run, LOG, get S() { return S; }, save, drawCard: () => ui._result.drawCard(), pinTest };
-const names = ['load', 'title', 'title-new', 'hud', 'hud-cross', 'hud-sea', 'hud-teen', 'hud-teen-sea', 'hud-adult', 'hud-skill', 'hud-skill-sea', 'hud-left', 'ability', 'ability2', 'blocked', 'blocked-sea', 'pause', 'codex', 'result', 'result-sea', 'toast', 'live'];
+const names = ['load', 'title', 'title-new', 'hud', 'hud-cross', 'hud-sea', 'hud-teen', 'hud-teen-sea', 'hud-adult', 'hud-skill', 'hud-skill-sea', 'hud-left', 'ability', 'ability2', 'ability2-now', 'ability2-fire', 'blocked', 'blocked-sea', 'grow', 'grow-fire1', 'grow-adult', 'evo-hint', 'evo-blocked', 'pause', 'codex', 'result', 'result-sea', 'toast', 'live'];
 if (qs.has('bar')) { const b = document.getElementById('bar'); b.style.display = 'flex'; document.getElementById('log').style.display = 'block'; for (const n of names) { const e = document.createElement('button'); e.textContent = n; e.onclick = () => go(n); b.appendChild(e); } }
 go(qs.get('s') || 'live');
 requestAnimationFrame(loop);

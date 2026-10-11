@@ -11,7 +11,7 @@ import { makeBot, TIERS } from '../src/sim/bot.js';
 const KIND = process.argv[2] || 'fire', SEEDS = +(process.argv[3] || 3), MIN = +(process.argv[4] || 3);
 const ROOT = new URL('../', import.meta.url);
 
-// ---- 极简 glb 读取：节点 lod0 的位置 + 索引
+// ---- 极简 glb 读取：节点 lod0 的位置（量化过的 16 位整数 → 浮点，乘上节点缩放）+ 索引
 function loadGlb(file) {
   const b = readFileSync(new URL(file, ROOT));
   const jl = b.readUInt32LE(12), J = JSON.parse(b.subarray(20, 20 + jl).toString('utf8'));
@@ -20,11 +20,19 @@ function loadGlb(file) {
   const prim = J.meshes[node.mesh].primitives[0];
   const acc = i => {
     const a = J.accessors[i], v = J.bufferViews[a.bufferView], off = (v.byteOffset || 0) + (a.byteOffset || 0);
-    const n = a.count * ({ SCALAR: 1, VEC2: 2, VEC3: 3 })[a.type];
-    const T = { 5126: Float32Array, 5125: Uint32Array, 5123: Uint16Array }[a.componentType];
-    return new T(bin.buffer.slice(bin.byteOffset + off, bin.byteOffset + off + n * T.BYTES_PER_ELEMENT));
+    const nc = ({ SCALAR: 1, VEC2: 2, VEC3: 3 })[a.type];
+    const T = { 5126: Float32Array, 5125: Uint32Array, 5123: Uint16Array, 5122: Int16Array }[a.componentType];
+    const stride = v.byteStride || T.BYTES_PER_ELEMENT * nc, raw = new Uint8Array(bin.buffer, bin.byteOffset + off, stride * (a.count - 1) + T.BYTES_PER_ELEMENT * nc);
+    const out = a.componentType === 5126 || !a.normalized ? new (T === Float32Array ? Float32Array : T)(a.count * nc) : new Float32Array(a.count * nc);
+    const dv = new DataView(raw.buffer, raw.byteOffset, raw.byteLength);
+    const rd = { 5126: o => dv.getFloat32(o, true), 5125: o => dv.getUint32(o, true), 5123: o => dv.getUint16(o, true), 5122: o => dv.getInt16(o, true) }[a.componentType];
+    const nm = a.normalized ? ({ 5122: 32767, 5123: 65535 })[a.componentType] : 1;
+    for (let k = 0; k < a.count; k++) for (let c = 0; c < nc; c++) { const x = rd(k * stride + c * T.BYTES_PER_ELEMENT); out[k * nc + c] = a.normalized ? Math.max(-1, x / nm) : x; }
+    return out;
   };
-  return { pos: acc(prim.attributes.POSITION), idx: acc(prim.indices) };
+  const pos = Float32Array.from(acc(prim.attributes.POSITION)), s = node.scale || [1, 1, 1];
+  for (let i = 0; i < pos.length; i += 3) { pos[i] *= s[0]; pos[i + 1] *= s[1]; pos[i + 2] *= s[2]; }
+  return { pos, idx: acc(prim.indices) };
 }
 // 竖直射线：(x,z) 处网格的最高点（模型单位；没有 = -Infinity）。按 xz 网格分桶加速
 function makeTop({ pos, idx }) {

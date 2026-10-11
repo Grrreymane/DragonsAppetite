@@ -61,9 +61,10 @@ void crDeform(inout vec3 p, inout vec3 n){
     float c = mix(0.5 + 0.5 * sin(ph), 1.0, fe * 0.7);     // 害怕：伞缩紧、触手收拢
     p.xz *= 1.0 - uP.x * c * max(aP.x, aP.y > 0.0 ? 0.7 : 0.0);
     p.y -= uP.y * c * aP.x;
+    // 触手：一道波从根往梢走（不是整根一起往一边摆），梢上摆得大
     float o = aP.z + iA.z * 6.2832, r = aP.y;
-    p.x += sin(ph * 0.5 + o + r * 2.6) * uP.z * r;
-    p.z += cos(ph * 0.5 + o * 1.3 + r * 2.1) * uP.z * r;
+    p.x += sin(ph * 0.5 + o - r * 4.2) * uP.z * r;
+    p.z += cos(ph * 0.5 + o * 1.3 - r * 3.6) * uP.z * r;
   } else if (k < 4.5) {
     // 鱿鱼：aP.x 外套膜权重，aP.y 触手权重（根 0 → 梢 1），aP.z 触手角度。uP = (收缩幅度, 触手张开, 触手摆幅, 0)
     // 相位约定：sin(ph) = 1 时外套膜收得最紧（JS 已经把喷射的那一刻对到这里）
@@ -126,10 +127,14 @@ varying float vHeat;
 const FRAG_FX = /* glsl */`
 totalEmissiveRadiance *= 1.0 - vFx.w;
 float crR = 1.0 - clamp(dot(normal, normalize(vViewPosition)), 0.0, 1.0);
-// 正在被火烤：往橙色换一部分，边缘透出橙红的热光（像烧红的；青色的水母直接混橙色会变灰，所以主要靠边缘的光）
-diffuseColor.rgb = mix(diffuseColor.rgb, vec3(1.0, 0.45, 0.15) * (0.35 + 0.65 * dot(diffuseColor.rgb, vec3(0.3, 0.59, 0.11))), min(1.0, vHeat * 1.15) * 0.88);
-totalEmissiveRadiance *= 1.0 - 0.6 * vHeat;
-totalEmissiveRadiance += vec3(1.0, 0.32, 0.04) * vHeat * (0.16 + 0.75 * smoothstep(0.3, 0.75, crR));
+// 正在被火烤：本身的颜色只乘一点暖色（黑的还是黑、粉的还是粉，不会变成一片浅橙、不会像金色），
+// 「烫」主要靠边缘透出的红橙热光（像烧红的边，不带黄）
+// 浅色的（粉色云水母）光往上加红是加不出来的（已经很亮了），所以边缘这一圈的本色也往深红橙换一点（越浅换得越多）
+{ float crH = vHeat * smoothstep(0.36, 0.78, crR);
+  diffuseColor.rgb *= mix(vec3(1.0), vec3(1.2, 0.68, 0.45), vHeat * 0.7);
+  diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.95, 0.2, 0.04), min(1.0, crH * (0.55 + 0.75 * dot(diffuseColor.rgb, vec3(0.3, 0.59, 0.11)))));
+  totalEmissiveRadiance *= 1.0 - 0.6 * vHeat;
+  totalEmissiveRadiance += vec3(1.0, 0.28, 0.04) * (vHeat * 0.06 + crH * 0.75); }
 totalEmissiveRadiance += diffuseColor.rgb * vGlow;
 { // 轮廓光：身体朝上的边缘亮一道（卡通的硬边），只在近处（屏幕上够大）才有，远处的小鸟小鱼保持干净的剪影
   float crRim = smoothstep(0.58, 0.66, crR) * smoothstep(-0.25, 0.45, normal.y) * vRim;
@@ -220,6 +225,7 @@ export function bodyMat(GRAD, U, { emissive = 0x000000 } = {}) {
 // 描边材质：用 toon.js 的 outlineMat，插同一段变形；再加这几样：
 //   屏幕上最细 uPx（远处的小鸟小鱼描边不会细到 1 像素以下而闪），但最多体长的 7%（身体本身只有几像素时，不能整只都是描边）；
 //   身体在屏幕上小于约 14 像素时，描边颜色慢慢换成这个面自己颜色的中间调（远处的小鱼是一点银青色，不是黑点）；
+//   身体在屏幕上 11 → 7.5 像素之间描边宽度慢慢收到 0（再小的 creatures.js 直接不画描边，省三角面，切换时看不出来）；
 //   水母的触手越往梢描边越细（像透光的细丝，不是一根根黑线）；
 //   离镜头 0.75·uFar → uFar 之间整圈描边慢慢收到 0（超过 uFar 就不画描边，这样切换时看不出来）；
 //   金色 / 烤熟的个体描边跟着换成同色相的深色（深金 / 深褐，亮度和别的描边差不多）
@@ -231,7 +237,9 @@ export function hullMat(outlineMat, color, w, U) {
         float crS = length(instanceMatrix[0].xyz), crF = 1.0 - smoothstep(uFar * 0.75, uFar, length(crV.xyz));
         float crMin = uPx * max(-crV.z, 0.0) / max(crS, 1e-4);
         float crJ = uK.x > 2.5 && uK.x < 3.5 ? 1.0 - 0.6 * aP.y : 1.0;
-        vCrSmall = uPx > 0.0 ? 1.0 - smoothstep(5.0, 14.0, ${OUT_MIN_PX.toFixed(2)} / max(crMin, 1e-5)) : 0.0;
+        float crBp = ${OUT_MIN_PX.toFixed(2)} / max(crMin, 1e-5);
+        vCrSmall = uPx > 0.0 ? 1.0 - smoothstep(5.0, 14.0, crBp) : 0.0;
+        crF *= smoothstep(7.5, 11.0, crBp);
         transformed += normalize(oN) * (crF * crJ * max(uW, min(crMin, 0.07)) - uW); }`,
     key: 'creature3',
   });
