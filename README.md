@@ -2,7 +2,7 @@
 
 变成一条龙：**火龙**翱翔天空、扎进海里叼鱼；**海龙**遨游大海、跃出水面咬住海鸥。吃东西长大，从幼龙长成成龙。
 
-手机竖屏网页 3D 小游戏（three.js，卡通描边）。在线玩：https://grrreymane.github.io/DragonSkySea/
+手机竖屏网页 3D 小游戏（three.js，卡通描边）。在线玩：https://grrreymane.github.io/DragonsAppetite/
 
 ## 怎么玩
 
