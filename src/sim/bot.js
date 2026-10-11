@@ -14,7 +14,7 @@ export function makeBot(tier, seed) {
   const r = makeRng(seed * 31 + 7);
   let tNext = 0, cur = { jx: 0, jy: 0, act: false, actTap: false }, errA = 0, errP = 0;
   return S => {
-    if (S.t < tNext) { const o = { ...cur }; cur.actTap = false; return o; }
+    if (S.t < tNext) { const o = { ...cur }; cur.actTap = false; cur.skillTap = false; return o; }
     tNext = S.t + tier.react * r.range(.8, 1.2);
     errA = r.range(-1, 1) * tier.err * Math.PI / 180; errP = r.range(-1, 1) * tier.err * Math.PI / 180 * .5;
     const h = S.hero;
@@ -46,11 +46,14 @@ export function makeBot(tier, seed) {
     } else if (!pred) {
       wantYaw = h.yaw + Math.sin(S.t * .3) * .5; wantPitch = S.kind === 'fire' ? (h.y < 50 ? .2 : h.y > 120 ? -.2 : 0) : (h.y < -15 ? .2 : 0);
     }
+    // 成龙：附近猎物够多就放技能（龙吼 / 漩涡）
+    const sk = h.skill; let skillTap = false;
+    if (sk && sk.cd <= 0) { let n = 0; for (const c of S.creatures) if (c.edible && Math.hypot(c.x - h.x, c.y - h.y, c.z - h.z) < sk.r * .8) n++; skillTap = n >= 3; }
     const yErr = wrapAngle(wantYaw - h.yaw);
     cur = {
       jx: clamp(-yErr * 2.2, -1, 1),
       jy: clamp(-(wantPitch) / S.cfg.pitchK * 1.2, -1, 1),
-      act, actTap: tap,
+      act, actTap: tap, skillTap,
     };
     return { ...cur };
   };

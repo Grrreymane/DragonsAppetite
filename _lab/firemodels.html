@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>火龙模型对比</title>
+<style>
+html,body{margin:0;height:100%;background:#20242a;overflow:hidden;font-family:system-ui,sans-serif}
+canvas{display:block}
+#lab{position:fixed;left:0;top:0;pointer-events:none;width:100%;height:100%}
+.lb{position:absolute;color:#fff;font:600 12px/1.2 system-ui;background:rgba(0,0,0,.45);padding:2px 5px;border-radius:4px}
+</style>
+<script type="importmap">{ "imports": { "three": "../lib/three.module.min.js" } }</script>
+</head>
+<body>
+<div id="lab"></div>
+<script type="module">
+// 火龙主角模型对比页（firemodels 模块自查用）：同一画布上按「模型 × 视角 × 时间」排格子，用游戏里的卡通材质 + 描边（src/view/dragon.js）
+//   ?m=fire_baby,fire_teen,fire_adult      模型清单名（models/<名>.json）；写 名@路径.glb 可以换文件（清单仍读 名.json）
+//   &v=chase,side,front34,under            视角：chase = 游戏追尾镜头（按体长算距离，和 src/view/camera.js 同一公式）
+//   &act=Fly|Glide &t=0,0.375              动作和时间（秒，可多个）
+//   &len=4.3,7.1,10.3                      游戏体长（米），默认按阶段取 config/dragons.js 的值
+//   &cw=270&ch=480                         每格像素
+//   &hide=tail6                            调试：把某根骨头缩没（看是哪块挡住了）
+//   &zoom=2                                追尾镜头放大倍数（只缩小视角，机位不变）；&bg=0|1 去掉海面（纯天空色）
+//   &aim=tail6                             追尾镜头对准某根骨头（配合 zoom 看尾锤 / 背刺特写；机位不变）
+import * as THREE from 'three';
+import { createDragonView, loadModel } from '../src/view/dragon.js';
+import { SUN } from '../src/view/sky.js';
+const Q = new URLSearchParams(location.search);
+const names = (Q.get('m') || 'fire_baby,fire_teen,fire_adult').split(',');
+const views = (Q.get('v') || 'chase,side,front34').split(',');
+const ACT = Q.get('act') || 'Fly';
+const times = (Q.get('t') || '0').split(',').map(Number);
+// 游戏体长：照 config/dragons.js（改了配置这里自动跟上）
+const { DRAGONS } = await import('../src/config/dragons.js');
+const LEN = {}; for (const st of DRAGONS.fire.stages) LEN[st.model] = st.len;
+const lens = Q.get('len') ? Q.get('len').split(',').map(Number) : null;
+const HIDE = (Q.get('hide') || '').split(',').filter(Boolean);   // 调试：把这些骨头缩成一点（看某个部位挡不挡）
+const AIM = Q.get('aim');
+const CW = +(Q.get('cw') || 270), CH = +(Q.get('ch') || 480), ZOOM = +(Q.get('zoom') || 1);
+const cells = [];
+for (const nm of names) for (const v of views) for (const t of times) cells.push({ nm, v, t });
+const cols = Math.min(cells.length, +(Q.get('cols') || views.length * times.length));
+const rows = Math.ceil(cells.length / cols);
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+renderer.setPixelRatio(1); renderer.setSize(cols * CW, rows * CH);
+renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.0;
+document.body.prepend(renderer.domElement);
+renderer.setScissorTest(true);
+const scene = new THREE.Scene();
+scene.add(new THREE.HemisphereLight(0xdcecff, 0x6b5a4a, .9));
+const sun = new THREE.DirectionalLight(0xfff0d8, 2.6); sun.position.copy(SUN).multiplyScalar(100); scene.add(sun);
+const sea = new THREE.Mesh(new THREE.PlaneGeometry(4000, 4000), new THREE.MeshBasicMaterial({ color: 0x2f8fa8 }));
+sea.rotation.x = -Math.PI / 2; sea.position.y = -60; scene.add(sea); sea.visible = Q.get('bg') !== '0';
+scene.background = new THREE.Color(0xa9d3f0);
+const camera = new THREE.PerspectiveCamera(62, CW / CH, .1, 3000);
+const lab = document.getElementById('lab');
+const dragons = {};
+const out = { ready: false, info: {} };
+window.__fm = out;
+for (let i = 0; i < names.length; i++) {
+  const [nm, file] = names[i].split('@');
+  const loaded = await loadModel(nm);
+  let L = loaded;
+  if (file) {   // 换文件：清单照旧，glb 用指定的
+    const { GLTFLoader } = await import('../lib/jsm/loaders/GLTFLoader.js');
+    const gltf = await new GLTFLoader().loadAsync(new URL('../' + file, location.href).href);
+    L = { gltf, man: { ...loaded.man, file }, name: nm };
+  }
+  const D = createDragonView({ scene });
+  const len = lens ? lens[i] : (LEN[nm] || 5);
+  D.build(L, len, null);
+  dragons[names[i]] = { D, len };
+  let tris = 0; D.model.traverse(o => { if (o.isSkinnedMesh && o.material.type === 'MeshToonMaterial') tris += o.geometry.index.count / 3; });
+  out.info[names[i]] = { tris, len, length: L.man.length, anims: L.gltf.animations.map(a => a.name + ':' + a.duration.toFixed(2)) };
+}
+const h = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, bank: 0, yawRate: 0, flyW: ACT === 'Fly' ? 1 : 0, tuck: 0, medium: 'air', climbing: false, speed: 18, len: 5 };
+const Sfake = { kind: 'fire' };
+function placeCam(v, len, D) {
+  const Sz = len / .94, span = 11 * Math.pow(Sz / 11, .6);
+  camera.fov = 62; camera.aspect = CW / CH;
+  const hTan = Math.tan(camera.fov * Math.PI / 360) * Math.min(1, camera.aspect);
+  const dist = span * .46 / hTan + 3 * span / 11;
+  if (v === 'chase') {
+    camera.position.set(0, dist * .22, -dist);
+    camera.fov = 2 * Math.atan(Math.tan(31 * Math.PI / 180) / ZOOM) * 180 / Math.PI;
+    camera.updateProjectionMatrix(); camera.lookAt(0, span * .12, dist * .4);
+    const ab = AIM && D.bone(AIM);
+    if (ab) { const w = new THREE.Vector3(); ab.getWorldPosition(w); camera.lookAt(w); }
+  } else {
+    camera.fov = 24; camera.updateProjectionMatrix();
+    const hh = Math.atan(Math.tan(12 * Math.PI / 180) * CW / CH), d = len * .72 / Math.tan(hh);
+    const dir = v === 'side' ? [1, .02, 0] : v === 'front34' ? [.62, .3, .72] : v === 'under' ? [.35, -.75, .55] : v === 'back34' ? [.6, .35, -.72] : [1, 0, 0];
+    const n = Math.hypot(...dir);
+    camera.position.set(dir[0] / n * d, dir[1] / n * d, dir[2] / n * d); camera.lookAt(0, 0, 0);
+  }
+}
+function render() {
+  lab.innerHTML = '';
+  cells.forEach((c, i) => {
+    const col = i % cols, row = Math.floor(i / cols);
+    for (const k in dragons) dragons[k].D.root.visible = k === c.nm;
+    const { D, len } = dragons[c.nm];
+    for (const a of Object.values(D.act)) a.time = c.t;
+    D.update({ ...h, len }, Sfake, 0, 0);
+    for (const b of HIDE) { const bb = D.bone(b); if (bb) { bb.scale.setScalar(1e-3); bb.updateMatrixWorld(true); } }
+    placeCam(c.v, len, D);
+    const y = (rows - 1 - row) * CH;
+    renderer.setViewport(col * CW, y, CW, CH); renderer.setScissor(col * CW, y, CW, CH);
+    renderer.render(scene, camera);
+    const d = document.createElement('div'); d.className = 'lb'; d.style.left = col * CW + 4 + 'px'; d.style.top = row * CH + 4 + 'px';
+    d.textContent = `${c.nm.replace('fire_', '')} ${c.v} ${ACT} t${c.t}`; lab.appendChild(d);
+  });
+}
+render();
+out.ready = true; out.render = render;
+</script>
+</body>
+</html>

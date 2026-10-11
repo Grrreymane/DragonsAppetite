@@ -9,6 +9,9 @@ const want = k => !only || only.split(',').includes(k);
 if (want('gallery')) for (const bg of ['sky', 'sea']) for (const page of ['0', '1']) {
   C.set('gallery', bg, page); C.step(8, 1 / 30); await __shot(`gallery_${bg}_${page}`);
 }
+if (want('states')) for (const bg of ['sky', 'sea']) for (const page of ['0', '1']) {
+  C.set('states', bg, page); C.step(8, 1 / 30); await __shot(`states_${bg}_${page}`);
+}
 if (want('all')) { C.set('gallery', 'sky', 'all'); C.step(5, 1 / 30); await __shot('gallery_sky_all'); C.set('gallery', 'sea', 'all'); C.step(5, 1 / 30); await __shot('gallery_sea_all'); }
 if (want('zoo')) for (const bg of ['sky', 'sea']) {
   C.set('zoo', bg); for (let i = 0; i < 3; i++) { C.step(i ? 40 : 2, 1 / 30); await __shot(`zoo_${bg}_${i}`); }

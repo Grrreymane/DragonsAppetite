@@ -1,0 +1,85 @@
+{
+  "file": "models/sea_teen_anim.glb",
+  "kind": "sea",
+  "stage": "teen",
+  "length": 0.998,
+  "pivot": [
+    0.15,
+    0,
+    0.0
+  ],
+  "mouth": [
+    0.497,
+    0,
+    0.025
+  ],
+  "headBone": "head",
+  "mouthK": 0.3477,
+  "neckBones": [
+    "neck1",
+    "neck2",
+    "neck3"
+  ],
+  "tailBones": [
+    "tail1",
+    "tail2",
+    "tail3",
+    "tail4",
+    "tail5",
+    "tail6",
+    "tail7",
+    "tail8",
+    "tail9",
+    "tail10"
+  ],
+  "fanBone": "fan",
+  "legBones": {
+    "front": {
+      "L": [
+        "farm1.L",
+        "farm2.L",
+        "fpaw.L",
+        "ftoe.L"
+      ],
+      "R": [
+        "farm1.R",
+        "farm2.R",
+        "fpaw.R",
+        "ftoe.R"
+      ]
+    },
+    "hind": {
+      "L": [
+        "hleg1.L",
+        "hleg2.L",
+        "hfoot.L",
+        "htoe.L"
+      ],
+      "R": [
+        "hleg1.R",
+        "hleg2.R",
+        "hfoot.R",
+        "htoe.R"
+      ]
+    }
+  },
+  "spineBones": [
+    "hips",
+    "spine1",
+    "spine2",
+    "spine3",
+    "chest"
+  ],
+  "actions": {
+    "Swim": 1.5,
+    "Dash": 0.625,
+    "Idle": 3.0,
+    "Glide": 2.0,
+    "Breach": 1.0
+  },
+  "tris": 6324,
+  "bones": 36,
+  "bytes": 499168,
+  "rotZImportDeg": 90,
+  "notes": "TEEN (slimmer, longer neck than the baby, medium crest). Source .cache/art/sea_teen/tripo_a_01.glb (Tripo P1, face-limit 6500). The Tripo fan rays splayed sideways, so the fan is squashed to 35% width in y (rig json flatten_y) to read as one vertical fan. Wingless sea dragon. Blender rest coords: head +X, up +Z, dragon's left +Y (glTF head +X, same as fire_adult); the raw Tripo mesh had its head at -Y, so rig_sea.py rotates it +90 deg about Z on import. 36 bones, same names in baby/teen/adult (GLTFLoader strips the dot: farm1.L -> farm1L). Clips (keys from frame 0, first frame == last frame, all loop): Swim 1.5 s, Dash 0.625 s (bigger, faster wave), Glide 2.0 s (almost straight), Idle 3.0 s (legs hanging, slow look-around +-8 deg), Breach 1.0 s (back arched with ~72% of the bend in the front half so the hump reads from the side; legs tucked; fan bone scaled 1.15 on its vertical axis = the only scale track). Undulation is LATERAL (yaw); the tail fin is vertical. Root bone 'hips' carries small yaw + sideways translation keys that keep chest/neck/head steady: do not reset hips in a runtime overlay (undo-then-apply is fine). Swim/Dash/Glide/Breach share one streamlined tuck (v3): front legs fold back under the chest with the paws curled up against the belly, hind legs trail straight back under the tail base; every paw stays inside the body width (no frog splay), so they crossfade cleanly; Idle crossfade 0.3-0.5 s. mouthK = (mouth.x - pivot.x) / length = how far the snout tip is ahead of the pivot in body lengths (dragon.js derives the same number). Texture: one 1024 WebP base colour, graded by blender/sea_tex.py (run by rig_sea.py) to the SAME concept targets for all three ages: navy (54,70,88), teal fins + teal patches (73,121,135) with V<=0.56, cream belly (176,187,172), glowing spots (72,224,218) V>=0.8 S>=0.6 filled solid; crest and fan are found by 3D position, pale inner legs darkened to navy. A glow key of hue 165-200, sat>0.5, V>0.68 lights only the spots. Material doubleSided. Mesh: welded, faces oriented to Tripo's own normals + neighbour vote, small holes filled (all three caused black outline-shell shards), smooth normals. File: KHR_mesh_quantization + constant rest channels dropped (blender/glb_pack.py); three.js GLTFLoader reads it natively, no decoder. mouth = snout tip in rest pose. Re-rig: blender -b --factory-startup -P blender/rig_sea.py -- blender/rigs/<name>.json"
+}

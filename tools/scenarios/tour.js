@@ -13,7 +13,7 @@ async function play(secs, ctl) {
   for (let i = 0; i < secs * fps; i++) {
     const o = bot(D.S);
     if (ctl) Object.assign(o, ctl(i / fps, o) || {});
-    D.input.jx = o.jx; D.input.jy = o.jy; D.input.btn = !!o.act; if (o.actTap) D.input.actTap = true;
+    D.input.jx = o.jx; D.input.jy = o.jy; D.input.btn = !!o.act; if (o.actTap) D.input.actTap = true; if (o.skillTap) D.input.skillTap = true;
     D.frame(1 / fps);
     if (SHOTS) { if (n % 45 === 0) await __shot('f' + String(n).padStart(5, '0')); } else await __frame();
     n++;
@@ -31,7 +31,8 @@ if (kind === 'fire') {
 }
 D.give(45); await play(5);                                 // 进化到少年龙
 await play(8);
-D.give(170); await play(5);                                // 进化到成龙
-await play(6, t => ({ act: kind === 'fire' ? t > 1 && t < 4 : false, actTap: kind === 'sea' && t < .1 }));
+D.save[kind].adultShown = 1;                                // 不弹结算卡，录到成龙的技能
+D.give(230); await play(5);                                // 进化到成龙
+await play(6, t => ({ act: kind === 'fire' ? t > 1 && t < 4 : false, actTap: kind === 'sea' && t < .1, skillTap: t > 2 && t < 2.1 }));
 await play(4);
 await __done();

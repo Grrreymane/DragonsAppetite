@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>天空和海 · 试验</title>
+<style>
+html,body{margin:0;background:#0b0e1c;overflow:hidden}
+#wrap{position:fixed;top:0;bottom:0;left:50%;transform:translateX(-50%);width:min(100vw,calc(100vh * 9 / 16));overflow:hidden;background:#9cc4e4}
+#wrap canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+#info{position:absolute;top:8px;left:8px;color:#fff;font:11px/1.4 ui-monospace,monospace;opacity:.75;pointer-events:none;white-space:pre}
+</style>
+<script type="importmap">{"imports":{"three":"../lib/three.module.min.js"}}</script>
+</head>
+<body>
+<div id="wrap"><div id="info"></div></div>
+<script type="module">
+// 天空 / 云 / 岛 / 海（真模块）在固定时间、固定镜头下的样子：调海面和天空用，录像脚本 tools/scenarios/skysea_lab.js
+// 手动看：?v=名字（见 VIEWS），拖动 = 转镜头
+import * as THREE from 'three';
+import { GRAD, outlineMat, toonMat } from '../src/view/toon.js';
+import { createSky } from '../src/view/sky.js';
+import { createIslands } from '../src/view/islands.js';
+import { createClouds } from '../src/view/clouds.js';
+import { createSea } from '../src/view/sea.js';
+import { waveH } from '../src/sim/world.js';
+
+const Q = new URLSearchParams(location.search);
+const wrap = document.getElementById('wrap');
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2)); renderer.toneMapping = THREE.ACESFilmicToneMapping;
+wrap.prepend(renderer.domElement);
+const scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera(62, .5625, .3, 3000);
+const ctx = { THREE, scene, camera, renderer, GRAD, outlineMat, toonMat };
+const sky = createSky(ctx); ctx.sky = sky.sky;
+const isl = createIslands(ctx), clouds = createClouds(ctx), sea = createSea(ctx);
+await Promise.all([isl, sky, clouds, sea].map(m => m.ready ? m.ready.catch(() => { }) : null));
+if (Q.has('low')) sea.setQuality(0);   // 低画质档（海面不画小星点、零散白线；海底不描边）
+function resize() { const w = wrap.clientWidth, h = wrap.clientHeight; renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix(); }
+addEventListener('resize', resize); resize();
+
+// 假的 S：主角 + 一个觅食点 + 一小群鱼
+const S = { t: 0, kind: 'fire', hero: { x: 0, y: 30, z: 0, len: 10, yaw: 0, medium: 'air' }, creatures: [], spots: [] };
+// 镜头：[位置, 看向]；y 写 'w+1' = 浪面上 1 米
+const VIEWS = {
+  high: [[0, 150, -60], [0, 60, 200]],
+  mid: [[0, 70, 20], [0, 30, 200]],
+  low: [[-20, 24, 80], [-10, 12, 220]],
+  skim: [[10, 'w+3', 120], [10, 2, 260]],
+  sun: [[0, 36, 40], [-60, 30, -80]],
+  spot: [[0, 22, 40], [0, 0, 110]],
+  shore: [[-60, 45, -60], [-170, 0, 85]],
+  away: [[0, 40, 0], [60, 32, 120]],
+  under8: [[0, -8, 100], [0, -14, 180]],
+  under40: [[-960, -40, 920], [-930, -48, 1000]],
+  under80: [[240, -80, 1200], [250, -88, 1280]],
+  lookup: [[0, -10, 140], [0, 6, 170]],
+  shallow: [[0, -1.8, 120], [0, -3, 200]],
+};
+let T = +(Q.get('time') || 20);   // 注意：rec3d 会在地址后面加 t=时间戳，所以这里叫 time
+function setView(name, t = T) {
+  const [p, l] = VIEWS[name]; T = t; S.t = t;
+  const y = p[1] === 'w+3' ? waveH(p[0], p[2], t) + 3 : p[1];
+  camera.position.set(p[0], y, p[2]); camera.lookAt(l[0], l[1], l[2]); camera.updateMatrixWorld();
+  S.spots = [{ x: 0, z: 110, r: 9 }];
+  S.hero.x = camera.position.x; S.hero.z = camera.position.z + 30; S.hero.y = camera.position.y - 6;
+}
+function render(frames = 3) {
+  for (let i = 0; i < frames; i++) {
+    isl.update(camera, T, 1 / 30, T); sea.update(S, 1, 1 / 30, T + i * .05); clouds.update(camera, T, 1 / 30, isl.smokePoints()); sky.update(camera, T);   // 海的「渲染时间」每帧走一点：岸线场每秒检查一次岛有没有变
+    renderer.render(scene, camera);
+  }
+  const r = renderer.info.render;
+  document.getElementById('info').textContent = `t ${T.toFixed(1)}  calls ${r.calls}  tris ${(r.triangles / 1000).toFixed(1)}k  under ${sea.underwater.toFixed(2)}`;
+}
+setView(Q.get('v') || 'mid'); render();
+window.__lab = { setView, render, VIEWS, sea, sky, clouds, isl, scene, camera, renderer, S, get T() { return T; } };
+window.__labReady = true;
+if (!Q.has('still')) {
+  let last = performance.now();
+  const loop = now => { T += Math.min(.05, (now - last) / 1000); S.t = T; last = now; render(1); requestAnimationFrame(loop); };
+  if (!location.search.includes('__dom') && !Q.has('rec')) requestAnimationFrame(loop);
+}
+</script>
+</body>
+</html>

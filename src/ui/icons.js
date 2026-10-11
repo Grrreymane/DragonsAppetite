@@ -1,6 +1,9 @@
-// 界面图标（内联 SVG，24×24，白色实心 + 深蓝描边，卡通风）。不用 emoji：各家手机长得不一样。
-// 用法：icon('fire') → '<svg …>'。描边靠 CSS（.ic { stroke; paint-order: stroke }）。
-// 类名：.a 点缀色（黄）/ .d 深色（眼睛、指针）/ .t 半透明
+// 界面图标。两层：
+//   1) 画的图标（AI 生成，tools/ui_icons.py 拼成图集 img/ui/icons.webp，一格 192px，四周留 8px 透明边）
+//   2) 内联 SVG（24×24，白色实心 + 深色描边）：图集还没加载 / 加载失败 / 没有画的图标时显示
+// 用法：icon('fire') → HTML 字符串。有画的版本时外面包一层 <span class="ic pic">，里面放 SVG；
+// ui.js 等图集加载好（onSheet，晚到也算）给界面根节点加 .pi-ok，CSS 才显示图集、藏起 SVG。不用 emoji：各家手机长得不一样。
+// 描边靠 CSS（.ic { stroke; paint-order: stroke }）。类名：.a 点缀色（黄）/ .d 深色（眼睛、指针）/ .t 半透明
 const P = {
   menu: '<rect x="5.5" y="4.5" width="4.6" height="15" rx="1.8"/><rect x="13.9" y="4.5" width="4.6" height="15" rx="1.8"/>',
   sound: '<path d="M2.5 9h4l5-4.2v14.4l-5-4.2h-4z"/><path d="M14.6 8.1a5 5 0 0 1 0 7.8l-1.4-1.5a3 3 0 0 0 0-4.8z"/><path d="M17.2 5.2a9 9 0 0 1 0 13.6l-1.4-1.5a7 7 0 0 0 0-10.6z"/>',
@@ -30,13 +33,58 @@ const P = {
   grow: '<path d="M12 2.4l7.6 8.2h-4.4v10.6H8.8V10.6H4.4z"/>',
   cross: '<path d="M4 7h11V3.5l6 6-6 6V12H4z"/><path class="a" d="M20 17H9v-3.5l-6 6 6 6V20h11z" transform="translate(0 -3)"/>',
   bang: '<rect x="9.6" y="2.6" width="4.8" height="12.4" rx="2.2"/><circle cx="12" cy="19" r="2.6"/>',
+  // 龙吼：张大的嘴 + 两道声波（别和天敌的「!」撞）；漩涡：螺旋（别和「重试」撞）
+  roar: '<path d="M7 12l5.1-3.6A6.2 6.2 0 1 0 12.1 15.6z"/><path class="a" d="M15.2 8.1a5 5 0 0 1 0 7.8l-1.4-1.5a3 3 0 0 0 0-4.8z"/><path class="a" d="M17.8 5.2a9 9 0 0 1 0 13.6l-1.4-1.5a7 7 0 0 0 0-10.6z"/>',
+  vortex: '<path d="M12.75 12a1.5 1.5 0 0 0-3 0a3 3 0 0 0 6 0a4.5 4.5 0 0 0-9 0a6 6 0 0 0 12 0a7.5 7.5 0 0 0-15 0" fill="none" stroke-width="5" stroke-linecap="round" transform="translate(.4 -.6)"/><path d="M12.75 12a1.5 1.5 0 0 0-3 0a3 3 0 0 0 6 0a4.5 4.5 0 0 0-9 0a6 6 0 0 0 12 0a7.5 7.5 0 0 0-15 0" fill="none" stroke-width="2.2" stroke-linecap="round" style="stroke:currentColor" transform="translate(.4 -.6)"/>',
 };
 
-export const icon = (name, cls = '') => `<svg class="ic ${cls}" viewBox="0 0 24 24" aria-hidden="true">${P[name] || ''}</svg>`;
+// 没有 SVG 的画图标（阶段头像等）用哪个 SVG 顶替；playw = 一直用白色 SVG 的「开始 / 继续」（宝石按钮上画的金色三角看不清）
+const ALIAS = { playw: 'play', bite_sea: 'bite', gulp_sea: 'bite', head_fire0: 'dragon', head_fire1: 'dragon', head_fire2: 'dragon', head_sea0: 'dragon', head_sea1: 'dragon', head_sea2: 'dragon', gulp: 'bite', plunge: 'down', breach: 'up' };
+const svgOf = name => P[name] || P[ALIAS[name]] || '';
+
+// ---------- 画的图标图集（tools/ui_icons.py 生成；它会改写下面 v / names 两行，别手改顺序） ----------
+// v = 图集内容的哈希，加在网址后面：换了图集，旧缓存不会配上新顺序
+export const SHEET = {
+  v: 'c387b0a8',
+  cell: 192, cols: 6, rows: 5,
+  names: ['bite', 'fire', 'plunge', 'roar', 'dash', 'breach', 'vortex', 'gulp', 'lock', 'menu', 'sound', 'mute', 'book', 'dragon', 'share', 'hand', 'back', 'clock', 'head_fire0', 'head_fire1', 'head_fire2', 'head_sea0', 'head_sea1', 'head_sea2', 'bite_sea', 'gulp_sea', 'star'],
+};
+SHEET.src = new URL('../../img/ui/icons.webp?v=' + SHEET.v, import.meta.url).href;
+const IDX = {}; SHEET.names.forEach((n, i) => { IDX[n] = i; });
+export const painted = name => IDX[name] != null;
+const pos = name => { const i = IDX[name], c = i % SHEET.cols, r = (i / SHEET.cols) | 0; return `${(c / (SHEET.cols - 1) * 100).toFixed(2)}% ${(r / (SHEET.rows - 1) * 100).toFixed(2)}%`; };
+
+// 预加载图集。sheetReady：3 秒内好了 → true，失败 / 超时 → false（先用 SVG）。
+// onSheet(cb)：图集什么时候好都调用 cb（3 秒以后才到也算，网慢时界面会从 SVG 换成画的图标）
+let sheetImg = null; const sheetCbs = [];
+export const onSheet = cb => { if (sheetImg) cb(sheetImg); else sheetCbs.push(cb); };
+export const sheetReady = typeof Image === 'function' ? new Promise(res => {
+  const im = new Image(); let done = false;
+  const fin = ok => { if (done) return; done = true; res(ok); };
+  im.onload = () => {
+    if (!(im.naturalWidth > 0)) { fin(false); return; }
+    sheetImg = im; fin(true); sheetCbs.splice(0).forEach(cb => { try { cb(im); } catch (e) { console.warn('onSheet', e); } });
+  };
+  im.onerror = () => fin(false);
+  im.src = SHEET.src; setTimeout(() => fin(false), 3000);
+}) : Promise.resolve(false);
+
+export const icon = (name, cls = '') => {
+  const svg = `<svg class="ic ${IDX[name] != null ? '' : cls}" viewBox="0 0 24 24" aria-hidden="true">${svgOf(name)}</svg>`;
+  if (IDX[name] == null) return svg;
+  return `<span class="ic pic p-${name} ${cls}" style="background-position:${pos(name)};background-size:${SHEET.cols * 100}% ${SHEET.rows * 100}%" aria-hidden="true">${svg}</span>`;
+};
+
+// 画到 canvas 上（分享卡）：有图集就用画的图标，否则 null（调用方用 iconSVG 顶替）
+export function drawPainted(x, name, dx, dy, size) {
+  if (!sheetImg || IDX[name] == null) return false;
+  const i = IDX[name], c = SHEET.cell, sx = (i % SHEET.cols) * c, sy = ((i / SHEET.cols) | 0) * c;
+  x.drawImage(sheetImg, sx, sy, c, c, dx, dy, size, size); return true;
+}
 
 export const ICON_PATHS = P;
 // 独立的 SVG 字符串（画到 canvas 上用：分享卡）
-export const iconSVG = (name, fill = '#fff') => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="-2 -2 28 28" width="56" height="56"><g fill="${fill}" stroke="#0b1530" stroke-width="2.4" stroke-linejoin="round" paint-order="stroke"><style>.a{fill:#ffd34d}.d{fill:#0b1530;stroke:none}</style>${P[name] || ''}</g></svg>`;
+export const iconSVG = (name, fill = '#fff') => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="-2 -2 28 28" width="56" height="56"><g fill="${fill}" stroke="#2a1a10" stroke-width="2.4" stroke-linejoin="round" paint-order="stroke"><style>.a{fill:#ffd34d}.d{fill:#2a1a10;stroke:none}</style>${svgOf(name)}</g></svg>`;
 
 // 标题卡上的大龙剪影（200×200，颜色写在属性里，所以也能当图片画到 canvas 上）。没有预渲染的 webp 时用它顶上
 const art = (ol, inner) => `<svg class="art" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" aria-hidden="true"><g stroke="${ol}" stroke-width="5" stroke-linejoin="round" stroke-linecap="round" paint-order="stroke">${inner}</g></svg>`;

@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="zh"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>瘦身前后对比</title>
+<style>html,body{margin:0;height:100%;background:#cfe3ee;overflow:hidden}canvas{display:block}#info{position:fixed;left:6px;top:4px;font:12px monospace;color:#123;white-space:pre}</style>
+<script type="importmap">{ "imports": { "three": "../lib/three.module.min.js" } }</script>
+</head><body><div id="info">加载中…</div>
+<script type="module">
+// glb 瘦身（_workflow/tools/glb_slim.py）前后对比：左 = 原文件，右 = 瘦身后。同一动作同一时刻，游戏同款卡通材质 + 描边。
+// ?a=models/fire_baby_anim.glb&b=.cache/check/pipedoc/fire_baby_slim.glb（路径相对游戏根目录）
+// window.__lab = { ready, clips, set(clip, t), diff() → { bone, vert }（两边骨头 / 蒙皮后顶点的最大位置差，模型单位）, render() }
+import * as THREE from 'three';
+import { GLTFLoader } from '../lib/jsm/loaders/GLTFLoader.js';
+import { GRAD, outlineMat } from '../src/view/toon.js';
+const Q = new URLSearchParams(location.search);
+const A = Q.get('a') || 'models/fire_baby_anim.glb', B = Q.get('b') || '.cache/check/pipedoc/fire_baby_slim.glb';
+const W = innerWidth, H = innerHeight;
+const r = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true }); r.setSize(W, H); r.setScissorTest(true);
+document.body.appendChild(r.domElement);
+const info = document.getElementById('info');
+function side() {
+  const scene = new THREE.Scene(); scene.background = new THREE.Color(0xcfe3ee);
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x8899aa, 1.2));
+  const sun = new THREE.DirectionalLight(0xffffff, 2); sun.position.set(2, 4, 3); scene.add(sun);
+  const cam = new THREE.PerspectiveCamera(30, (W / 2) / H, .01, 50); cam.position.set(1.6, .5, 1.9); cam.lookAt(0, 0, 0);
+  return { scene, cam };
+}
+const L = [side(), side()];
+const load = url => new Promise((res, rej) => new GLTFLoader().load('../' + url + '?v=' + Date.now(), res, undefined, rej));
+const sides = [];
+for (const [k, url] of [[0, A], [1, B]]) {
+  const g = await load(url);
+  const model = g.scene; model.rotation.y = -Math.PI / 2;
+  const skinned = [], bones = {};
+  model.traverse(o => { if (o.isMesh) o.frustumCulled = false; if (o.isSkinnedMesh) skinned.push(o); if (o.isBone) bones[o.name] = o; });
+  for (const o of skinned) {
+    o.material = new THREE.MeshToonMaterial({ map: o.material.map, gradientMap: GRAD });
+    const h = new THREE.SkinnedMesh(o.geometry, outlineMat(0x1c0d08, .0042)); h.bind(o.skeleton, o.bindMatrix); h.frustumCulled = false;
+    h.position.copy(o.position); h.quaternion.copy(o.quaternion); h.scale.copy(o.scale); o.parent.add(h);
+  }
+  L[k].scene.add(model);
+  const mixer = new THREE.AnimationMixer(model), act = {};
+  for (const c of g.animations) act[c.name] = mixer.clipAction(c);
+  sides.push({ model, mixer, act, bones, mesh: skinned[0], clips: g.animations.map(c => [c.name, c.duration]), bytes: 0 });
+}
+function set(clip, t) {
+  for (const s of sides) {
+    for (const n in s.act) { s.act[n].stop(); }
+    const a = s.act[clip]; a.reset(); a.play(); a.time = t; s.mixer.update(0);
+    s.model.updateMatrixWorld(true);
+  }
+}
+function diff() {
+  let bone = 0, vert = 0; const p = new THREE.Vector3(), q = new THREE.Vector3();
+  for (const n in sides[0].bones) { const o = sides[1].bones[n]; if (!o) continue; sides[0].bones[n].getWorldPosition(p); o.getWorldPosition(q); bone = Math.max(bone, p.distanceTo(q)); }
+  const m0 = sides[0].mesh, m1 = sides[1].mesh, N = m0.geometry.attributes.position.count;
+  for (let i = 0; i < N; i += 7) { m0.getVertexPosition(i, p); m1.getVertexPosition(i, q); vert = Math.max(vert, p.distanceTo(q)); }
+  return { bone, vert };
+}
+function render() {
+  for (let k = 0; k < 2; k++) { r.setViewport(k * W / 2, 0, W / 2, H); r.setScissor(k * W / 2, 0, W / 2, H); r.render(L[k].scene, L[k].cam); }
+}
+info.textContent = `左 ${A}\n右 ${B}`;
+window.__lab = { ready: true, clips: sides[0].clips, set, diff, render };
+set(sides[0].clips[0][0], 0); render();
+</script></body></html>

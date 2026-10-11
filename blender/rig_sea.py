@@ -5,7 +5,11 @@
 #
 # 输出（<name> 取自 json）：
 #   models/<name>_anim.glb   models/<name>.json（游戏清单）   blender/<name>_rig.blend
-#   .cache/check/<name>/  rest_bones_*.png  weights_*.png  swim_top_4phase.png  ...
+#   .cache/check/<name>/  rest_bones_*.png  weights_*.png  swim_top_4phase.png  ...  tex/（调色前后、面标签图）
+#   .cache/art/<name>/tex/base_v2.png（调好的底色，每次重新生成）
+# 步骤：导入 → 按 Tripo 自带法线摆正面朝向 → 焊接 → 补小洞（尾鳍补大洞）→ 邻居投票统一朝向 → 减面 → 骨架 → 权重 → 动作
+#   → 面标签 + blender/sea_tex.py 调色（系统 python）→ 导出 glb → blender/glb_pack.py 压缩 → 清单 → 检查图
+# 收腿检查另跑：blender -b blender/<name>_rig.blend -P blender/sea_tuck_check.py
 # 坐标（Blender，import_rot_z 之后）：+X 朝前（头），+Y 朝左，+Z 朝上
 import bpy, sys, os, math, json, subprocess
 from mathutils import Vector, Quaternion, Matrix
@@ -42,6 +46,76 @@ for o in list(sc.objects):
 bpy.context.view_layer.objects.active = mesh; mesh.select_set(True)
 bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
 mesh.name = cfg.get('mesh_name', 'SeaDragon')
+# Tripo 的网格在 UV 接缝处顶点是拆开的，靠自定义法线装平滑；变形后接缝处会露出硬边（肚皮上的方块），
+# 描边壳沿法线外扩时也会在拆开处裂缝。焊接重合顶点 + 清掉自定义法线 + 全平滑，导出时只在 UV 接缝处再拆开。
+import bmesh
+def mesh_health(me):
+    """洞边（只连 1 个面的边）、多于 2 个面共用的边、面数"""
+    bm = bmesh.new(); bm.from_mesh(me)
+    r = (sum(1 for e in bm.edges if len(e.link_faces) == 1), sum(1 for e in bm.edges if len(e.link_faces) > 2), len(bm.faces)); bm.free(); return r
+def clean_mesh(me):
+    """补小洞 + 统一法线朝向。描边壳沿法线往外扩、主角材质双面：洞和朝里的面会露出黑色描边壳（鳍上的黑碎片）"""
+    bm = bmesh.new(); bm.from_mesh(me)
+    bmesh.ops.dissolve_degenerate(bm, dist=1e-7, edges=bm.edges[:])
+    loose = [v for v in bm.verts if not v.link_faces]
+    if loose: bmesh.ops.delete(bm, geom=loose, context='VERTS')
+    filled = bmesh.ops.holes_fill(bm, edges=bm.edges[:], sides=cfg.get('fill_sides', 8))['faces']
+    # 尾鳍上的大洞也补（少年龙尾鳍有个 19 条边的洞，透过去就是黑色描边壳）；嘴（头部的大洞）不补
+    fan_edges = [e for e in bm.edges if len(e.link_faces) == 1 and all(v.co.x < cfg['weights']['fan_x'] for v in e.verts)]
+    if fan_edges: filled += bmesh.ops.holes_fill(bm, edges=fan_edges, sides=cfg.get('fill_fan_sides', 32))['faces']
+    if filled: filled = bmesh.ops.triangulate(bm, faces=filled)['faces']
+    # 补出来的面没有像样的 UV（会横跨好几个 UV 岛，拉出一大片乱纹）：整块取旁边原有面在同一顶点处的 UV（单色补丁）
+    uvl = bm.loops.layers.uv.active; fs = set(filled)
+    for f in filled:
+        src = next((l for v in f.verts for l in v.link_loops if l.face not in fs), None)
+        if src is None: continue
+        u = src[uvl].uv.copy()
+        for l in f.loops: l[uvl].uv = u
+    # 朝向：不用 recalc_face_normals（非流形的鳍根处它会翻错一片）。按邻居投票：面的朝向和它几个顶点的平滑法线（导出时就是这个）
+    # 明显相反的翻过来。朝向反了的面，描边壳会被推到表面前面、正好露出背面 → 黑色碎片
+    flipped = 0
+    for it in range(4):
+        bm.normal_update()
+        bad = [f for f in bm.faces if f.normal.dot(sum((v.normal for v in f.verts), Vector())) < -0.3 * max(sum((v.normal for v in f.verts), Vector()).length, 1e-9)]
+        if not bad: break
+        for f in bad: f.normal_flip()
+        flipped += len(bad)
+    bm.normal_update()
+    left = sum(1 for f in bm.faces if f.normal.dot(sum((v.normal for v in f.verts), Vector())) < 0)
+    bm.to_mesh(me); bm.free()
+    print('CLEAN filled', len(filled), 'holes; vote-flipped', flipped, 'faces; faces still against their vertex normals', left)
+if cfg.get('weld', 2e-5):
+    # 先按 Tripo 自带的顶点法线摆正面的朝向（文件里的法线是对的，个别三角形的绕序是反的）
+    cn = mesh.data.corner_normals
+    file_flip = [p.index for p in mesh.data.polygons if sum((cn[l].vector for l in p.loop_indices), Vector()).dot(p.normal) < 0]
+    bm = bmesh.new(); bm.from_mesh(mesh.data); n0 = len(bm.verts); bm.faces.ensure_lookup_table()
+    for i in file_flip: bm.faces[i].normal_flip()
+    print('ORIENT by file normals: flipped', len(file_flip), 'faces')
+    bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=cfg.get('weld', 2e-5)); bm.to_mesh(mesh.data); print('WELD', n0, '->', len(bm.verts)); bm.free()
+    print('HEALTH before clean (hole edges, >2-face edges, faces)', mesh_health(mesh.data))
+    clean_mesh(mesh.data)
+    print('HEALTH after clean ', mesh_health(mesh.data))
+    with bpy.context.temp_override(object=mesh, active_object=mesh):
+        bpy.ops.mesh.customdata_custom_splitnormals_clear()
+    for p in mesh.data.polygons: p.use_smooth = True
+# 把某段（例如尾鳍）在左右方向压扁：x < x_full 的顶点 y × ky，x_full..x_none 之间渐变回 1（Tripo 有时把竖直尾鳍做成往两边岔开的几根）
+for fl in cfg.get('flatten_y', []):
+    xa, xb, ky = fl['x_full'], fl['x_none'], fl['ky']
+    for v in mesh.data.vertices:
+        if v.co.x < xb:
+            t = 1.0 if v.co.x <= xa else (xb - v.co.x) / (xb - xa); t = t * t * (3 - 2 * t)
+            v.co.y *= 1 - (1 - ky) * t
+    print('FLATTEN', fl)
+# 面数上限（Tripo 的 face-limit 会多出 1% 左右）：轻微塌陷减面，只动最不显眼的边
+if cfg.get('max_tris'):
+    t0 = sum(len(p.vertices) - 2 for p in mesh.data.polygons)
+    if t0 > cfg['max_tris']:
+        dm = mesh.modifiers.new('dec', 'DECIMATE'); dm.decimate_type = 'COLLAPSE'; dm.ratio = cfg['max_tris'] / t0 * 0.996
+        with bpy.context.temp_override(object=mesh, active_object=mesh):
+            bpy.ops.object.modifier_apply(modifier=dm.name)
+        print('DECIMATE', t0, '->', sum(len(p.vertices) - 2 for p in mesh.data.polygons))
+        bm = bmesh.new(); bm.from_mesh(mesh.data); bmesh.ops.recalc_face_normals(bm, faces=bm.faces[:]); bm.to_mesh(mesh.data); bm.free()
+        print('HEALTH after decimate', mesh_health(mesh.data))
 
 # ---------- 骨架 ----------
 SPINE = [(n, tuple(h), tuple(t), p) for n, h, t, p in cfg['spine']]
@@ -118,16 +192,24 @@ def q_arm(name, axis, ang):
     return Quaternion((M.inverted() @ axis).normalized(), ang)
 ROOT_BONE = [n for n, h, t, p in SPINE if p is None][0]
 M_ROOT = pbs[ROOT_BONE].bone.matrix_local.to_3x3()
-def pose(spec, root_loc=(0, 0, 0)):
-    for pb in pbs: pb.rotation_quaternion = Quaternion(); pb.location = (0, 0, 0)
+def axis_of(name, axis):
+    if axis == 'B':      # 骨头自己的长轴（静止姿势）：绕它转 = 原地拧（让脚掌朝里），不改变骨头指向
+        b = pbs[name].bone; return (b.tail_local - b.head_local).normalized()
+    return AX[axis] if isinstance(axis, str) else Vector(axis)
+FAN = cfg.get('fan_bone', 'fan')
+FAN_V = max(range(3), key=lambda i: abs((pbs[FAN].bone.matrix_local.to_3x3() @ Vector([1 if k == i else 0 for k in range(3)])).z)) if FAN in pbs else None
+def pose(spec, root_loc=(0, 0, 0), fan_scale=1.0):
+    for pb in pbs: pb.rotation_quaternion = Quaternion(); pb.location = (0, 0, 0); pb.scale = (1, 1, 1)
     for name, rots in spec.items():
         q = Quaternion()
-        for axis, ang in rots: q = q_arm(name, AX[axis] if isinstance(axis, str) else axis, ang) @ q
+        for axis, ang in rots: q = q_arm(name, axis_of(name, axis), ang) @ q
         pbs[name].rotation_quaternion = q
     pbs[ROOT_BONE].location = M_ROOT.inverted() @ Vector(root_loc)
+    if FAN_V is not None: sv = [1.0, 1.0, 1.0]; sv[FAN_V] = fan_scale; pbs[FAN].scale = sv   # 尾鳍竖直方向撑开（Breach）
 def key_all(f):
     for pb in pbs: pb.keyframe_insert('rotation_quaternion', frame=f)
     pbs[ROOT_BONE].keyframe_insert('location', frame=f)
+    if FAN_V is not None: pbs[FAN].keyframe_insert('scale', frame=f)
 def merge(*specs):
     out = {}
     for sp in specs:
@@ -174,18 +256,88 @@ def wave(t, A, k, pw):
     spec = {n: [('Z', a)] for n, a in rots.items()}
     spec[ROOT_BONE] = spec.get(ROOT_BONE, []) + [('Z', phi)]
     return spec, (0.0, ty, 0.0)
+# 腿的姿势可以写成「瞄准角」：aim = 侧视平面里骨头朝向（度，0 朝前、-90 朝下、±180 朝后），
+# 脚本按静止姿势的朝向和父骨已经转过的量算出绕 Y 的转角；roll = 绕骨头自己长轴拧（度，正 = 脚掌朝身体里面）；
+# out = 绕前后轴往外撇（度，正 = 往外）。也可以直接写转角列表 [["X", 弧度], ["Y", 弧度], ...]（旧写法）
+SIDE_REST = {n: (Vector(h), Vector(t)) for n, h, t, p in cfg['side']}
+SIDE_PARENT = {n: p for n, h, t, p in cfg['side']}
+def rest_ang(n):
+    h, t = SIDE_REST[n]; return math.degrees(math.atan2(t.z - h.z, t.x - h.x))
+# 第三种写法 dir：骨头最终朝向（骨架空间方向，左腿；x 朝前、y 朝左 = 身体外侧、z 朝上），脚本按父骨已经转过的量求最小转动，
+# 再绕骨头自己的长轴拧 roll 度（正 = 脚掌 / 手掌朝身体里面）。腿往哪儿收一眼就能看出来，也能精确控制往外撇多少（y 分量）
+def resolve_pose(base):
+    out = {}; acc = {}; D = {}
+    for n, h, t, p in cfg['side']:                       # 父骨写在子骨前面
+        r = base.get(n)
+        if r is None: continue
+        if isinstance(r, dict) and 'dir' in r:
+            Dp = D.get(SIDE_PARENT[n], Quaternion())
+            hh, tt = SIDE_REST[n]; d0 = (tt - hh).normalized()
+            tw = (Dp.inverted() @ Vector(r['dir']).normalized())
+            O = d0.rotation_difference(tw)
+            if r.get('roll'): O = Quaternion(tw, -math.radians(r['roll'])) @ O      # .L：负 = 脚掌转向 -Y（身体里面）
+            D[n] = Dp @ O
+            ax, ang = O.to_axis_angle()
+            out[n] = [(tuple(ax), ang)]
+            continue
+        if isinstance(r, dict):
+            par = acc.get(SIDE_PARENT[n], 0.0)
+            y = ((rest_ang(n) - r['aim'] + 180) % 360 - 180) - par if 'aim' in r else math.degrees(r.get('y', 0.0))
+            acc[n] = par + y
+            rots = []
+            if r.get('roll'): rots.append(('B', -math.radians(r['roll'])))      # .L：负 = 脚掌转向 -Y（身体里面）
+            if r.get('out'): rots.append(('X', math.radians(r['out'])))          # .L：+X = 往外撇
+            rots.append(('Y', math.radians(y)))
+            out[n] = rots
+        else:
+            out[n] = [(a, v) for a, v in r]; acc[n] = acc.get(SIDE_PARENT[n], 0.0) + math.degrees(sum(v for a, v in r if a == 'Y'))
+        O = Quaternion()                                  # 记下这根骨在骨架空间里转了多少（子骨用 dir 写法时要用）
+        for a, v in out[n]:
+            ax = (SIDE_REST[n][1] - SIDE_REST[n][0]).normalized() if a == 'B' else AX[a] if isinstance(a, str) else Vector(a)
+            O = Quaternion(ax, v) @ O
+        D[n] = D.get(SIDE_PARENT[n], Quaternion()) @ O
+    return out
+RESOLVED = {k: resolve_pose(v) for k, v in cfg['poses'].items()}
+def pose_report(kind):
+    """静止 → 姿势后：左腿每根骨末端位置、脚掌 / 手掌法线（静止时朝 -Z 的那一面）朝哪"""
+    base = RESOLVED[kind]; D = {}; pos = {}
+    for n, h, t, p in cfg['side']:
+        O = Quaternion()
+        for a, v in base.get(n, []):
+            ax = (SIDE_REST[n][1] - SIDE_REST[n][0]).normalized() if a == 'B' else AX[a] if isinstance(a, str) else Vector(a)
+            O = Quaternion(ax, v) @ O
+        D[n] = D.get(SIDE_PARENT[n], Quaternion()) @ O
+        hh, tt = SIDE_REST[n]; start = pos.get(SIDE_PARENT[n], hh)
+        pos[n] = start + D[n] @ (tt - hh)
+    print('POSE', kind, ' '.join(f'{n}:end({pos[n].x:+.3f},{pos[n].y:+.3f},{pos[n].z:+.3f})' for n, *_ in cfg['side']),
+          ' sole fpaw', tuple(round(c, 2) for c in D['fpaw'] @ Vector((0, 0, -1))), 'hfoot', tuple(round(c, 2) for c in D['hfoot'] @ Vector((0, 0, -1))))
+for k in RESOLVED: pose_report(k)
+print('POSES', {k: {n: [(a if isinstance(a, str) else tuple(round(c, 2) for c in a), round(math.degrees(v), 1)) for a, v in r] for n, r in v.items()} for k, v in RESOLVED.items()})
 def legs_spec(kind, ph, paddle, extra=0.0):
-    base = cfg['poses'][kind]; sp = {}
+    base = RESOLVED[kind]; sp = {}
     for sfx, sg in (('.L', 1), ('.R', -1)):
         side_ph = ph + (0 if sg > 0 else math.pi)            # 左右反相
         for n, rots in base.items():
-            sp[n + sfx] = [(a, v * (sg if a == 'X' else 1)) for a, v in rots]
+            # 镜像到右边：绕 X / 自身长轴的角度取反；任意轴 (x,y,z) 换成 (-x,y,-z)、角度不变
+            sp[n + sfx] = [((a[0] * sg, a[1], a[2] * sg), v) if isinstance(a, tuple) else (a, v * (sg if a in ('X', 'B') else 1)) for a, v in rots]
         sp['farm1' + sfx].append(('Y', extra + paddle * math.sin(side_ph)))
         sp['fpaw' + sfx].append(('Y', 0.6 * paddle * math.sin(side_ph - 0.7)))
         sp['hleg1' + sfx].append(('Y', extra + paddle * math.sin(side_ph + 1.2)))
         sp['hfoot' + sfx].append(('Y', 0.6 * paddle * math.sin(side_ph + 0.5)))
     return sp
 
+# 拱背（Breach）：总俯仰 total 弧度按骨长摊到 arch_chain 上（身体成 ∩ 形：头和尾鳍比背中间低）
+def arch_spec(total, head_keep, front_frac=0.5):
+    # front_frac：总弯度里分给前段（spine1..neck3）的比例，其余按骨长摊给尾巴（尾巴长、尾鳍大，弯多了尾鳍会掉得比头低很多）
+    chain = cfg['arch_chain']; segs_ = {n: (Vector(h) - Vector(t)).length for n, h, t, p in SPINE}
+    LF = sum(segs_[n] for n in chain if n in FRONT_SET); LT = sum(segs_[n] for n in chain if n not in FRONT_SET)
+    sp = {}; front_acc = 0.0
+    for n in chain:
+        a = total * (front_frac * segs_[n] / LF if n in FRONT_SET else (1 - front_frac) * segs_[n] / LT)
+        if n in FRONT_SET: sp[n] = [('Y', a)]; front_acc += a      # 朝前的骨：+Y = 往下
+        else: sp[n] = [('Y', -a)]                                   # 朝后的骨（尾巴）：-Y = 往下
+    sp['head'] = sp.get('head', []) + [('Y', -head_keep * front_acc)]     # 头抬回来一点，眼睛还看前方
+    return sp
 actions = []
 def make_action(name, P):
     frames = P['frames']
@@ -197,7 +349,9 @@ def make_action(name, P):
         if P.get('look'):
             sp = merge(sp, {'neck1': [('Z', P['look'] * math.sin(ph - 0.4))], 'neck2': [('Y', -0.3 * P['look'] * math.sin(2 * ph))],
                             'head': [('Z', 0.8 * P['look'] * math.sin(ph - 1.0))]})
-        pose(sp, loc); key_all(f)
+        if P.get('arch'):
+            sp = merge(sp, arch_spec(P['arch'] * (1 + P.get('arch_breath', 0) * math.sin(ph)), P.get('arch_head', 0.5), P.get('arch_front', 0.5)))
+        pose(sp, loc, P.get('fan_scale', 1.0)); key_all(f)
     actions.append((name, act, frames))
 for name, P in cfg['actions'].items(): make_action(name, P)
 for name, act, frames in actions:                    # 每个动作一条 NLA 轨道，从第 0 帧开始
@@ -217,10 +371,64 @@ for m in bpy.data.materials:
             nt.nodes.remove(n)
     if bsdf:
         bsdf.inputs['Metallic'].default_value = 0.0; bsdf.inputs['Roughness'].default_value = 0.8
+# 底色调色：按 3D 位置给每个面贴标签（鳍 / 腿 / 头 / 身体），写成 UV 三角形，交给 blender/sea_tex.py（系统 python）
+# 在 1024 上调色 → 换掉 Tripo 原图。每次重绑都重新生成，不依赖手工步骤
+def posed_face_normals(kind='tuck'):
+    """收腿姿势（不带身体波动）下每个面的法线：大臂 / 大腿上哪些面游泳时朝上、朝后、朝外（看得见）"""
+    for tr in arm.animation_data.nla_tracks: tr.mute = True
+    pose(legs_spec(kind, 0.0, 0.0)); bpy.context.view_layer.update()
+    ev = mesh.evaluated_get(bpy.context.evaluated_depsgraph_get()); me = ev.to_mesh()
+    ns = [(p.normal.copy(), p.center.copy()) for p in me.polygons]; ev.to_mesh_clear()
+    for pb in pbs: pb.rotation_quaternion = Quaternion(); pb.location = (0, 0, 0); pb.scale = (1, 1, 1)
+    for tr in arm.animation_data.nla_tracks: tr.mute = False
+    bpy.context.view_layer.update()
+    return ns
+def face_labels():
+    me = mesh.data; uv = me.uv_layers.active.data
+    PN = posed_face_normals()
+    sp = sorted([(h[0], h[2]) for n, h, t, p in SPINE] + [(t[0], t[2]) for n, h, t, p in SPINE])
+    def spine_z(x):
+        if x <= sp[0][0]: return sp[0][1]
+        for (x0, z0), (x1, z1) in zip(sp, sp[1:]):
+            if x0 <= x <= x1: return z0 + (z1 - z0) * (x - x0) / max(x1 - x0, 1e-9)
+        return sp[-1][1]
+    # 腿：下半截（前臂、爪、小腿、脚）全算；大臂 / 大腿只算离中线够远（|y| > 0.8 leg_y）、而且收腿时朝上 / 朝后 / 朝外（看得见）的面。
+    # 朝下、朝身体的面（贴着肚皮）不压暗，否则奶白肚皮上会留下锯齿状的藏青缺口
+    LEGS = set(b + s for b in ('farm2', 'fpaw', 'ftoe', 'hleg2', 'hfoot', 'htoe') for s in ('.L', '.R'))
+    ROOTS = set(b + s for b in ('farm1', 'hleg1') for s in ('.L', '.R'))
+    crest_y, crest_dz = W.get('crest_y', 0.016), W.get('crest_dz', 0.02)
+    out = {'body': [], 'fin': [], 'leg': [], 'head': []}; cnt = {}
+    for p in me.polygons:
+        c, nrm = p.center, p.normal
+        doms = [dominant[i] for i in p.vertices]
+        if c.x < W['fan_x']: lab = 'fin'                                                   # 尾鳍
+        elif c.x < W['head_x'] and abs(c.y) < crest_y and c.z > spine_z(c.x) + crest_dz and abs(nrm.z) < 0.75: lab = 'fin'   # 背鳍：脊线上方、贴中线的竖片
+        elif sum(d in LEGS for d in doms) * 2 > len(doms) or (sum(d in LEGS or d in ROOTS for d in doms) * 2 > len(doms) and abs(c.y) > 0.8 * W['leg_y']
+                and (PN[p.index][1] - c).length > W.get('root_move', 0.02)                # 真在腿上（收腿时跟着挪了位置），不是腿根旁边的侧腹
+                and (PN[p.index][0].z > 0.15 or PN[p.index][0].x < -0.45 or PN[p.index][0].y * (1 if c.y > 0 else -1) > 0.45)): lab = 'leg'
+        elif c.x > W['head_x2']: lab = 'head'
+        else: lab = 'body'
+        cnt[lab] = cnt.get(lab, 0) + 1
+        li = list(p.loop_indices)
+        for k in range(1, len(li) - 1):
+            out[lab].append([c_ for j in (li[0], li[k], li[k + 1]) for c_ in tuple(uv[j].uv)])
+    print('FACE LABELS', cnt)
+    return out
+TEX_OUT = os.path.join(ROOT, '.cache', 'art', NAME, 'tex', 'base_v2.png')
+if cfg.get('grade', True):
+    lbl_path = os.path.join(CHECK, '_labels.json'); json.dump(face_labels(), open(lbl_path, 'w'))
+    subprocess.run(['python', os.path.join(ROOT, 'blender', 'sea_tex.py'), SRC, TEX_OUT, '--labels', lbl_path, '--size', str(cfg.get('tex_size', 1024)),
+                    '--report', '--debug', os.path.join(CHECK, 'tex')], check=True)
+    for m in bpy.data.materials:
+        if not m.use_nodes: continue
+        for n in m.node_tree.nodes:
+            if n.type == 'TEX_IMAGE' and n.image:
+                old = n.image; n.image = bpy.data.images.load(TEX_OUT); n.image.name = old.name + '_v2'
 for img in list(bpy.data.images):
     if img.users == 0: bpy.data.images.remove(img)
+TEX = cfg.get('tex_size', 1024)
 for img in bpy.data.images:
-    if img.size[0] > 1024: img.scale(1024, 1024)
+    if img.size[0] > TEX: img.scale(TEX, TEX)
 print('IMAGES', [(i.name, tuple(i.size)) for i in bpy.data.images])
 
 sc.frame_set(0)
@@ -229,7 +437,9 @@ ACTS = [(name, frames) for name, act, frames in actions]
 if not NO_EXPORT:
     bpy.ops.object.select_all(action='SELECT')
     bpy.ops.export_scene.gltf(filepath=OUT_GLB, export_format='GLB', export_animations=True, export_animation_mode='NLA_TRACKS',
-                              export_skins=True, export_image_format='WEBP', export_image_quality=85, export_yup=True)
+                              export_skins=True, export_image_format='WEBP', export_image_quality=cfg.get('tex_quality', 85), export_yup=True)
+    # 压缩：去掉不变的动画通道 + 网格量化（KHR_mesh_quantization），见 glb_pack.py
+    subprocess.run(['python', os.path.join(ROOT, 'blender', 'glb_pack.py'), OUT_GLB], check=True)
 
 # ---------- 清单 ----------
 if not NO_EXPORT:
@@ -239,6 +449,8 @@ if not NO_EXPORT:
     man = {
         'file': f'models/{NAME}_anim.glb', 'kind': cfg['kind'], 'stage': cfg['stage'],
         'length': round(max(xs) - min(xs), 4), 'pivot': M['pivot'], 'mouth': M['mouth'], 'headBone': 'head',
+        # 嘴尖在身体中心（pivot）前面多远，按体长算：sim 的 heroMouth 用 len × mouthK（dragon.js 也按 mouth / pivot 算出同一个数）
+        'mouthK': round((M['mouth'][0] - M['pivot'][0]) / (max(xs) - min(xs)), 4),
         'neckBones': [n for n, *_ in SPINE if n.startswith('neck')],
         'tailBones': [n for n, *_ in SPINE if n.startswith('tail')],
         'fanBone': 'fan' if 'fan' in CORE_SET else None,

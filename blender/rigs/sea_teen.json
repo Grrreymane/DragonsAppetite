@@ -1,0 +1,684 @@
+{
+ "name": "sea_teen",
+ "kind": "sea",
+ "stage": "teen",
+ "src": ".cache/art/sea_teen/tripo_a_01.glb",
+ "import_rot_z_deg": 90,
+ "mesh_name": "SeaDragon",
+ "_coords": "Blender coords after import_rot_z: head +X, up +Z, dragon's left +Y. Units = Tripo model units (nose-to-tail ~1.0).",
+ "max_tris": 6500,
+ "spine": [
+  [
+   "hips",
+   [
+    0.03,
+    0,
+    0.006
+   ],
+   [
+    0.075,
+    0,
+    0.004
+   ],
+   null
+  ],
+  [
+   "spine1",
+   [
+    0.075,
+    0,
+    0.004
+   ],
+   [
+    0.12,
+    0,
+    0.005
+   ],
+   "hips"
+  ],
+  [
+   "spine2",
+   [
+    0.12,
+    0,
+    0.005
+   ],
+   [
+    0.165,
+    0,
+    0.006
+   ],
+   "spine1"
+  ],
+  [
+   "spine3",
+   [
+    0.165,
+    0,
+    0.006
+   ],
+   [
+    0.2,
+    0,
+    0.006
+   ],
+   "spine2"
+  ],
+  [
+   "chest",
+   [
+    0.2,
+    0,
+    0.006
+   ],
+   [
+    0.265,
+    0,
+    0.008
+   ],
+   "spine3"
+  ],
+  [
+   "neck1",
+   [
+    0.265,
+    0,
+    0.008
+   ],
+   [
+    0.3,
+    0,
+    0.013
+   ],
+   "chest"
+  ],
+  [
+   "neck2",
+   [
+    0.3,
+    0,
+    0.013
+   ],
+   [
+    0.335,
+    0,
+    0.024
+   ],
+   "neck1"
+  ],
+  [
+   "neck3",
+   [
+    0.335,
+    0,
+    0.024
+   ],
+   [
+    0.37,
+    0,
+    0.038
+   ],
+   "neck2"
+  ],
+  [
+   "head",
+   [
+    0.37,
+    0,
+    0.038
+   ],
+   [
+    0.5,
+    0,
+    0.031
+   ],
+   "neck3"
+  ],
+  [
+   "tail1",
+   [
+    0.03,
+    0,
+    0.006
+   ],
+   [
+    -0.0095,
+    0,
+    0.0085
+   ],
+   "hips"
+  ],
+  [
+   "tail2",
+   [
+    -0.0095,
+    0,
+    0.0085
+   ],
+   [
+    -0.049,
+    0,
+    0.0117
+   ],
+   "tail1"
+  ],
+  [
+   "tail3",
+   [
+    -0.049,
+    0,
+    0.0117
+   ],
+   [
+    -0.0885,
+    0,
+    0.0152
+   ],
+   "tail2"
+  ],
+  [
+   "tail4",
+   [
+    -0.0885,
+    0,
+    0.0152
+   ],
+   [
+    -0.128,
+    0,
+    0.019
+   ],
+   "tail3"
+  ],
+  [
+   "tail5",
+   [
+    -0.128,
+    0,
+    0.019
+   ],
+   [
+    -0.1675,
+    0,
+    0.023
+   ],
+   "tail4"
+  ],
+  [
+   "tail6",
+   [
+    -0.1675,
+    0,
+    0.023
+   ],
+   [
+    -0.207,
+    0,
+    0.0271
+   ],
+   "tail5"
+  ],
+  [
+   "tail7",
+   [
+    -0.207,
+    0,
+    0.0271
+   ],
+   [
+    -0.2465,
+    0,
+    0.0314
+   ],
+   "tail6"
+  ],
+  [
+   "tail8",
+   [
+    -0.2465,
+    0,
+    0.0314
+   ],
+   [
+    -0.286,
+    0,
+    0.0358
+   ],
+   "tail7"
+  ],
+  [
+   "tail9",
+   [
+    -0.286,
+    0,
+    0.0358
+   ],
+   [
+    -0.3255,
+    0,
+    0.0404
+   ],
+   "tail8"
+  ],
+  [
+   "tail10",
+   [
+    -0.3255,
+    0,
+    0.0404
+   ],
+   [
+    -0.365,
+    0,
+    0.045
+   ],
+   "tail9"
+  ],
+  [
+   "fan",
+   [
+    -0.365,
+    0,
+    0.045
+   ],
+   [
+    -0.5,
+    0,
+    0.02
+   ],
+   "tail10"
+  ]
+ ],
+ "_side": "left side (+Y); mirrored to .R by negating y. parent 'chest'/'hips' are shared, others get the side suffix",
+ "side": [
+  [
+   "farm1",
+   [
+    0.215,
+    0.045,
+    0.02
+   ],
+   [
+    0.204,
+    0.068,
+    -0.028
+   ],
+   "chest"
+  ],
+  [
+   "farm2",
+   [
+    0.204,
+    0.068,
+    -0.028
+   ],
+   [
+    0.205,
+    0.079,
+    -0.075
+   ],
+   "farm1"
+  ],
+  [
+   "fpaw",
+   [
+    0.205,
+    0.079,
+    -0.075
+   ],
+   [
+    0.232,
+    0.08,
+    -0.096
+   ],
+   "farm2"
+  ],
+  [
+   "ftoe",
+   [
+    0.232,
+    0.08,
+    -0.096
+   ],
+   [
+    0.262,
+    0.083,
+    -0.104
+   ],
+   "fpaw"
+  ],
+  [
+   "hleg1",
+   [
+    0.075,
+    0.04,
+    0.015
+   ],
+   [
+    0.062,
+    0.05,
+    -0.035
+   ],
+   "hips"
+  ],
+  [
+   "hleg2",
+   [
+    0.062,
+    0.05,
+    -0.035
+   ],
+   [
+    0.048,
+    0.057,
+    -0.075
+   ],
+   "hleg1"
+  ],
+  [
+   "hfoot",
+   [
+    0.048,
+    0.057,
+    -0.075
+   ],
+   [
+    0.07,
+    0.064,
+    -0.095
+   ],
+   "hleg2"
+  ],
+  [
+   "htoe",
+   [
+    0.07,
+    0.064,
+    -0.095
+   ],
+   [
+    0.096,
+    0.068,
+    -0.103
+   ],
+   "hfoot"
+  ]
+ ],
+ "weights": {
+  "_doc": "region gating per vertex (first match wins): head -> head_bones; fan -> fan_bones; else core chain (+ same-side leg chain when leg-ish). core distance uses z scaled by core_z_scale so crest/belly follow the bone under/over them. 3 nearest bones; all-core -> 1/d^2, else 1/d^4.",
+  "head_x": 0.35,
+  "head_x2": 0.365,
+  "ear_y": 0.03,
+  "head_bones": [
+   "head",
+   "neck3"
+  ],
+  "fan_x": -0.345,
+  "fan_bones": [
+   "tail9",
+   "tail10",
+   "fan"
+  ],
+  "leg_y": 0.035,
+  "leg_z_max": 0.02,
+  "leg_only_z": -0.055,
+  "hind_x": [
+   0.0,
+   0.13
+  ],
+  "front_x": [
+   0.15,
+   0.3
+  ],
+  "core_z_scale": 0.35,
+  "min_weight": 0.02
+ },
+ "wave_chain": [
+  "neck1",
+  "chest",
+  "spine3",
+  "spine2",
+  "spine1",
+  "tail1",
+  "tail2",
+  "tail3",
+  "tail4",
+  "tail5",
+  "tail6",
+  "tail7",
+  "tail8",
+  "tail9",
+  "tail10",
+  "fan"
+ ],
+ "front_chain": [
+  "spine1",
+  "spine2",
+  "spine3",
+  "chest",
+  "neck1",
+  "neck2",
+  "neck3",
+  "head"
+ ],
+ "stabilize_points": [
+  "spine3",
+  "chest",
+  "neck1",
+  "neck2",
+  "neck3",
+  "head"
+ ],
+ "head_follow": 0.3,
+ "head_counter": 0.25,
+ "arch_chain": [
+  "spine1",
+  "spine2",
+  "spine3",
+  "chest",
+  "neck1",
+  "neck2",
+  "neck3",
+  "tail1",
+  "tail2",
+  "tail3",
+  "tail4",
+  "tail5",
+  "tail6",
+  "tail7",
+  "tail8",
+  "tail9",
+  "tail10"
+ ],
+ "poses": {
+  "tuck": {
+   "_doc": "dir = final bone direction in armature space for the LEFT leg (x forward, y = outward, z up); roll = twist about the bone (deg, + = sole toward the body). Legs fold back under the belly / tail base, inside the body width.",
+   "farm1": {
+    "dir": [
+     -0.2,
+     0.1,
+     -0.97
+    ]
+   },
+   "farm2": {
+    "dir": [
+     -0.92,
+     -0.15,
+     -0.25
+    ]
+   },
+   "fpaw": {
+    "dir": [
+     -0.65,
+     -0.1,
+     0.75
+    ]
+   },
+   "ftoe": {
+    "dir": [
+     -0.05,
+     -0.1,
+     1.0
+    ]
+   },
+   "hleg1": {
+    "dir": [
+     -0.6,
+     0.0,
+     -0.8
+    ]
+   },
+   "hleg2": {
+    "dir": [
+     -0.9,
+     -0.3,
+     -0.45
+    ]
+   },
+   "hfoot": {
+    "dir": [
+     -1,
+     -0.22,
+     -0.05
+    ],
+    "roll": 60
+   },
+   "htoe": {
+    "dir": [
+     -0.98,
+     -0.2,
+     -0.05
+    ]
+   }
+  },
+  "relaxed": {
+   "farm1": [
+    [
+     "X",
+     0.04
+    ],
+    [
+     "Y",
+     0.3
+    ]
+   ],
+   "farm2": [
+    [
+     "Y",
+     0.25
+    ]
+   ],
+   "fpaw": [
+    [
+     "Y",
+     0.35
+    ]
+   ],
+   "ftoe": [
+    [
+     "Y",
+     0.15
+    ]
+   ],
+   "hleg1": [
+    [
+     "X",
+     0.03
+    ],
+    [
+     "Y",
+     0.4
+    ]
+   ],
+   "hleg2": [
+    [
+     "Y",
+     0.2
+    ]
+   ],
+   "hfoot": [
+    [
+     "Y",
+     0.5
+    ]
+   ],
+   "htoe": [
+    [
+     "Y",
+     0.15
+    ]
+   ]
+  }
+ },
+ "actions": {
+  "Swim": {
+   "frames": 36,
+   "A": 0.35,
+   "k": 0.55,
+   "pow": 1.2,
+   "legs": "tuck",
+   "paddle": 0.07
+  },
+  "Dash": {
+   "frames": 15,
+   "A": 0.46,
+   "k": 0.55,
+   "pow": 1.2,
+   "legs": "tuck",
+   "paddle": 0.03,
+   "tuck_extra": 0.04
+  },
+  "Idle": {
+   "frames": 72,
+   "A": 0.11,
+   "k": 0.45,
+   "pow": 1.1,
+   "legs": "relaxed",
+   "paddle": 0.1,
+   "look": 0.08
+  },
+  "Glide": {
+   "frames": 48,
+   "A": 0.07,
+   "k": 0.5,
+   "pow": 1.3,
+   "legs": "tuck",
+   "paddle": 0.02
+  },
+  "Breach": {
+   "frames": 24,
+   "A": 0.06,
+   "k": 0.5,
+   "pow": 1.2,
+   "legs": "tuck",
+   "paddle": 0.02,
+   "tuck_extra": 0.05,
+   "arch": 0.72,
+   "arch_breath": 0.08,
+   "arch_head": 0.5,
+   "fan_scale": 1.15,
+   "arch_front": 0.62
+  }
+ },
+ "main_action": "Swim",
+ "manifest": {
+  "pivot": [
+   0.15,
+   0,
+   0.0
+  ],
+  "mouth": [
+   0.497,
+   0,
+   0.025
+  ],
+  "notes": "TEEN (slimmer, longer neck than the baby, medium crest). Source .cache/art/sea_teen/tripo_a_01.glb (Tripo P1, face-limit 6500). The Tripo fan rays splayed sideways, so the fan is squashed to 35% width in y (rig json flatten_y) to read as one vertical fan. Wingless sea dragon. Blender rest coords: head +X, up +Z, dragon's left +Y (glTF head +X, same as fire_adult); the raw Tripo mesh had its head at -Y, so rig_sea.py rotates it +90 deg about Z on import. 36 bones, same names in baby/teen/adult (GLTFLoader strips the dot: farm1.L -> farm1L). Clips (keys from frame 0, first frame == last frame, all loop): Swim 1.5 s, Dash 0.625 s (bigger, faster wave), Glide 2.0 s (almost straight), Idle 3.0 s (legs hanging, slow look-around +-8 deg), Breach 1.0 s (back arched with ~72% of the bend in the front half so the hump reads from the side; legs tucked; fan bone scaled 1.15 on its vertical axis = the only scale track). Undulation is LATERAL (yaw); the tail fin is vertical. Root bone 'hips' carries small yaw + sideways translation keys that keep chest/neck/head steady: do not reset hips in a runtime overlay (undo-then-apply is fine). Swim/Dash/Glide/Breach share one streamlined tuck (v3): front legs fold back under the chest with the paws curled up against the belly, hind legs trail straight back under the tail base; every paw stays inside the body width (no frog splay), so they crossfade cleanly; Idle crossfade 0.3-0.5 s. mouthK = (mouth.x - pivot.x) / length = how far the snout tip is ahead of the pivot in body lengths (dragon.js derives the same number). Texture: one 1024 WebP base colour, graded by blender/sea_tex.py (run by rig_sea.py) to the SAME concept targets for all three ages: navy (54,70,88), teal fins + teal patches (73,121,135) with V<=0.56, cream belly (176,187,172), glowing spots (72,224,218) V>=0.8 S>=0.6 filled solid; crest and fan are found by 3D position, pale inner legs darkened to navy. A glow key of hue 165-200, sat>0.5, V>0.68 lights only the spots. Material doubleSided. Mesh: welded, faces oriented to Tripo's own normals + neighbour vote, small holes filled (all three caused black outline-shell shards), smooth normals. File: KHR_mesh_quantization + constant rest channels dropped (blender/glb_pack.py); three.js GLTFLoader reads it natively, no decoder. mouth = snout tip in rest pose. Re-rig: blender -b --factory-startup -P blender/rig_sea.py -- blender/rigs/<name>.json"
+ },
+ "flatten_y": [
+  {
+   "x_full": -0.4,
+   "x_none": -0.33,
+   "ky": 0.35
+  }
+ ]
+}

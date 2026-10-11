@@ -1,8 +1,8 @@
 // 两条龙 × 三个阶段的数值（GDD §6.3 / §7.2 + v2：每个阶段解锁新能力、捕猎越来越容易，见 docs/V2_PLAN.md）。
 // 成年火龙的飞行数值 = 原型手感，不改。
 export const STAGE_NAMES = ['幼龙', '少年龙', '成龙'];
-export const STAGE_PTS = [0, 40, 160];          // 进入该阶段时的累计成长点
-export const ADULT_GOAL_PTS = 160;
+export const STAGE_PTS = [0, 40, 220];          // 进入该阶段时的累计成长点
+export const ADULT_GOAL_PTS = 220;
 
 // 能力表（界面用的名字 / 一句话 / 图标名）。图标名对应 ui/icons.js
 export const ABILITIES = {
@@ -27,10 +27,10 @@ export const DRAGONS = {
     stages: [
       { model: 'fire_baby', fallback: { model: 'fire_adult', bones: { head: 1.4, neck1: 1.05, 'wing1.L': .62, 'wing1.R': .62, tail1: .8 } },
         unlock: ['bite', 'flame'], canCross: false, bites: 1, assist: { range: 30, cone: 32 }, fear: 0,
-        len: 4.3, level: 18, dive: 34, climb: 13, turn: 1.4, pitchK: .70, fireRange: 9, cookTime: .55, waterTime: 2.0, plungeDepth: 8, mouthR: 1.9, eatTier: 1, cookTier: 2 },
+        flapHz: 1.333, len: 4.3, level: 18, dive: 34, climb: 13, turn: 1.4, pitchK: .70, fireRange: 11, cookTime: .5, waterTime: 2.0, plungeDepth: 8, mouthR: 1.9, eatTier: 1, cookTier: 2 },
       { model: 'fire_teen', fallback: { model: 'fire_adult', bones: { head: 1.15, 'wing1.L': .82, 'wing1.R': .82 } },
         unlock: ['plunge'], canCross: true, bites: 2, assist: { range: 38, cone: 38 }, fear: 10,
-        len: 7.1, level: 22, dive: 40, climb: 16, turn: 1.2, pitchK: .66, fireRange: 17, cookTime: .35, waterTime: 2.6, plungeDepth: 12, mouthR: 2.6, eatTier: 2, cookTier: 3 },
+        len: 5.9, level: 22, dive: 40, climb: 16, turn: 1.2, pitchK: .66, fireRange: 17, cookTime: .35, waterTime: 2.6, plungeDepth: 12, mouthR: 2.6, eatTier: 2, cookTier: 3 },
       { model: 'fire_adult',
         unlock: ['roar', 'gulp'], canCross: true, bites: 4, assist: { range: 46, cone: 44 }, fear: 22,
         skill: { id: 'roar', cd: 10, r: 42, t: 4 },

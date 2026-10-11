@@ -1,7 +1,7 @@
 // 小龙大胃王 · 主程序：启动、状态机（标题 / 游戏 / 暂停 / 结算）、主循环（sim 固定步长 1/60 + 渲染插值）、把各模块接起来。
 import * as THREE from 'three';
 import { createSim, step, DT, setStage, goalTarget, nearestEdible, cookableNow } from './sim/sim.js';
-import { DRAGONS, STAGE_PTS, STAGE_NAMES } from './config/dragons.js';
+import { DRAGONS, STAGE_PTS, STAGE_NAMES, ABILITIES } from './config/dragons.js';
 import { SPECIES, SPECIES_IDS } from './config/species.js';
 import { waveH, zoneAt } from './sim/world.js';
 import { GRAD, outlineMat, toonMat } from './view/toon.js';
@@ -61,7 +61,7 @@ const creatures = mkCreatures(ctx);
 const sea = mkSea(ctx);
 const audio = mkAudio();
 // 模块可以返回 ready（Promise）：例如岛的精模要先下载完
-await Promise.all([isl, sky, sea, creatures].map(m => m && m.ready ? m.ready.catch(e => console.warn('模块准备失败', e && e.message)) : null));
+await Promise.all([isl, sky, sea, creatures, clouds].map(m => m && m.ready ? m.ready.catch(e => console.warn('模块准备失败', e && e.message)) : null));
 
 // ---------- 存档 / 状态 ----------
 const save = loadSave();
@@ -84,6 +84,7 @@ const ui = mkUI(document.getElementById('ui'), {
   portrait: (sp, size) => creatures.portrait ? creatures.portrait(sp, size) : '',
   onPick: k => { audio.unlock(); startGame(k); },
   onAction: on => onAction(on),
+  onSkill: () => { input.skillTap = true; audio.unlock(); },
   onPause: () => pause(),
   onResume: () => resume(),
   onSwitch: () => toTitle(),
@@ -106,6 +107,7 @@ async function applyHero(k, stage, len) {
   loadingModel = true;
   const r = await heroFor(k, stage);
   dragon.build(r.loaded, len, r.bones);
+  if (S) S.hero.mouthK = dragon.mouthK;
   temp = r.temp; ui.setTemp && ui.setTemp(temp);
   loadingModel = false;
   return r;
@@ -169,15 +171,27 @@ function handleEvents(evs) {
       case 'stun': { const c = S.creatures.find(c => c.id === e.id); if (c) P.burst('star', c.x, c.y + c.size * .5, c.z, 8, 3, .8, .35, { up: 1 }); break; }
       case 'enterWater': case 'exitWater': {
         const sy = waveH(e.x, e.z, S.t), big = e.type === 'enterWater' ? 1 : .8;
-        P.burst('splash', e.x, sy + .3, e.z, Math.round(36 * big), 8 * Math.max(.6, k), .9, 1.1 * Math.max(.5, k), { grav: 14, up: 1.6, drag: 1 });
+        P.burst('splash', e.x, sy + .3, e.z, Math.round(44 * big), 8 * Math.max(.6, k), .8, .42 * Math.max(.6, k), { grav: 14, up: 1.6, drag: 1, grow: 1.2, alpha: .85 });
         P.burst('bubble', e.x, sy - 1, e.z, 16, 4, .9, .12, { rise: 6, grow: .6, alpha: .7 });
         if (e.type === 'exitWater' && S.kind === 'fire') dripT = 1.5;
         break;
       }
-      case 'splash': { const sy = waveH(e.x, e.z, S.t); P.burst('splash', e.x, sy + .2, e.z, Math.round(6 + 10 * e.size), 3 + 4 * e.size, .6, .35 + .5 * e.size, { grav: 12, up: 1.4, drag: 1 }); break; }
+      case 'splash': { const sy = waveH(e.x, e.z, S.t); P.burst('splash', e.x, sy + .2, e.z, Math.round(6 + 10 * e.size), 3 + 4 * e.size, .5, .16 + .22 * e.size, { grav: 12, up: 1.4, drag: 1, grow: 1.2, alpha: .85 }); break; }
       case 'bite': P.burst('spark', e.x, e.y, e.z, 14, 6, .5, .5); flashT = .35; break;
       case 'orb': P.burst('orb', e.x, e.y, e.z, 6, 3, .4, .5); break;
       case 'evolve': startEvolve(e.stage); break;
+      // 'unlock'（新能力卡）和 'blocked'（长大后学会）界面自己处理（ui.update 里读事件）
+      case 'lunge': dragon.bite = .2; break;
+      case 'skill': {
+        const h = S.hero;
+        if (e.id === 'roar') {
+          dragon.roar = .9;
+          for (let i = 0; i < 48; i++) { const a = i / 48 * Math.PI * 2; P.emit('spark', h.x, h.y, h.z, Math.cos(a) * e.r * 1.4, (Math.random() - .5) * 4, Math.sin(a) * e.r * 1.4, .7, 1.2, { drag: 1.2, grow: 1.5, alpha: .7 }); }
+        } else {
+          for (let i = 0; i < 60; i++) { const a = Math.random() * Math.PI * 2, r = e.r * (.3 + Math.random() * .7); P.emit('bubble', h.x + Math.cos(a) * r, h.y + (Math.random() - .5) * 6, h.z + Math.sin(a) * r, -Math.sin(a) * 12 - Math.cos(a) * 6, 1, Math.cos(a) * 12 - Math.sin(a) * 6, 1.2, .18, { rise: 2, grow: .6, alpha: .8, drag: .4 }); }
+        }
+        break;
+      }
       case 'goal': saveT = 0; break;
       case 'codex': break;
       case 'shield': break;
@@ -198,14 +212,14 @@ function stepEvolve(dt) {
   if (!evo) return 1;
   evo.t += dt;
   const glow = evo.t < .6 ? evo.t / .6 : evo.t < 1.6 ? 1 : Math.max(0, 1 - (evo.t - 1.6) / .9);
-  dragon.flash.value = .14 * glow;
+  dragon.rim.value = .8 * glow;
   if (evo.t < 2.2 && Math.random() < .7) P.emit('gold', S.hero.x + (Math.random() - .5) * S.hero.len, S.hero.y + (Math.random() - .5) * S.hero.len * .5, S.hero.z + (Math.random() - .5) * S.hero.len, 0, 2 + Math.random() * 3, 0, 1.3, (.12 + Math.random() * .12) * Math.max(1, S.hero.len / 6), { drag: .5, grow: .8 });
   if (!evo.swapped && evo.t > .6) {
     evo.swapped = true;
-    evo.ready.then(r => { dragon.build(r.loaded, S.hero.len, r.bones); temp = r.temp; ui.setTemp && ui.setTemp(temp); }).catch(() => { });
+    evo.ready.then(r => { dragon.build(r.loaded, S.hero.len, r.bones); S.hero.mouthK = dragon.mouthK; temp = r.temp; ui.setTemp && ui.setTemp(temp); }).catch(() => { });
   }
   if (evo.t > 2.5) {
-    const st = evo.stage; evo = null; dragon.flash.value = 0;
+    const st = evo.stage; evo = null; dragon.rim.value = 0;
     if (st === 2 && !save[S.kind].adultShown) resultTimer = 1;
     return 1;
   }
@@ -269,6 +283,8 @@ function advance(dtReal) {
     if (resultTimer > 0) { resultTimer -= dtReal; if (resultTimer <= 0) showResult(); }
   }
   const alpha = S && state === 'play' ? acc / DT : 1;
+  // 海浪的时间：海面按 sim 的时间画浪，镜头判断水线也要用同一个时间（否则镜头会卡在水线上一半水上一半水下）
+  const waveT = S ? S.t - (1 - alpha) * DT : T;
   if (S && dragon.model) {
     const h = lerpHero(alpha);
     dragon.glow.value = lerp(dragon.glow.value, S.kind === 'sea' ? (h.dashT > 0 ? 1.2 : .6) : 0, damp(5, dtReal));
@@ -276,7 +292,7 @@ function advance(dtReal) {
     const blink = h.invuln > 0 ? (Math.sin(T * Math.PI * 6) > 0 ? .12 : 0) : 0;
     if (!evo) dragon.flash.value = blink;
     dragon.update(h, S, dtReal * (state === 'play' ? 1 : 0), T);
-    cam.update(h, S, dtReal, T);
+    cam.update(h, S, dtReal, waveT);
     // 喷火粒子 + 嘴边发光
     const firing = h.firing && state === 'play';
     dragon.mouth(_m); dragon.forward(_f);
@@ -307,9 +323,9 @@ function advance(dtReal) {
   sea.update(S || { creatures: [], spots: [], hero: { x: 0, y: 60, z: 0, len: 10 }, t: T, kind: 'fire' }, alpha, dtReal, T, camera);
   const under = sea.underwater || 0;
   creatures.setUnderwater && creatures.setUnderwater(under);
-  isl.update(camera, T, dtReal);
+  isl.update(camera, T, dtReal, waveT);
   clouds.update(camera, T, dtReal, isl.smokePoints());
-  sky.update(camera);
+  sky.update(camera, T);
   P.update(dtReal);
   if (S && (state === 'play' || state === 'pause')) ui.update(S, dtReal, frameEvents);
   audio.update(S || null, dtReal, frameEvents, under);

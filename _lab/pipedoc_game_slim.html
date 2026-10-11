@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="zh"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>瘦身模型进游戏</title>
+<style>html,body{margin:0;height:100%;background:#9cc8e0;overflow:hidden}canvas{display:block}</style>
+<script type="importmap">{ "imports": { "three": "../lib/three.module.min.js" } }</script>
+</head><body>
+<script type="module">
+// 用游戏自己的 src/view/dragon.js 加载瘦身后的 glb（清单照旧，只把 file 换掉），确认游戏代码路径（克隆骨骼、卡通材质、描边壳、动作混合、叠加转动）都正常
+// ?m=fire_baby&b=.cache/check/pipedoc/fire_baby_slim.glb
+import * as THREE from 'three';
+const Q = new URLSearchParams(location.search), NAME = Q.get('m') || 'fire_baby', FILE = Q.get('b') || `.cache/check/pipedoc/${NAME}_slim.glb`;
+const realFetch = window.fetch.bind(window);
+window.fetch = async (u, o) => {        // 只改这一个清单的 file 字段
+  const r = await realFetch(u, o);
+  if (String(u).endsWith(`models/${NAME}.json`) && (!o || o.method !== 'HEAD')) { const j = await r.json(); j.file = FILE; return new Response(JSON.stringify(j)); }
+  return r;
+};
+const { createDragonView, loadModel } = await import('../src/view/dragon.js');
+const W = innerWidth, H = innerHeight;
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true }); renderer.setSize(W, H); document.body.appendChild(renderer.domElement);
+const scene = new THREE.Scene(); scene.background = new THREE.Color(0x9cc8e0);
+scene.add(new THREE.HemisphereLight(0xffffff, 0x88aacc, 1.1)); const sun = new THREE.DirectionalLight(0xffffff, 2.2); sun.position.set(30, 60, -20); scene.add(sun);
+const camera = new THREE.PerspectiveCamera(45, W / H, .1, 500);
+const D = createDragonView({ scene });
+const loaded = await loadModel(NAME);
+D.build(loaded, 10, null);
+const kind = loaded.man.kind;
+const h = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, bank: 0, yawRate: 0, flyW: 1, tuck: 0, medium: kind === 'fire' ? 'air' : 'water', dashT: 0, surf: 0, len: 10 };
+let t = 0;
+function tick(dt, over = {}) { Object.assign(h, over); t += dt; D.update(h, null, dt, t); }
+function shot(az) { camera.position.set(Math.sin(az) * 16, 4, Math.cos(az) * 16); camera.lookAt(0, 0, 0); renderer.render(scene, camera); }
+window.__lab = { ready: true, tick, shot, D, file: FILE, man: loaded.man };
+</script></body></html>

@@ -2,7 +2,7 @@
 // 顶部 64px 内按下不出摇杆；按钮自己 stopPropagation。
 export function createInput(wrap, joyEl, { onDrag, onAction } = {}) {
   const knob = joyEl.firstElementChild;
-  const I = { jx: 0, jy: 0, act: false, actTap: false, btn: false, finger2: false, dragging: false, enabled: false, moved: 0 };
+  const I = { jx: 0, jy: 0, act: false, actTap: false, skillTap: false, btn: false, finger2: false, dragging: false, enabled: false, moved: 0 };
   let ptr = null; const keys = {}; let second = null;
   wrap.addEventListener('pointerdown', e => {
     if (!I.enabled) return;
@@ -32,14 +32,15 @@ export function createInput(wrap, joyEl, { onDrag, onAction } = {}) {
     if (e.repeat) return;
     keys[e.code] = true;
     if (e.code === 'Space') { I.actTap = true; onAction && onAction(true); }
+    if (e.code === 'KeyE' || e.code === 'ShiftLeft') I.skillTap = true;   // 第二技能
   });
   addEventListener('keyup', e => { keys[e.code] = false; if (e.code === 'Space') onAction && onAction(false); });
   // 每个 sim 步读一次
   I.read = () => {
     const kx = (keys.ArrowRight || keys.KeyD ? 1 : 0) - (keys.ArrowLeft || keys.KeyA ? 1 : 0);
     const ky = (keys.ArrowDown || keys.KeyS ? 1 : 0) - (keys.ArrowUp || keys.KeyW ? 1 : 0);
-    const o = { jx: Math.max(-1, Math.min(1, I.jx + kx)), jy: Math.max(-1, Math.min(1, I.jy + ky)), act: I.btn || I.finger2 || !!keys.Space, actTap: I.actTap };
-    I.actTap = false;
+    const o = { jx: Math.max(-1, Math.min(1, I.jx + kx)), jy: Math.max(-1, Math.min(1, I.jy + ky)), act: I.btn || I.finger2 || !!keys.Space, actTap: I.actTap, skillTap: I.skillTap };
+    I.actTap = false; I.skillTap = false;
     return o;
   };
   I.reset = () => { ptr = null; second = null; I.jx = I.jy = 0; I.btn = I.finger2 = false; joyEl.style.display = 'none'; knob.style.transform = ''; I.dragging = false; };

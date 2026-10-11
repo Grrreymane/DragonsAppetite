@@ -5,6 +5,7 @@ import { SPECIES, SPECIES_IDS } from '../config/species.js';
 import { DRAGONS, STAGE_PTS, GOALS, GOAL_REWARD } from '../config/dragons.js';
 import { makeHero, stepFire, stepSea, heroMouth } from './hero.js';
 import { stepCreatures, spawnInitial, manageSpawns, rescueSpawn, makeGroup } from './creatures.js';
+import { updateLock, assistSteer, targetable } from './assist.js';
 import { seabedY, groundAt } from './world.js';
 
 export const DT = 1 / 60;
@@ -19,10 +20,13 @@ export function createSim({ kind = 'fire', seed = 1, stage = 0, pts, goalIdx = 0
     nextId: 0, goalIdx, goal: null, combo: { n: 0, t: 0 }, codex: JSON.parse(JSON.stringify(codex)),
     stats: { eaten: 0, time: 0, bites: 0, cross: 0, maxNoEat: 0 }, lastEat: 0, bitesT: [],
     slowmo: 1, evolving: 0, spawnT: 0, fireCone: [], autoAimT: 0,
+    abilities: [], nextAbilities: [],
   };
+  S.stats.passes = 0; S.stats.misses = 0; S.stats.skills = 0;
   S.hero.x = x; S.hero.z = z; S.hero.yaw = yaw; S.hero.px = x; S.hero.pz = z;
   for (const id of SPECIES_IDS) S.codex[id] = S.codex[id] || { n: 0, gold: 0 };
   updateSize(S);
+  setAbilities(S);
   setGoal(S);
   S.bite = c => bite(S, c);
   spawnInitial(S);
@@ -37,6 +41,15 @@ function updateSize(S) {
   h.sizeK = lerp(h.sizeK, k, .05); h.len = S.cfg.len * h.sizeK;
 }
 
+// ---------- 能力（v2：每个阶段解锁新能力）----------
+function setAbilities(S) {
+  const st = DRAGONS[S.kind].stages;
+  S.abilities = []; for (let i = 0; i <= S.stage; i++) for (const a of st[i].unlock || []) if (!S.abilities.includes(a)) S.abilities.push(a);
+  S.nextAbilities = S.stage < 2 ? [...(st[S.stage + 1].unlock || [])] : [];
+  const sk = S.cfg.skill;
+  S.hero.skill = sk ? (S.hero.skill && S.hero.skill.id === sk.id ? S.hero.skill : { id: sk.id, cd: 0, cdMax: sk.cd, t: 0, r: sk.r }) : null;
+}
+
 // ---------- 小目标 ----------
 function setGoal(S) {
   const list = GOALS[S.kind][S.stage];
@@ -46,7 +59,8 @@ function setGoal(S) {
   } else {
     // 本阶段的小目标做完了：推荐还没吃过、现在就能吃的图鉴
     // 只推荐自己地盘里（火龙：天上和海面；海龙：水里和海面）现在就能吃的，保证「写什么就做得到」
-    const home = S.kind === 'fire' ? ['air', 'surface'] : ['water', 'surface'];
+    const home = S.kind === 'fire' ? ['air'] : ['water'];
+    if (S.cfg.canCross) home.push('surface');
     const can = SPECIES_IDS.filter(id => SPECIES[id].who.includes(S.kind) && SPECIES[id].tier <= S.cfg.eatTier && home.includes(SPECIES[id].hab));
     const miss = can.find(id => !S.codex[id].n);
     S.goal = miss ? { type: 'eat', sp: miss, n: 1, have: 0, done: false, icon: miss, extra: true }
@@ -59,6 +73,7 @@ function goalProgress(S, e) {
   if (g.type === 'eat' && e.sp === g.sp) inc = 1;
   else if (g.type === 'cooked' && e.cooked) inc = 1;
   else if (g.type === 'cross' && e.cross) inc = 1;
+  else if (g.type === 'skill' && e.skill) inc = 1;
   else if (g.type === 'combo') { g.have = Math.max(g.have, e.combo); if (g.have >= g.n) inc = 0, g.have = g.n; }
   g.have = Math.min(g.n, g.have + inc);
   if (g.have >= g.n) {
@@ -74,10 +89,10 @@ export function goalTarget(S) {
   for (const c of S.creatures) {
     if (c.dying) continue;
     let ok = false;
-    if (g.type === 'eat') ok = c.sp === g.sp && (c.edible || c.edibleCooked);
+    if (g.type === 'eat') ok = c.sp === g.sp && (targetable(S, c) || (c.edibleCooked && !c.edible && cookableNow(S, c)));
     else if (g.type === 'cooked') ok = !c.edible && c.edibleCooked && cookableNow(S, c);
-    else if (g.type === 'cross') ok = S.kind === 'fire' ? SPECIES[c.sp].hab !== 'air' && c.edible && c.y > -10 : (c.sp === 'gull' || c.sp === 'flyfish') && c.edible;
-    else ok = c.edible;
+    else if (g.type === 'cross') ok = S.kind === 'fire' ? SPECIES[c.sp].hab !== 'air' && c.edible && c.y > -S.cfg.plungeDepth + 1 : (c.sp === 'gull' || c.sp === 'flyfish') && c.edible;
+    else ok = targetable(S, c);
     if (!ok) continue;
     const d = Math.hypot(c.x - h.x, c.y - h.y, c.z - h.z);
     if (d < bd) { bd = d; best = c; }
@@ -99,7 +114,7 @@ export function nearestEdible(S, maxD = 400) {
 }
 
 // ---------- 吃 ----------
-function eat(S, c, cross) {
+function eat(S, c, cross, extra) {
   const d = SPECIES[c.sp], h = S.hero;
   const myTier = S.stage + 1, diff = Math.max(0, myTier - d.tier);
   let k = diff === 0 ? 1 : diff === 1 ? .75 : .5;
@@ -111,13 +126,23 @@ function eat(S, c, cross) {
   const pts = Math.max(1, Math.round(TIER_PTS[d.tier] * k * mult * comboK));
   S.pts += pts; S.stats.eaten++; if (cross) S.stats.cross++;
   const cx = S.codex[c.sp], first = !cx.n; cx.n++; if (c.gold) cx.gold++;
-  const e = { type: 'eat', sp: c.sp, x: c.x, y: c.y, z: c.z, pts, combo: S.combo.n, gold: c.gold, cross, cooked, size: c.size };
+  const e = { type: 'eat', sp: c.sp, x: c.x, y: c.y, z: c.z, pts, combo: S.combo.n, gold: c.gold, cross, cooked, size: c.size, skill: !!c.skillHit, extra: !!extra };
   S.events.push(e);
   if (first) S.events.push({ type: 'codex', sp: c.sp });
   goalProgress(S, e);
   S.noEat = 0;
   c.dying = 1; c.size = 0; c.g.members--;
   const i = S.creatures.indexOf(c); if (i >= 0) { S.creatures[i] = S.creatures[S.creatures.length - 1]; S.creatures.pop(); }
+  // 一口吞几只（少年龙 2、成龙 4）：嘴边的其他猎物一起吞
+  if (!extra && S.cfg.bites > 1) {
+    const m = h.mouth, R = (S.cfg.mouthR * h.sizeK) * 1.7 + 1.5;
+    let n = S.cfg.bites - 1;
+    for (let j = S.creatures.length - 1; j >= 0 && n > 0; j--) {
+      const o = S.creatures[j];
+      if (!targetable(S, o) || Math.hypot(o.x - m.x, o.y - m.y, o.z - m.z) > R + o.size * .5) continue;
+      eat(S, o, cross, true); n--;
+    }
+  }
 }
 
 function interact(S, dt) {
@@ -127,20 +152,27 @@ function interact(S, dt) {
   const crossNow = fire ? h.medium === 'water' : h.medium === 'air';
   const coneCos = Math.cos(15 * Math.PI / 180), range = S.cfg.fireRange * h.sizeK;
   let autoAim = false;
+  const vortex = h.skill && h.skill.id === 'vortex' && h.skill.t > 0 ? h.skill : null;
   for (let i = S.creatures.length - 1; i >= 0; i--) {
-    const c = S.creatures[i]; if (c.dying || c.size < .05) continue;
+    const c = S.creatures[i]; if (!c || c.dying || c.size < .05) continue;   // 一口吞几只时数组会变短
     const dx = c.x - m.x, dy = c.y - m.y, dz = c.z - m.z, d = Math.hypot(dx, dy, dz);
     const canEat = c.edible || (c.cooked >= 1 && c.edibleCooked);
     const eatR = mR + c.size * .5;
-    if (canEat) {
+    if (canEat && targetable(S, c)) {
       const ahead = (dx * f.x + dy * f.y + dz * f.z) / (d || 1);
-      const school = fire && (c.sp === 'sardine' || c.sp === 'sparrow');   // 火龙抓鸟群 / 扎水抓鱼球：吸附范围大一点
-      const magR = eatR * (h.medium === 'air' && !fire ? 2.8 : 2.2) * (school ? 1.35 : 1);
+      const magR = eatR * (h.medium === 'air' && !fire ? 3 : 2.6);
       if (d < eatR) { eat(S, c, crossNow); continue; }
-      if (d < magR && ahead > .76) {                       // 吸附：0.12 秒内吸进嘴里
-        const k = Math.min(1, dt / .12);
-        c.x -= dx * k; c.y -= dy * k; c.z -= dz * k;
+      // 扑咬（v2）：锁定的猎物进了扑咬距离、在前方 50° 以内 → 头往前一探，0.15 秒内吸进嘴里
+      const lungeR = eatR * 3 + h.speed * .15;
+      if (c.id === h.lock && d < lungeR && ahead > .64) {
+        if (!c.lunged) { c.lunged = 1; S.events.push({ type: 'lunge', id: c.id }); }
+        const k = Math.min(1, dt / .15); c.x -= dx * k; c.y -= dy * k; c.z -= dz * k;
+      } else if (d < magR && ahead > .7) {                 // 吸附：0.12 秒内吸进嘴里
+        const k = Math.min(1, dt / .12); c.x -= dx * k; c.y -= dy * k; c.z -= dz * k;
       }
+      // 擦肩统计（只算玩家正瞄着的那只）：锁定的猎物进了扑咬距离算一次「靠近」，没吃到又离开（> 2 倍）算一次「擦肩」
+      if (c.id === h.lock && !c.near && d < lungeR) { c.near = 1; S.stats.passes++; }
+      else if (c.near === 1 && d > lungeR * 2) { c.near = 2; S.stats.misses++; }
     }
     // 喷火：火焰锥里累计 0.4 秒就烤熟
     if (fire && h.medium === 'air' && d < range + c.size * .5 && !c.roast) {
@@ -149,12 +181,19 @@ function interact(S, dt) {
         const cookable = c.edibleCooked && !c.edible;
         if (h.firing && c.edibleCooked) {
           c.cookT += dt;
-          if (c.cookT >= .4 && c.cooked < 1) { c.cooked = 1; c.roast = 4; c.vx *= .3; c.vz *= .3; S.events.push({ type: 'cook', id: c.id, sp: c.sp }); }
+          if (c.cookT >= (S.cfg.cookTime || .4) && c.cooked < 1) { c.cooked = 1; c.roast = 4; c.vx *= .3; c.vz *= .3; S.events.push({ type: 'cook', id: c.id, sp: c.sp }); }
         }
         if (cookable && c.cooked < 1) autoAim = true;
       }
     }
     // 海龙冲刺：撞到「撞晕后才能吃」的 → 撞晕 4 秒
+    // 漩涡（海龙成龙）：范围内水里的东西被吸向嘴边
+    if (vortex && d < vortex.r && c.y < waveH(c.x, c.z, S.t) + 1) {
+      c.skillHit = 1; c.daze = Math.max(c.daze || 0, .4);
+      const k = Math.min(1, dt * (1.6 + 3 * (1 - d / vortex.r)));
+      const sx = -dz / (d || 1), sz = dx / (d || 1);           // 打转
+      c.x -= dx * k - sx * 6 * dt; c.y -= dy * k; c.z -= dz * k - sz * 6 * dt;
+    }
     if (!fire && h.dashT > 0 && !c.edible && c.edibleCooked && c.stun <= 0) {
       const bx = c.x - h.x, by = c.y - h.y, bz = c.z - h.z;
       if (Math.hypot(bx, by, bz) < h.len * .45 + c.size * .6) {
@@ -206,8 +245,10 @@ function checkEvolve(S) {
   if (S.pts < STAGE_PTS[S.stage + 1]) return;
   if (S.hero.crossMax > 0) return;                       // 正在跨界：回到自己的地盘再进化
   S.stage++; S.cfg = DRAGONS[S.kind].stages[S.stage]; S.goalIdx = 0; setGoal(S);
+  setAbilities(S);
   S.evolving = 2.5;
   S.events.push({ type: 'evolve', stage: S.stage });
+  S.events.push({ type: 'unlock', abilities: [...(S.cfg.unlock || [])] });
   for (const c of S.creatures) if (c.st === 'chase' || c.st === 'alert') { c.st = 'retreat'; c.stT = 6; }
 }
 
@@ -218,7 +259,12 @@ export function step(S, inp) {
   S.t += dt; S.stats.time += dt;
   h.px = h.x; h.py = h.y; h.pz = h.z;
   h.invuln = Math.max(0, h.invuln - dt); h.shield = Math.max(0, h.shield - dt); h.slowT = Math.max(0, h.slowT - dt); h.bumpT = Math.max(0, h.bumpT - dt);
-  if (S.kind === 'fire') stepFire(S, inp, dt); else stepSea(S, inp, dt);
+  // 捕猎辅助：锁定 + 转向偏向
+  const tgt = updateLock(S, inp, dt);
+  h.lockUnder = tgt ? tgt.y < waveH(tgt.x, tgt.z, S.t) - .3 : false;
+  const as = assistSteer(S, inp, tgt);
+  if (S.kind === 'fire') stepFire(S, inp, dt, as); else stepSea(S, inp, dt, as);
+  stepSkill(S, inp, dt);
   // 卡住 / NaN 保护
   if (!Number.isFinite(h.x + h.y + h.z + h.yaw + h.pitch)) { h.x = h.px || 0; h.y = S.kind === 'fire' ? 60 : -6; h.z = h.pz || 0; h.pitch = 0; h.speed = 15; h.yawRate = 0; S.stats.nan = (S.stats.nan || 0) + 1; }
   const moved = Math.hypot(h.x - h.px, h.y - h.py, h.z - h.pz) / dt;
@@ -242,7 +288,8 @@ export function step(S, inp) {
     const far = tgt && Math.hypot(tgt.x - S.hero.x, tgt.y - S.hero.y, tgt.z - S.hero.z) > (S.kind === 'fire' ? 160 : 90);
     if (g && !g.done && (!tgt || far) && (S.rescueT || 0) <= 0) {
       const sp = g.sp || (g.type === 'cooked' ? (S.kind === 'fire' ? (S.stage === 0 ? 'lavafinch' : 'roc') : (S.stage === 0 ? 'squid' : 'shark'))
-        : g.type === 'cross' ? (S.kind === 'fire' ? 'sardine' : 'gull') : null);
+        : g.type === 'cross' ? (S.kind === 'fire' ? 'sardine' : 'gull')
+        : g.type === 'skill' ? (S.kind === 'fire' ? 'sparrow' : 'sardine') : null);
       if (sp && !(g.type === 'cross' && S.spots.length)) rescueSpawn(S, sp);
       S.rescueT = far ? 20 : 8;
     }
@@ -275,6 +322,24 @@ function pickRescue(S) {
 // 换阶段（调试 / 读档用）
 export function setStage(S, stage) {
   S.stage = clamp(stage, 0, 2); S.cfg = DRAGONS[S.kind].stages[S.stage];
-  S.pts = Math.max(S.pts, STAGE_PTS[S.stage]); S.goalIdx = 0; setGoal(S);
+  S.pts = Math.max(S.pts, STAGE_PTS[S.stage]); S.goalIdx = 0; setAbilities(S); setGoal(S);
+}
+
+// ---------- 第二技能（成龙）：龙吼 / 漩涡 ----------
+function stepSkill(S, inp, dt) {
+  const k = S.hero.skill, h = S.hero; if (!k) return;
+  k.cd = Math.max(0, k.cd - dt); k.t = Math.max(0, k.t - dt);
+  if (!inp.skillTap || k.cd > 0) return;
+  const sk = S.cfg.skill;
+  k.cd = sk.cd; k.t = sk.t; S.stats.skills++;
+  S.events.push({ type: 'skill', id: sk.id, x: h.x, y: h.y, z: h.z, r: sk.r });
+  if (sk.id === 'roar') {
+    // 龙吼：范围内的猎物全被吼晕（多吃一档），天敌逃跑
+    for (const c of S.creatures) {
+      if (Math.hypot(c.x - h.x, c.y - h.y, c.z - h.z) > sk.r) continue;
+      c.skillHit = 1; c.daze = sk.t; if (c.edibleCooked) c.cooked = 1;
+      if (SPECIES[c.sp].predator && !c.edible) { c.st = 'retreat'; c.stT = 8; }
+    }
+  }
 }
 export { SPECIES };

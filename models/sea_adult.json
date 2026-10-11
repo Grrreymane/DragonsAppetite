@@ -14,6 +14,7 @@
     -0.012
   ],
   "headBone": "head",
+  "mouthK": 0.3677,
   "neckBones": [
     "neck1",
     "neck2",
@@ -71,13 +72,14 @@
   ],
   "actions": {
     "Swim": 1.5,
-    "Dash": 0.75,
+    "Dash": 0.625,
     "Idle": 3.0,
-    "Glide": 2.0
+    "Glide": 2.0,
+    "Breach": 1.0
   },
-  "tris": 7957,
+  "tris": 7992,
   "bones": 36,
-  "bytes": 1018832,
+  "bytes": 640284,
   "rotZImportDeg": 90,
-  "notes": "Wingless sea dragon. Same orientation convention as fire_adult (Blender head +X, up +Z, left +Y; glTF head +X), but the raw Tripo mesh had its head at -Y, so rig_sea.py rotates it +90 deg about Z on import; every coordinate here is in the rotated frame. Swim/Dash/Idle/Glide all loop seamlessly (keys from frame 0, first frame == last frame). The undulation is LATERAL (yaw about the vertical axis); the tail fin is vertical. The root bone 'hips' carries small yaw + sideways translation keys (Swim +-0.011, Dash +-0.015 model units) that keep chest/neck/head steady, so do not reset hips.position/quaternion in a runtime overlay (undo-then-apply like flight.html is fine). Head yaw is almost zero in Swim/Dash/Glide (about +-2 deg counter-yaw); Idle has a slow look-around (+-8 deg). Swim, Dash and Glide share the same tucked-leg pose so they crossfade cleanly; Idle has the legs hanging, crossfade 0.3-0.5 s. Dash = Swim wave with ~1.4x amplitude at 2x speed; you can also play Swim with timeScale for in-between speeds. Tail tip lateral swing: Swim +-0.073, Dash +-0.091, Idle +-0.042, Glide +-0.02 (model units). GLTFLoader strips the dot from bone names (farm1.L -> farm1L). Texture: base colour only, 1024 WEBP (ORM/normal dropped), use MeshToonMaterial({map}). Mesh is closed with consistent normals (backface-cull check clean); only the mouth slit / eye sockets have small open borders. mouth = snout tip in rest pose (for bubble/water breath). Source mesh: .cache/art/sea_adult/tripo_b_01.glb (Tripo P1, face-limit 8000); re-rig with: blender -b --factory-startup -P blender/rig_sea.py -- blender/rigs/sea_adult.json"
+  "notes": "ADULT. Source .cache/art/sea_adult/tripo_b_01.glb (Tripo P1, face-limit 8000). Tail-tip lateral swing: Swim +-0.073, Dash +-0.091, Idle +-0.042, Glide +-0.02 (model units). Wingless sea dragon. Blender rest coords: head +X, up +Z, dragon's left +Y (glTF head +X, same as fire_adult); the raw Tripo mesh had its head at -Y, so rig_sea.py rotates it +90 deg about Z on import. 36 bones, same names in baby/teen/adult (GLTFLoader strips the dot: farm1.L -> farm1L). Clips (keys from frame 0, first frame == last frame, all loop): Swim 1.5 s, Dash 0.625 s (bigger, faster wave), Glide 2.0 s (almost straight), Idle 3.0 s (legs hanging, slow look-around +-8 deg), Breach 1.0 s (back arched with ~72% of the bend in the front half so the hump reads from the side; legs tucked; fan bone scaled 1.15 on its vertical axis = the only scale track). Undulation is LATERAL (yaw); the tail fin is vertical. Root bone 'hips' carries small yaw + sideways translation keys that keep chest/neck/head steady: do not reset hips in a runtime overlay (undo-then-apply is fine). Swim/Dash/Glide/Breach share one streamlined tuck (v3): front legs fold back under the chest with the paws curled up against the belly, hind legs trail straight back under the tail base; every paw stays inside the body width (no frog splay), so they crossfade cleanly; Idle crossfade 0.3-0.5 s. mouthK = (mouth.x - pivot.x) / length = how far the snout tip is ahead of the pivot in body lengths (dragon.js derives the same number). Texture: one 1024 WebP base colour, graded by blender/sea_tex.py (run by rig_sea.py) to the SAME concept targets for all three ages: navy (54,70,88), teal fins + teal patches (73,121,135) with V<=0.56, cream belly (176,187,172), glowing spots (72,224,218) V>=0.8 S>=0.6 filled solid; crest and fan are found by 3D position, pale inner legs darkened to navy. A glow key of hue 165-200, sat>0.5, V>0.68 lights only the spots. Material doubleSided. Mesh: welded, faces oriented to Tripo's own normals + neighbour vote, small holes filled (all three caused black outline-shell shards), smooth normals. File: KHR_mesh_quantization + constant rest channels dropped (blender/glb_pack.py); three.js GLTFLoader reads it natively, no decoder. mouth = snout tip in rest pose. Re-rig: blender -b --factory-startup -P blender/rig_sea.py -- blender/rigs/<name>.json"
 }

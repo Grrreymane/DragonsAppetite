@@ -1,12 +1,12 @@
-// 海底：镜头周围 320×320 米的地形（8×8 块、每块 40 米，环形缓冲：镜头走过一块只重建新进来的那一排）
+// 海底：镜头周围 240×240 米的地形（6×6 块、每块 40 米，环形缓冲：镜头走过一块只重建新进来的那一排；水下的雾 120 米就满了）
 // 颜色按区域：翠岛海沙地 + 海藻林、火山海黑石 + 微弱的暖色热泉、外海蓝灰深沟。焦散按 _lab/shade.js 的 patch() 做法。
 // 只有镜头在水下（或很低，提前建好）时才更新 / 显示。
 import * as THREE from 'three';
 import { seabedY, zoneAt, groundAt } from '../sim/world.js';
 import { GRAD as GRAD0, outlineMat as outline0, toonMat as toon0 } from './toon.js';
 
-const CH = 40, CELL = 5, NC = CH / CELL, NK = 8, VPC = (NC + 1) ** 2, NSLOT = NK * NK;
-const KELP_MAX = 240, ROCK_MAX = 160, VENT_MAX = 24;
+const CH = 40, CELL = 5, NC = CH / CELL, NK = 6, VPC = (NC + 1) ** 2, NSLOT = NK * NK;
+const KELP_MAX = 170, ROCK_MAX = 120, VENT_MAX = 24, CORAL_MAX = 60;
 const mod = (a, n) => ((a % n) + n) % n;
 const hash = (i, j, s) => {
   let h = Math.imul(i | 0, 374761393) ^ Math.imul(j | 0, 668265263) ^ Math.imul(s | 0, 1274126177);
@@ -14,16 +14,16 @@ const hash = (i, j, s) => {
 };
 const C = h => new THREE.Color(h);
 const PAL = {
-  green: [C(0xd8c28c), C(0xc4ae7a)], greenGrass: C(0x8a9a58),
-  volcano: [C(0x3c3438), C(0x4a3f44)], volcanoWarm: C(0x6a3a26),
+  green: [C(0xdccb9c), C(0xcdb98a)], greenGrass: C(0x93a86c),
+  volcano: [C(0x52474b), C(0x5f5357)], volcanoWarm: C(0x74442f),
   open: [C(0x60788e), C(0x52687e)], rock: C(0x6c6a64),
 };
-const ROCK_C = { green: C(0x8a8478), volcano: C(0x2e282c), open: C(0x5a6676) };
+const ROCK_C = { green: C(0x8a8478), volcano: C(0x473d41), open: C(0x4c5868) };
 
-// 远处（105–150 米）强制融进雾色：入水那 0.25 秒雾还没收拢时，也看不到这块海底的边
+// 远处（82–100 米）强制融进雾色：海底只建到镜头前 100 米左右；入水那 0.25 秒雾还没收拢时，也看不到这块海底的边
 const FAR_FADE = `#include <fog_fragment>
 #ifdef USE_FOG
- gl_FragColor.rgb = mix(gl_FragColor.rgb, fogColor, smoothstep(105.0, 150.0, vFogDepth));
+ gl_FragColor.rgb = mix(gl_FragColor.rgb, fogColor, smoothstep(82.0, 100.0, vFogDepth));
 #endif`;
 function farFade(mat, key) {
   const prev = mat.onBeforeCompile;
@@ -90,6 +90,95 @@ function hullNormals(g, cy = 0, ky = 1) {
   const h = g.clone(); h.setAttribute('normal', new THREE.BufferAttribute(n, 3)); return h;
 }
 
+// ---- 石头：一块大石 + 两块小卵石（一次实例画三块，石头的样子多一点，不多绘制）----
+function rockCluster() {
+  const parts = [[1, 0, 0, 0, 1, .8, 1], [.38, 1.05, -.3, .45, 1, .8, 1.1], [.27, -.95, -.38, -.55, 1.1, .7, .9]];
+  const body = [], hull = [];
+  parts.forEach(([r, x, y, z, sx, sy, sz], k) => {
+    const g = new THREE.IcosahedronGeometry(r, 0), p = g.attributes.position;
+    for (let i = 0; i < p.count; i++) {   // 按坐标抖一下（同一个点抖得一样，面不裂）
+      const j = hash(Math.round(p.getX(i) * 100), Math.round(p.getY(i) * 100), Math.round(p.getZ(i) * 100) + k * 7) - .5;
+      p.setXYZ(i, p.getX(i) * sx * (1 + j * .3), p.getY(i) * sy * (1 + j * .25), p.getZ(i) * sz * (1 - j * .2));
+    }
+    const h = hullNormals(g); g.translate(x, y, z); h.translate(x, y, z);
+    body.push(g.index ? g.toNonIndexed() : g); if (k === 0) hull.push(h.index ? h.toNonIndexed() : h);   // 小卵石不描边（省三角面）
+  });
+  const merge = list => { const pos = [], nor = []; for (const g of list) { pos.push(...g.attributes.position.array); nor.push(...g.attributes.normal.array); } const o = new THREE.BufferGeometry(); o.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); o.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3)); return o; };
+  return [merge(body), merge(hull)];
+}
+// ---- 珊瑚：两种小丛（鹿角珊瑚 + 脑珊瑚 / 扇子珊瑚 + 管状海绵），顶点色根部暗、梢头亮，实例颜色定色相 ----
+function prism(r0, r1, h, sides = 4) {   // 去掉盖子的细棱柱，底在原点、朝 +y
+  return new THREE.CylinderGeometry(r1, r0, h, sides, 1, true).translate(0, h / 2, 0);
+}
+// 按位置合并重合的顶点（描边壳要连续的平滑法线）
+function mergeVerts(g) {
+  const src = g.index ? g.toNonIndexed() : g, p = src.attributes.position, map = new Map(), pos = [], idx = [];
+  for (let i = 0; i < p.count; i++) {
+    const k = Math.round(p.getX(i) * 1e4) + ',' + Math.round(p.getY(i) * 1e4) + ',' + Math.round(p.getZ(i) * 1e4);
+    let v = map.get(k); if (v === undefined) { v = pos.length / 3; map.set(k, v); pos.push(p.getX(i), p.getY(i), p.getZ(i)); } idx.push(v);
+  }
+  const o = new THREE.BufferGeometry(); o.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); o.setIndex(idx); return o;
+}
+// 扇子珊瑚：薄薄的一片（正反两面各一圈三角形，中间微微鼓起），边缘有起伏；底在原点，朝 +y，半径 r
+function fanGeo(r, seed) {
+  const pos = [0, r * .55, r * .05, 0, r * .55, -r * .05], idx = [], M = 11;
+  for (let i = 0; i <= M; i++) {
+    const a = -.25 + i / M * (Math.PI + .5), rr = r * (.86 + .14 * hash(i, seed, 5));
+    pos.push(Math.cos(a) * rr, r * .55 + Math.sin(a) * rr * .9, 0);
+  }
+  pos.push(0, 0, 0);                    // 底下的柄
+  for (let i = 0; i < M + 2; i++) { const a = 2 + i, b = i === M + 1 ? 2 : 3 + i; idx.push(0, a, b, 1, b, a); }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx);
+  return g;
+}
+function coralGeo(kind) {
+  const rnd = i => hash(i, kind * 31 + 5, 77);
+  const parts = [];
+  // 歪一点再挪过去；顶点色按高度从 c0 到 c1（radial：按离中心的距离，扇子边上亮）；noHull：不描边（管口的暗圈）
+  const put = (g, ax, az, x, y, z, c0, c1, { radial = 0, noHull = false } = {}) => {
+    if (g.attributes.uv) g.deleteAttribute('uv');
+    const pre = g.index ? g.toNonIndexed() : g, p = pre.attributes.position, col = [];
+    pre.computeBoundingBox(); const y0 = pre.boundingBox.min.y, y1 = pre.boundingBox.max.y;
+    for (let i = 0; i < p.count; i++) {
+      const t = radial ? Math.min(1, Math.hypot(p.getX(i), p.getY(i) - radial) / radial) : (p.getY(i) - y0) / Math.max(1e-3, y1 - y0);
+      const v = c0 + (c1 - c0) * t; col.push(v, v, v);
+    }
+    pre.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+    pre.rotateX(ax); pre.rotateZ(az); pre.translate(x, y, z);
+    pre.userData.noHull = noHull; parts.push(pre);
+  };
+  if (kind === 0) {
+    for (let i = 0; i < 5; i++) {      // 鹿角：5 根主枝往外歪，隔一根分个叉
+      const a = i / 5 * 6.28 + rnd(i) * .8, tilt = .35 + rnd(i + 9) * .4, h = .9 + rnd(i + 20) * .7;
+      put(prism(.13, .05, h, 4), Math.sin(a) * tilt, -Math.cos(a) * tilt, Math.cos(a) * .15, 0, Math.sin(a) * .15, .55, 1);
+      if (i % 2 === 0) put(prism(.07, .03, h * .5, 4), Math.sin(a + 1) * (tilt + .5), -Math.cos(a + 1) * (tilt + .5), Math.cos(a) * h * .3, h * .5, Math.sin(a) * h * .3, .8, 1);
+    }
+    put(new THREE.IcosahedronGeometry(.42, 0).scale(1, .6, 1), 0, 0, .55, .12, -.45, .7, 1);   // 旁边一块脑珊瑚
+  } else {
+    for (let i = 0; i < 2; i++)        // 两片扇子：薄薄的圆片，根部暗、边上亮
+      put(fanGeo(.7, i + 1), (rnd(i) - .5) * .4, (rnd(i + 3) - .5) * .5 + (i ? .5 : -.4), i ? .3 : -.25, 0, i ? -.2 : .15, .5, 1.05, { radial: .7 * .55 });
+    for (let i = 0; i < 3; i++) {      // 三根管子：开口朝上，管口里面是暗的
+      const a = i * 2.1 + .5, h = .5 + rnd(i + 7) * .6, ax = (rnd(i + 11) - .5) * .3, az = (rnd(i + 13) - .5) * .3, x = Math.cos(a) * .55, z = Math.sin(a) * .55;
+      put(new THREE.CylinderGeometry(.15, .17, h, 6, 1, true).translate(0, h / 2, 0), ax, az, x, 0, z, .62, .98);
+      put(new THREE.CylinderGeometry(.12, .12, .02, 6, 1, false).translate(0, h - .05, 0), ax, az, x, 0, z, .18, .18, { noHull: true });
+    }
+  }
+  const pos = [], col = [], hp = [], hn = [];
+  for (const g of parts) {
+    pos.push(...g.attributes.position.array); col.push(...g.attributes.color.array);
+    if (g.userData.noHull) continue;
+    const m = mergeVerts(g); m.computeVertexNormals(); const n = m.toNonIndexed();
+    hp.push(...n.attributes.position.array); hn.push(...n.attributes.normal.array);
+  }
+  const out = new THREE.BufferGeometry();
+  out.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); out.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  out.computeVertexNormals();
+  const hull = new THREE.BufferGeometry();
+  hull.setAttribute('position', new THREE.Float32BufferAttribute(hp, 3)); hull.setAttribute('normal', new THREE.Float32BufferAttribute(hn, 3));
+  return [out, hull];
+}
+const CORAL_C = { green: [C(0xff7a66), C(0xffa040), C(0xb47cf0), C(0xffd050), C(0xff6aa0)], volcano: [C(0xe0452e), C(0xf07a22), C(0x9a4ad8)] };
+
 export function createSeabed(ctx) {
   const GRAD = ctx.GRAD || GRAD0, outlineMat = ctx.outlineMat || outline0;
   const toonMat0 = ctx.toonMat || toon0;
@@ -130,19 +219,21 @@ export function createSeabed(ctx) {
   farFade(kelpMat, 'kelp');
   const kelpHull = outlineMat(0x0b2a2c, .07, { extraPars: 'uniform float uKT;', extraVertex: KELP_V, key: 'kelp' });
   kelpHull.userData.extraUniforms = { uKT };
-  const inst = (g, mat, hullG, hullMat, max) => {
+  const inst = (g, mat, hullG, hullMat, max, name = '') => {
     const m = new THREE.InstancedMesh(g, mat, max), h = new THREE.InstancedMesh(hullG, hullMat, max);
+    m.name = name; h.name = name + 'Hull';
     h.instanceMatrix = m.instanceMatrix; m.count = h.count = 0;
     m.frustumCulled = h.frustumCulled = false; m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     const w = new THREE.Color(1, 1, 1); for (let i = 0; i < max; i++) m.setColorAt(i, w);
     group.add(m, h); return [m, h];
   };
   const kg = kelpGeo();
-  const [kelp, kelpH] = inst(kg, kelpMat, kg, kelpHull, KELP_MAX);
-  const rg = new THREE.IcosahedronGeometry(1, 0);
-  const [rock, rockH] = inst(rg, farFade(toonMat({ flatShading: true, color: 0xffffff }), 'rock'), hullNormals(rg), outlineMat(0x101c24, .07, { key: 'rock' }), ROCK_MAX);
+  const [kelp, kelpH] = inst(kg, kelpMat, kg, kelpHull, KELP_MAX, 'kelp');
+  const [rg, rgH] = rockCluster();
+  const [rock, rockH] = inst(rg, farFade(toonMat({ flatShading: true, color: 0xffffff }), 'rock'), rgH, outlineMat(0x101c24, .07, { key: 'rock' }), ROCK_MAX, 'rock');
+  const corals = [0, 1].map(k => { const [g, h] = coralGeo(k); return inst(g, farFade(toonMat({ vertexColors: true, flatShading: true }), 'coral' + k), h, outlineMat(0x2a1420, .045, { key: 'coral' + k }), CORAL_MAX, 'coral' + k); });
     const cg = new THREE.CylinderGeometry(.45, 1.5, 1, 7, 1, true).translate(0, .5, 0);
-  const [vent, ventH] = inst(cg, farFade(toonMat({ flatShading: true, color: 0x2a2226 }), 'vent'), hullNormals(cg, .5, .3), outlineMat(0x120a0a, .08, { key: 'vent' }), VENT_MAX);
+  const [vent, ventH] = inst(cg, farFade(toonMat({ flatShading: true, color: 0x2a2226 }), 'vent'), hullNormals(cg, .5, .3), outlineMat(0x120a0a, .08, { key: 'vent' }), VENT_MAX, 'vent');
     const capMat = new THREE.MeshBasicMaterial({ color: 0xff7a30, fog: true });
   const cap = new THREE.InstancedMesh(new THREE.SphereGeometry(1, 8, 5), capMat, VENT_MAX); cap.count = 0; cap.frustumCulled = false; group.add(cap);
 
@@ -213,8 +304,17 @@ export function createSeabed(ctx) {
         kelps.push({ x, y: y - .3, z, h, s: .8 + hash(ci, cj, 500 + k * 16 + m) * .7, t: hash(ci, cj, 600 + k * 16 + m) });
       }
     }
+    // 珊瑚：翠岛海和火山海、水深 6~42 米的地方，一块里 0~2 丛
+    const cors = [];
+    const nc = zc === 'open' ? 0 : Math.floor(hash(ci, cj, 13) * (zc === 'green' ? 3.2 : 1.8));
+    for (let k = 0; k < nc; k++) {
+      const x = x0 + 3 + hash(ci, cj, 700 + k) * (CH - 6), z = z0 + 3 + hash(ci, cj, 720 + k) * (CH - 6), y = seabedY(x, z), zn = zoneAt(x, z);
+      if (y > -6 || y < -42 || zn === 'open') continue;
+      const pal = CORAL_C[zn], sc = 1.5 + hash(ci, cj, 740 + k) * 1.6;
+      cors.push({ x, y: y - .15, z, s: sc, a: hash(ci, cj, 760 + k) * 6.28, v: hash(ci, cj, 780 + k) < .55 ? 0 : 1, c: pal[Math.floor(hash(ci, cj, 800 + k) * pal.length)] });
+    }
     const vt = ventOf(ci, cj);
-    slots[slot] = { ci, cj, rocks, kelps, vent: vt };
+    slots[slot] = { ci, cj, rocks, kelps, corals: cors, vent: vt };
   }
 
   // ---- 实例：按离镜头的距离挑（海藻描边只画最近的一批，省三角面）----
@@ -226,7 +326,7 @@ export function createSeabed(ctx) {
     instAt = { x: cam.x, z: cam.z };
     const near = (o, r) => { const d = (o.x - cam.x) ** 2 + (o.z - cam.z) ** 2; return d < r * r ? d : -1; };
     list.length = 0;
-    for (const s of slots) if (s) for (const k of s.kelps) { const d = near(k, 125); if (d >= 0) list.push([d, k]); }
+    for (const s of slots) if (s) for (const k of s.kelps) { const d = near(k, 92); if (d >= 0) list.push([d, k]); }
     list.sort((a, b) => a[0] - b[0]);
     let n = 0;
     for (const [, k] of list) {
@@ -234,14 +334,27 @@ export function createSeabed(ctx) {
       _m.compose(_p.set(k.x, k.y, k.z), _q.identity(), _s.set(k.s, k.h, k.s)); kelp.setMatrixAt(n, _m);
       kelp.setColorAt(n, _kc.copy(KC0).lerp(KC1, k.t)); n++;
     }
-    kelp.count = n; kelpH.count = Math.min(n, 90);
+    kelp.count = n; kelpH.count = Math.min(n, 40);   // 描边只给最近的 40 棵
     n = 0;
     for (const s of slots) if (s) for (const r of s.rocks) {
-      if (n >= ROCK_MAX || near(r, 150) < 0) continue;
+      if (n >= ROCK_MAX || near(r, 110) < 0) continue;
       _q.setFromEuler(_e.set(r.a, r.b, r.a * .5));
       _m.compose(_p.set(r.x, r.y, r.z), _q, _s.set(r.s, r.sy, r.s * .85)); rock.setMatrixAt(n, _m); rock.setColorAt(n, r.c); n++;
     }
     rock.count = rockH.count = n;
+    for (let v = 0; v < 2; v++) {   // 珊瑚按远近排好，描边只给 45 米以内的
+      const [cm, ch] = corals[v]; n = 0; list.length = 0;
+      for (const s of slots) if (s) for (const c of s.corals) { const d = c.v === v ? near(c, 100) : -1; if (d >= 0) list.push([d, c]); }
+      list.sort((a, b) => a[0] - b[0]);
+      let nh = 0;
+      for (const [d, c] of list) {
+        if (n >= CORAL_MAX) break;
+        _q.setFromEuler(_e.set(0, c.a, 0));
+        _m.compose(_p.set(c.x, c.y, c.z), _q, _s.set(c.s, c.s, c.s)); cm.setMatrixAt(n, _m); cm.setColorAt(n, c.c); n++;
+        if (d < 45 * 45) nh = n;
+      }
+      cm.count = n; ch.count = nh; cm.instanceMatrix.needsUpdate = true; if (cm.instanceColor) cm.instanceColor.needsUpdate = true;
+    }
     n = 0;
     for (const s of slots) if (s && s.vent && n < VENT_MAX) {
       const v = s.vent;
@@ -258,7 +371,7 @@ export function createSeabed(ctx) {
   return {
     group,
     get ready() { return built >= NSLOT; },
-    setQuality(q) { kelpH.visible = rockH.visible = ventH.visible = q >= 1; },
+    setQuality(q) { kelpH.visible = rockH.visible = ventH.visible = corals[0][1].visible = corals[1][1].visible = q >= 1; },
     update(S, cam, wt, k, under, uwC, dt) {
       uT.value = wt; uKT.value = wt; uTint.value.copy(uwC);
       capMat.color.setRGB(1, .45 + .08 * Math.sin(wt * 1.5), .18);

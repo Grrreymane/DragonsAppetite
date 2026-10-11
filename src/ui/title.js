@@ -3,7 +3,7 @@ import { SPECIES_IDS } from '../config/species.js';
 import { icon, DRAGON_ART } from './icons.js';
 import { h, button, setIcon, blocker, show } from './dom.js';
 
-// 卡通背景：天、太阳、云、岛、海（加载页和标题页共用）
+// 卡通背景：天、太阳、云、岛、海（加载页和标题页共用）。上面再盖一张 AI 画的背景（img/ui/title_bg.webp），图没加载出来就看到这张 SVG
 export const BACKDROP = `<svg class="d-bg" viewBox="0 0 360 640" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
 <defs>
   <linearGradient id="dgSky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#5f9fd8"/><stop offset=".55" stop-color="#a9d3ef"/><stop offset="1" stop-color="#e4f2f6"/></linearGradient>
@@ -31,30 +31,45 @@ export const BACKDROP = `<svg class="d-bg" viewBox="0 0 360 640" preserveAspectR
 <rect y="394" width="360" height="4" fill="#e8fbff" opacity=".7"/>
 </svg>`;
 
-const IMG = { fire: new URL('../../img/card_fire.webp', import.meta.url).href, sea: new URL('../../img/card_sea.webp', import.meta.url).href };
+// 标题字（AI 画的「小龙大胃王」，透明底）；加载失败就用庆科黄油体的字顶上
+const LOGO = new URL('../../img/ui/logo.webp', import.meta.url).href;
+export function logoHTML(cls = '') {
+  return `<h1 class="d-logo ${cls}"><img class="d-limg" src="${LOGO}" alt="小龙大胃王" draggable="false" onerror="this.parentNode.classList.add('noimg')">` +
+    `<span class="d-ltx"><span>小龙</span><span>大胃王</span></span><small class="d-sub">Dragon's Appetite</small></h1>`;
+}
+const BG = `${BACKDROP}<div class="d-bgimg"></div>`;
+
+// 龙卡插画：先用 AI 照概念设定画的（img/ui/card_*.webp，透明底，整张铺满卡片、翅膀出血到卡边）；
+// 没有就用 3D 模型渲的小图（img/card_*.webp，放大提亮一点）；再没有就是 SVG 剪影
+const IMG = { fire: new URL('../../img/ui/card_fire.webp', import.meta.url).href, sea: new URL('../../img/ui/card_sea.webp', import.meta.url).href };
+const IMG_OLD = { fire: new URL('../../img/card_fire.webp', import.meta.url).href, sea: new URL('../../img/card_sea.webp', import.meta.url).href };
 
 export function createTitle(root, api) {
   const el = blocker(h('div', 'd-title d-full'));
   el.hidden = true;
-  el.innerHTML = `${BACKDROP}<div class="d-tin">
-    <h1 class="d-logo"><span>小龙</span><span>大胃王</span></h1>
+  el.innerHTML = `${BG}<div class="d-tin">
+    ${logoHTML()}
     <div class="d-cards"></div>
     <div class="d-tbot"></div>
   </div>`;
   const cards = el.querySelector('.d-cards'), bot = el.querySelector('.d-tbot');
-  const mk = (kind, name, ic) => {
-    const c = h('div', 'd-card ' + kind, `<div class="d-cart">${DRAGON_ART[kind]}</div><div class="d-cname">${icon(ic)}<span>${name}</span></div>`);
+  const mk = (kind, name) => {
+    const c = h('div', 'd-card ' + kind, `<div class="d-cart">${DRAGON_ART[kind]}</div><div class="d-cname">${icon('head_' + kind + '2')}<span>${name}</span></div>`);
     const art = c.firstChild, img = new Image();
     img.className = 'd-cimg'; img.alt = ''; img.draggable = false;
-    img.onload = () => { art.appendChild(img); c.classList.add('img'); };
-    img.src = IMG[kind];   // 没有图（404）就保留剪影
-    const w = h('div', 'd-cwrap'); w.append(c, h('div', 'd-dots', '<i></i><i></i><i></i>'));
+    img.onload = () => {
+      if (img._old) { art.appendChild(img); c.classList.add('img'); }
+      else { c.insertBefore(img, c.querySelector('.d-cname')); c.classList.add('paint'); }
+    };
+    img.onerror = () => { if (img._old) return; img._old = true; img.className = 'd-cimg old'; img.src = IMG_OLD[kind]; };   // 再没有就保留剪影
+    img.src = IMG[kind];
+    const w = h('div', 'd-cwrap'); w.append(c, h('div', 'd-dots', [0, 1, 2].map(i => `<i>${icon(`head_${kind}${i}`)}</i>`).join('')));
     tapCard(c, () => api.onPick && api.onPick(kind));
     cards.appendChild(w); return w;
   };
-  const wf = mk('fire', '火龙', 'fire'), ws = mk('sea', '海龙', 'wave');
+  const wf = mk('fire', '火龙'), ws = mk('sea', '海龙');
   let pick = 'fire';
-  const bStart = button('play', '开始', 'd-big', () => api.onPick && api.onPick(pick));
+  const bStart = button('playw', '开始', 'd-big', () => api.onPick && api.onPick(pick));
   const bCodex = button('book', '图鉴', 'd-btn d-tcodex', () => api.onCodex && api.onCodex());
   bCodex.insertAdjacentHTML('beforeend', '<b class="d-cnt">0/12</b>');
   const bSound = button('sound', '声音', 'd-sbtn d-sound', () => api.onToggleMute && api.onToggleMute());
@@ -99,7 +114,7 @@ function tapCard(c, fn) {
 export function createLoading(root) {
   const el = blocker(h('div', 'd-load d-full'));
   el.hidden = true;
-  el.innerHTML = `${BACKDROP}<div class="d-lin"><h1 class="d-logo sm"><span>小龙</span><span>大胃王</span></h1>
+  el.innerHTML = `${BG}<div class="d-lin">${logoHTML('sm')}
     <div class="d-lbar"><u></u></div><div class="d-ltxt">加载中</div><div class="d-lslow" hidden><span>网络慢</span></div></div>`;
   const bar = el.querySelector('.d-lbar u'), txt = el.querySelector('.d-ltxt'), slow = el.querySelector('.d-lslow');
   slow.appendChild(button('retry', '重试', 'd-btn', () => location.reload()));

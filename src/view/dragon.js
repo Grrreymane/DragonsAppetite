@@ -34,7 +34,7 @@ export const hasModel = name => fetch(new URL(`models/${name}.json`, BASE), { me
 export function createDragonView({ scene }) {
   const root = new THREE.Group(); scene.add(root);
   const D = { root, model: null, mixer: null, act: {}, bones: {}, man: null, kind: 'fire', scale: 1, saved: new Map(), boneScale: null,
-    toonMats: [], hulls: [], glow: { value: 0 }, flash: { value: 0 }, bite: 0, gulp: 0, name: null };
+    toonMats: [], hulls: [], glow: { value: 0 }, flash: { value: 0 }, rim: { value: 0 }, bite: 0, gulp: 0, roar: 0, name: null };
   const _q = new THREE.Quaternion(), _q2 = new THREE.Quaternion(), _ax = V(), U = V(), F = V(), Lf = V();
 
   D.build = (loaded, desiredLen, boneScale) => {
@@ -43,7 +43,9 @@ export function createDragonView({ scene }) {
     // 同一个 glb 可能被两个阶段共用（顶替时），所以每次克隆骨骼网格
     const model = cloneSkinned(gltf.scene);
     D.man = man; D.kind = man.kind || 'fire'; D.name = name;
-    const s = desiredLen / (man.length || 1); D.scale = s;
+    const s = desiredLen / (man.length || 1); D.scale = s; D.buildLen = desiredLen;
+    // 嘴在体长方向上的位置（相对身体中心，按体长算）：sim 用它判定吃东西，和看得见的嘴对上
+    D.mouthK = man.mouth && man.pivot ? Math.max(.25, Math.min(.6, (man.mouth[0] - man.pivot[0]) / (man.length || 1))) : .47;
     model.rotation.y = -Math.PI / 2; model.scale.setScalar(s);
     const pv = man.pivot || [0, 0, 0];
     model.position.set(-pv[1] * s, -pv[2] * s, -pv[0] * s);
@@ -52,14 +54,17 @@ export function createDragonView({ scene }) {
     model.traverse(o => { if (o.isMesh) { o.frustumCulled = false; if (o.isSkinnedMesh) skinned.push(o); } if (o.isBone) D.bones[o.name] = o; });
     for (const o of skinned) {
       const std = o.material;
-      const toon = new THREE.MeshToonMaterial({ map: std.map, gradientMap: GRAD, color: 0xffffff });
+      const toon = new THREE.MeshToonMaterial({ map: std.map, gradientMap: GRAD, color: 0xffffff, side: std.side });   // 翼膜 / 鳍是单片，跟原材质一样双面
       toon.onBeforeCompile = sh => {
-        sh.uniforms.uGlow = D.glow; sh.uniforms.uFlash = D.flash;
-        sh.fragmentShader = 'uniform float uGlow; uniform float uFlash;\n' + sh.fragmentShader.replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+        sh.uniforms.uGlow = D.glow; sh.uniforms.uFlash = D.flash; sh.uniforms.uRim = D.rim;
+        sh.fragmentShader = 'uniform float uGlow; uniform float uFlash; uniform float uRim;\n' + sh.fragmentShader.replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
           { vec3 tc = diffuseColor.rgb; float mx = max(tc.r, max(tc.g, tc.b)), mn = min(tc.r, min(tc.g, tc.b));
             float sat = (mx - mn) / max(mx, 1e-3);
             float cyan = smoothstep(.35, .6, sat) * smoothstep(.05, .2, tc.g - tc.r) * smoothstep(-.05, .08, tc.b - tc.g * .8) * smoothstep(.25, .45, mx);
-            totalEmissiveRadiance += tc * cyan * uGlow * 1.6 + vec3(uFlash); }`);
+            totalEmissiveRadiance += tc * cyan * uGlow * 1.6 + vec3(uFlash);
+            // 进化时的金色轮廓光（只亮边缘，不把整条龙刷白）
+            float rimF = pow(1.0 - abs(dot(normalize(normal), normalize(vViewPosition))), 2.2);
+            totalEmissiveRadiance += vec3(1.0, .72, .28) * uRim * (rimF * .9 + .04); }`);
       };
       toon.customProgramCacheKey = () => 'heroToon';
       o.material = toon; D.toonMats.push(toon);
@@ -101,16 +106,20 @@ export function createDragonView({ scene }) {
     root.rotation.set(-h.pitch, h.yaw, h.bank, 'YXZ');
     // 吞下去时身体鼓一下（3%，0.15 秒）
     D.gulp = Math.max(0, D.gulp - dt);
-    root.scale.setScalar(1 + .03 * Math.sin(Math.PI * Math.min(1, D.gulp / .15)) * (D.gulp > 0 ? 1 : 0));
+    // 体型跟着体长走（阶段内每吃一口大一点）；吞下去时鼓一下
+    root.scale.setScalar((h.len / (D.buildLen || h.len)) * (1 + .03 * Math.sin(Math.PI * Math.min(1, D.gulp / .15)) * (D.gulp > 0 ? 1 : 0)));
     const A = D.act;
     if (D.kind === 'fire') {
       if (A.Fly) { A.Fly.setEffectiveWeight(h.flyW); A.Fly.setEffectiveTimeScale(h.climbing ? 1.35 : 1); }
       if (A.Glide) A.Glide.setEffectiveWeight(1 - h.flyW);
     } else {
-      const air = h.medium === 'air', dash = h.dashT > 0 ? 1 : 0, surf = h.surf || 0;
-      const wDash = air ? 0 : dash, wGlide = air ? 1 : surf * .5 * (1 - dash), wSwim = Math.max(0, 1 - wDash - wGlide);
-      if (A.Swim) { A.Swim.setEffectiveWeight(A.Dash ? wSwim : wSwim + wDash); A.Swim.setEffectiveTimeScale(A.Dash ? 1 : 1 + dash); }
-      if (A.Dash) A.Dash.setEffectiveWeight(wDash);
+      // 跃出时播 Breach（没有就用 Glide）；游泳动作的速度跟游速走（身上的波和前进速度对得上）
+      const air = h.medium === 'air', dash = h.dashT > 0 ? 1 : 0, surf = h.surf || 0, br = air && A.Breach ? 1 : 0;
+      const wDash = air ? 0 : dash, wGlide = air ? 1 - br : surf * .5 * (1 - dash), wSwim = Math.max(0, 1 - wDash - wGlide - br);
+      const sp = Math.max(.6, Math.min(2.2, h.speed / (S.cfg.cruise || 20)));
+      if (A.Swim) { A.Swim.setEffectiveWeight(A.Dash ? wSwim : wSwim + wDash); A.Swim.setEffectiveTimeScale(sp * (A.Dash ? 1 : 1 + dash * .6)); }
+      if (A.Dash) { A.Dash.setEffectiveWeight(wDash); A.Dash.setEffectiveTimeScale(Math.max(1, sp * .8)); }
+      if (A.Breach) A.Breach.setEffectiveWeight(br);
       if (A.Glide) A.Glide.setEffectiveWeight(wGlide); else if (A.Swim) A.Swim.setEffectiveWeight(1);
       if (!A.Swim && A.Idle) A.Idle.setEffectiveWeight(1);
     }
@@ -124,6 +133,10 @@ export function createDragonView({ scene }) {
     const nk = D.kind === 'fire' ? .16 : .22;
     for (const n of neck) { rotWorld(n, U, turn * nk); rotWorld(n, Lf, -h.pitch * .18 * (D.kind === 'fire' ? 1 : .5)); }
     for (let i = 0; i < tail.length; i++) rotWorld(tail[i], U, -turn * (D.kind === 'fire' ? .05 : .07));
+    // 海龙转弯时身体弯成 C 形
+    if (man.spineBones) for (const n of man.spineBones) rotWorld(n, U, turn * .05);
+    // 龙吼：抬头张嘴吼 0.9 秒
+    if (D.roar > 0) { D.roar = Math.max(0, D.roar - dt); const k = Math.sin(Math.PI * Math.min(1, (.9 - D.roar) / .9)); for (const n of neck) rotWorld(n, Lf, -.28 * k); }
     // 咬：点头（0.08 秒低头、0.12 秒抬回）
     if (D.bite > 0) { D.bite = Math.max(0, D.bite - dt); const k = D.bite > .12 ? (.2 - D.bite) / .08 : D.bite / .12; rotWorld(man.headBone || 'head', Lf, .3 * k); }
     if (D.kind === 'fire' && h.tuck > .01 && man.wingBones) {

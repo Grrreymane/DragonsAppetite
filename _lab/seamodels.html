@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>海龙模型对比</title>
+<style>
+html,body{margin:0;height:100%;background:#123;overflow:hidden;font-family:system-ui,sans-serif}
+canvas{display:block}
+#lab{position:fixed;left:0;top:0;pointer-events:none;width:100%;height:100%}
+.lb{position:absolute;color:#fff;font:600 12px/1.2 system-ui;background:rgba(0,0,0,.45);padding:2px 5px;border-radius:4px}
+</style>
+<script type="importmap">{ "imports": { "three": "../lib/three.module.min.js" } }</script>
+</head>
+<body>
+<div id="lab"></div>
+<script type="module">
+// 海龙主角模型对比页（seamodels 模块自查用）：按「模型 × 视角 × 时间」排格子，用游戏里的卡通材质 + 描边（src/view/dragon.js）
+//   ?m=sea_baby,sea_teen,sea_adult       模型清单名（models/<名>.json）
+//   &v=chase,side,top,front34,under,back34  视角：chase = 游戏水下追尾镜头（和 src/view/camera.js 同一公式）
+//   &act=Swim|Dash|Glide|Breach|Idle    动作；&t=0,0.375 时间（秒，可多个）
+//   &len=5,9,14                          游戏体长（米），默认 config/dragons.js 的值
+//   &cw=270&ch=480                       每格像素；&cols=  列数；&zoom=2 追尾镜头放大
+//   &glow=1                              斑点发光（dragon.js 的 uGlow）
+//   &look=-0.4&dist=0.3                  特写：看点在身体前后方向 look × 体长处（负 = 往尾巴），取景宽约 dist × 体长
+import * as THREE from 'three';
+import { createDragonView, loadModel } from '../src/view/dragon.js';
+const Q = new URLSearchParams(location.search);
+const names = (Q.get('m') || 'sea_baby,sea_teen,sea_adult').split(',');
+const views = (Q.get('v') || 'chase,side,top').split(',');
+const ACT = Q.get('act') || 'Swim';
+const times = (Q.get('t') || '0').split(',').map(Number);
+const LEN = { sea_baby: 5, sea_teen: 9, sea_adult: 14 };
+const lens = Q.get('len') ? Q.get('len').split(',').map(Number) : null;
+const CW = +(Q.get('cw') || 270), CH = +(Q.get('ch') || 480), ZOOM = +(Q.get('zoom') || 1);
+const cells = [];
+for (const nm of names) for (const v of views) for (const t of times) cells.push({ nm, v, t });
+const cols = Math.min(cells.length, +(Q.get('cols') || views.length * times.length));
+const rows = Math.ceil(cells.length / cols);
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+renderer.setPixelRatio(1); renderer.setSize(cols * CW, rows * CH);
+renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.0;
+document.body.prepend(renderer.domElement);
+renderer.setScissorTest(true);
+const scene = new THREE.Scene();
+scene.add(new THREE.HemisphereLight(0xcfeeff, 0x2a5560, 1.0));
+const sun = new THREE.DirectionalLight(0xfff2dc, 2.2); sun.position.set(30, 80, -20); scene.add(sun);
+scene.background = new THREE.Color(0x2e8197);
+const floor = new THREE.Mesh(new THREE.PlaneGeometry(4000, 4000), new THREE.MeshBasicMaterial({ color: 0xc9c09a }));
+floor.rotation.x = -Math.PI / 2; floor.position.y = -40; scene.add(floor);
+scene.fog = new THREE.Fog(0x2e8197, 60, 260);
+const camera = new THREE.PerspectiveCamera(62, CW / CH, .1, 3000);
+const lab = document.getElementById('lab');
+const dragons = {};
+const out = { ready: false, info: {} };
+window.__sm = out;
+for (let i = 0; i < names.length; i++) {
+  const nm = names[i];
+  const loaded = await loadModel(nm);
+  const D = createDragonView({ scene });
+  const len = lens ? lens[i] : (LEN[nm] || 9);
+  D.build(loaded, len, null);
+  if (Q.get('glow')) D.glow.value = +Q.get('glow');
+  if (Q.get('nohull')) for (const h of D.hulls) h.visible = false;          // &nohull=1：不画描边壳（查黑碎片是不是描边壳露出来的）
+  if (Q.get('cull')) for (const m of D.toonMats) m.side = THREE.FrontSide;   // &cull=1：只画正面（查朝向反了的面）
+  dragons[nm] = { D, len };
+  let tris = 0; D.model.traverse(o => { if (o.isSkinnedMesh && o.material.type === 'MeshToonMaterial') tris += o.geometry.index.count / 3; });
+  out.info[nm] = { tris, len, length: loaded.man.length, anims: loaded.gltf.animations.map(a => a.name + ':' + a.duration.toFixed(3)) };
+}
+const h = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, bank: 0, yawRate: 0, flyW: 0, tuck: 0, medium: ACT === 'Breach' ? 'air' : 'water', dashT: ACT === 'Dash' ? .5 : 0, surf: 0, speed: 16, len: 5 };
+const Sfake = { kind: 'sea', cfg: { cruise: 16 } };
+function placeCam(v, len) {
+  const Sz = len / .94, span = 11 * Math.pow(Sz / 11, .6);
+  camera.fov = 62; camera.aspect = CW / CH;
+  const hTan = Math.tan(camera.fov * Math.PI / 360) * Math.min(1, camera.aspect);
+  const dist = span * .46 / hTan + 3 * span / 11;
+  camera.up.set(0, 1, 0);
+  if (v === 'chase') {      // 水下追尾（camera.js：up = dist*.32，看点往下压 span*.15）
+    camera.position.set(0, dist * .32, -dist);
+    camera.fov = 2 * Math.atan(Math.tan(31 * Math.PI / 180) / ZOOM) * 180 / Math.PI;
+    camera.updateProjectionMatrix(); camera.lookAt(0, span * .12 - span * .15, dist * .4);
+  } else {
+    camera.fov = 24; camera.updateProjectionMatrix();
+    const hh = Math.atan(Math.tan(12 * Math.PI / 180) * CW / CH), d = len * .62 / Math.tan(hh);
+    const dir = v === 'side' ? [1, .02, 0] : v === 'top' ? [0.001, 1, -0.02] : v === 'front34' ? [.62, .3, .72] : v === 'under' ? [.35, -.75, .55] : v === 'back34' ? [.6, .35, -.72] : [1, 0, 0];
+    const n = Math.hypot(...dir);
+    // &look=-0.4&dist=0.5：特写（看点在身体前后方向 look × 体长处，相机离看点 dist × 体长）
+    const LOOK = Q.get('look') ? +Q.get('look') * len : 0, DD = Q.get('dist') ? +Q.get('dist') * len / Math.tan(hh) * .9 : d;
+    camera.position.set(dir[0] / n * DD, dir[1] / n * DD, dir[2] / n * DD + LOOK);
+    if (v === 'top') camera.up.set(1, 0, 0); else camera.up.set(0, 1, 0);
+    camera.lookAt(0, 0, LOOK);
+  }
+}
+function render() {
+  lab.innerHTML = '';
+  cells.forEach((c, i) => {
+    const col = i % cols, row = Math.floor(i / cols);
+    for (const k in dragons) dragons[k].D.root.visible = k === c.nm;
+    const { D, len } = dragons[c.nm];
+    for (const a of Object.values(D.act)) a.time = c.t;
+    D.update({ ...h, len }, Sfake, 0, 0);
+    if (ACT === 'Breach' || ACT === 'Idle') {     // dragon.js 还不会混 Breach / Idle：这里直接只放这一段
+      for (const [n, a] of Object.entries(D.act)) { a.setEffectiveWeight(n === ACT ? 1 : 0); a.time = c.t; }
+      D.mixer.update(0);
+    }
+    placeCam(c.v, len);
+    const y = (rows - 1 - row) * CH;
+    renderer.setViewport(col * CW, y, CW, CH); renderer.setScissor(col * CW, y, CW, CH);
+    renderer.render(scene, camera);
+    const d = document.createElement('div'); d.className = 'lb'; d.style.left = col * CW + 4 + 'px'; d.style.top = row * CH + 4 + 'px';
+    d.textContent = `${c.nm.replace('sea_', '')} ${c.v} ${ACT} t${c.t}`; lab.appendChild(d);
+  });
+}
+render();
+out.ready = true; out.render = render;
+</script>
+</body>
+</html>

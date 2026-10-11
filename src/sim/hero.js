@@ -1,4 +1,5 @@
 // 主角的移动：火龙飞行（原型手感原样保留）+ 扎水；海龙游泳 + 冲刺 + 跃出。纯逻辑。
+// v2：as = 捕猎辅助（sim/assist.js）给的转向 / 俯仰偏向；扎水 / 跃出要到少年龙才学会（cfg.canCross）
 import { lerp, clamp, damp } from './rng.js';
 import { waveH, pushOutOfIslands, seabedY, SKY_CAP } from './world.js';
 
@@ -16,7 +17,7 @@ export function makeHero(kind, cfg) {
     invuln: 0, shield: 0, slowT: 0, bumpT: 0,
     surf: 0,                           // 海龙：贴水面巡游程度 0..1
     mouth: { x: 0, y: 0, z: 0 }, fwd: { x: 0, y: 0, z: 1 },
-    stuckT: 0,
+    stuckT: 0, lock: 0, oppose: 0, blockedT: 0, skill: null,
   };
   h.px = h.x; h.py = h.y; h.pz = h.z;
   return h;
@@ -29,20 +30,36 @@ function fwdOf(h) {
 }
 
 // ---------- 火龙 ----------
-export function stepFire(S, inp, dt) {
+// 玩家输入 + 辅助：辅助的权重 w 在玩家没拖或往同一边拖时最大
+function steerYaw(inp, c, as) {
+  let yr = -inp.jx * c.turn;
+  if (as) yr = clamp(yr * (1 - as.w * (1 - Math.abs(inp.jx))) + as.yawRate * as.w, -c.turn * 1.15, c.turn * 1.15);
+  return yr;
+}
+function steerPitch(base, as) { return as ? base * (1 - as.wp) + as.pitch * as.wp : base; }
+function blocked(S, ability) {
+  const h = S.hero;
+  if (h.blockedT > 0) return;
+  h.blockedT = 5; S.events.push({ type: 'blocked', ability });
+}
+
+export function stepFire(S, inp, dt, as) {
   const h = S.hero, c = S.cfg, t = S.t;
   const sea0 = waveH(h.x, h.z, t);
+  h.blockedT = Math.max(0, h.blockedT - dt);
   const turnK = (h.slowT > 0 ? .5 : 1) * (h.medium === 'water' ? .6 : 1);
-  h.yawRate = lerp(h.yawRate, -inp.jx * c.turn * turnK, damp(3.5, dt));
+  h.yawRate = lerp(h.yawRate, steerYaw(inp, c, as) * turnK, damp(3.5, dt));
   h.yaw += h.yawRate * dt;
 
   if (h.medium === 'air') {
-    let pt = -inp.jy * c.pitchK;
+    let pt = steerPitch(-inp.jy * c.pitchK, as);
     // 扎水通道：离海面 12 以内、俯仰 ≤ -0.35、下降速度 ≥ 10 时，这一次不自动拉起
     const vyDown = -Math.sin(h.pitch) * h.speed;
     // 另外：玩家把摇杆用力往下拖（jy > 0.6）就是想扎水，低空也放行；松手 / 轻拖时原型的自动拉起照旧
-    const wantDive = inp.jy > .6;
-    const plunging = h.y < sea0 + 14 && ((h.pitch <= -.3 && vyDown >= 7) || (wantDive && h.pitch < -.1));
+    // 幼龙还没学会扎水（canCross = false）：往下拖也只会贴着海面拉起，并提示「长大后学会」
+    let wantDive = inp.jy > .6 || (as && as.pitch < -.3 && as.wp > .3 && h.lockUnder);
+    if (!c.canCross && wantDive && h.y < sea0 + 14) { blocked(S, 'plunge'); wantDive = false; }
+    const plunging = c.canCross && h.y < sea0 + 14 && ((h.pitch <= -.3 && vyDown >= 7) || (wantDive && h.pitch < -.1));
     if (!plunging && !wantDive && h.y < sea0 + 9 && pt < .2) pt = .35;
     if (h.y > SKY_CAP && pt > 0) pt = -.2;
     if (h.forceFlap > 0 && pt < .1) pt = .15;
@@ -70,7 +87,7 @@ export function stepFire(S, inp, dt) {
     // 水下：转向 60%，速度先降到 60% 再慢慢降；过半自动抬头，时间到强制冲出水面
     h.crossT += dt;
     const late = h.crossT > h.crossMax * .5, over = h.crossT >= h.crossMax;
-    let pt = clamp(-inp.jy * c.pitchK, -.6, .3);
+    let pt = clamp(steerPitch(-inp.jy * c.pitchK, as), -.6, .3);
     if (late) pt = Math.max(pt, .45);
     if (over) pt = .75;
     if (h.y < -c.plungeDepth) pt = Math.max(pt, .5);
@@ -89,7 +106,7 @@ export function stepFire(S, inp, dt) {
     }
   }
   // 扇翅音效：Fly 动作 3 秒扇 3 下 → 每秒一次下扇（权重够大时才发）
-  const ph = Math.floor(t * (h.climbing ? 1.35 : 1));
+  const ph = Math.floor(t * (c.flapHz || 1) * (h.climbing ? 1.35 : 1));   // 幼龙的 Fly 一秒扇 1.33 下
   if (ph !== h.lastFlapPh) { h.lastFlapPh = ph; if (h.flyW > .5 && h.medium === 'air') S.events.push({ type: 'flap' }); }
   // 喷火：按住 / 自动辅助；水下没效果
   if (h.autoFire > 0) h.autoFire -= dt;
@@ -97,17 +114,19 @@ export function stepFire(S, inp, dt) {
 }
 
 // ---------- 海龙 ----------
-export function stepSea(S, inp, dt) {
+export function stepSea(S, inp, dt, as) {
   const h = S.hero, c = S.cfg, t = S.t;
   const sea0 = waveH(h.x, h.z, t);
-  if (inp.actTap && h.dashCd <= 0 && h.medium === 'water') { h.dashT = 1.2; h.dashCd = h.dashCdMax; S.events.push({ type: 'dash' }); }
+  h.blockedT = Math.max(0, h.blockedT - dt);
+  h.dashCdMax = (c.dashT || 1.2) + 2.5;
+  if (inp.actTap && h.dashCd <= 0 && h.medium === 'water') { h.dashT = c.dashT || 1.2; h.dashCd = h.dashCdMax; S.events.push({ type: 'dash' }); }
   h.dashT = Math.max(0, h.dashT - dt); h.dashCd = Math.max(0, h.dashCd - dt);
   const turnK = (h.slowT > 0 ? .5 : 1) * (h.medium === 'air' ? .5 : 1);
-  h.yawRate = lerp(h.yawRate, -inp.jx * c.turn * turnK, damp(3.5, dt));
+  h.yawRate = lerp(h.yawRate, steerYaw(inp, c, as) * turnK, damp(3.5, dt));
   h.yaw += h.yawRate * dt;
 
   if (h.medium === 'water') {
-    let pt = clamp(-inp.jy * c.pitchK, -.9, .9);
+    let pt = clamp(steerPitch(-inp.jy * c.pitchK, as), -.9, .9);
     const floor = Math.max(c.maxDepth, seabedY(h.x, h.z) + 3);
     if (h.y < floor + 4 && pt < 0) pt = lerp(pt, .3, clamp((floor + 4 - h.y) / 4, 0, 1));
     h.pitch = lerp(h.pitch, pt, damp(2.4, dt));
@@ -119,6 +138,10 @@ export function stepSea(S, inp, dt) {
     let vy = f.y * h.speed;
     // 贴水面巡游：靠近水面、上浮不够快时，锁在水面下 0~1.5
     const nearTop = h.y > sea0 - 2.2;
+    // 在水面往上拖（或辅助瞄着水面上的猎物）= 想跃出：学会了就直接蹦出去，不用先潜下去加速
+    const wantBreach = inp.jy < -.55 || (as && as.pitch > .25 && as.wp > .3 && !h.lockUnder);
+    if (nearTop && wantBreach && !c.canCross) blocked(S, 'breach');
+    if (nearTop && wantBreach && c.canCross) vy = Math.max(vy, c.breachVy * (h.dashT > 0 ? 1 : .8));
     if (nearTop && vy < 8) {
       h.surf = lerp(h.surf, 1, damp(4, dt));
       if (vy > 0) vy *= .2;
@@ -131,7 +154,8 @@ export function stepSea(S, inp, dt) {
     if (h.y < floor) h.y = lerp(h.y, floor, damp(4, dt));
     pushOutOfIslands(h, Math.max(2, h.len * .3), dt);
     // 跃出：往上穿过水面且上浮速度 ≥ 8
-    if (h.y >= sea0 - .3 && vy >= 8) {
+    if (h.y >= sea0 - .3 && vy >= 8 && !c.canCross) { h.y = sea0 - .6; vy = 0; blocked(S, 'breach'); }
+    if (h.y >= sea0 - .3 && vy >= 8 && c.canCross) {
       h.medium = 'air'; h.vy = Math.min(vy * 1.15, c.breachVy); h.crossT = 0; h.crossMax = 2 * h.vy / G; h.warned = false;
       h.hs = Math.max(6, h.speed * Math.cos(h.pitch));
       S.events.push({ type: 'exitWater', x: h.x, z: h.z, speed: h.speed });
@@ -158,7 +182,7 @@ export function stepSea(S, inp, dt) {
 }
 
 export function heroMouth(h) {
-  const f = fwdOf(h), k = h.len * .47;
+  const f = fwdOf(h), k = h.len * (h.mouthK || .47);   // mouthK：主程序按模型清单设的嘴的位置
   h.mouth.x = h.x + f.x * k; h.mouth.y = h.y + f.y * k; h.mouth.z = h.z + f.z * k;
   return h.mouth;
 }

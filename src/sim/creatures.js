@@ -87,7 +87,7 @@ function makeSpot(S, x, z) {
   if (seabedY(x, z) > -10 || groundAt(x, z) > -5) return null;
   const spot = { id: ++S.nextId, x, z, r: 6, t: 0, empty: 0 };
   S.spots.push(spot);
-  makeGroup(S, 'sardine', x, -2.2, z, r.int(14, 22), { spot: spot.id, home: { x, y: -2.2, z } });
+  makeGroup(S, 'sardine', x, -2.2, z, r.int(10, 15), { spot: spot.id, home: { x, y: -2.2, z } });
   makeGroup(S, 'gull', x, 14, z, r.int(4, 6), { spot: spot.id, home: { x, y: 13, z } });
   makeGroup(S, 'flyfish', x + r.range(-8, 8), -1, z + r.range(-8, 8), r.int(3, 5), { spot: spot.id, home: { x, y: -1, z } });
   if (r() < .5) makeGroup(S, 'squid', x + r.range(-6, 6), -7, z + r.range(-6, 6), r.int(1, 3), { spot: spot.id, home: { x, y: -7, z } });
@@ -106,7 +106,7 @@ function wants(S) {
     w.push(['manta', zn === 'open' ? 2 : 1, 90, 260, 'water']);
     w.push(['jelly', 1, 40, 120, 'water']);
   } else {
-    w.push(['sardine', 3, 50, 130, 'water']);
+    w.push(['sardine', 2, 55, 130, 'water']);
     w.push(['jelly', 2, 40, 120, 'water']);
     w.push(['squid', 2, 50, 130, 'water']);
     w.push(['turtle', S.stage >= 1 ? 2 : 1, 50, 140, 'water']);
@@ -223,7 +223,10 @@ export function stepCreatures(S, dt) {
     c.edible = d.who.includes(S.kind) && d.tier <= S.cfg.eatTier;
     c.edibleCooked = d.who.includes(S.kind) && d.tier <= S.cfg.cookTier;
     const hx = c.x - h.x, hy = c.y - h.y, hz = c.z - h.z, hd = Math.hypot(hx, hy, hz);
-    const threat = c.edible && hd < 9 + h.len * .8 && h.medium === (d.hab === 'water' ? 'water' : 'air');
+    // 威压（v2：少年龙起有，成龙更大）：半径内能吃的猎物吓呆，不逃、只剩 30% 速度
+    const fearR = S.cfg.fear || 0;
+    c.feared = fearR > 0 && c.edible && hd < fearR + h.len * .5;
+    const threat = !c.feared && c.edible && hd < 9 + h.len * .8 && h.medium === (d.hab === 'water' ? 'water' : 'air');
 
     // 烤熟：往下掉 4 秒；撞晕：翻肚皮 4 秒（都还能吃，多吃一档）
     if (c.roast > 0) {
@@ -238,6 +241,14 @@ export function stepCreatures(S, dt) {
       c.roll = lerp(c.roll, Math.PI, damp(5, dt)); c.flap = .1; c.phase += dt;
       keepWater(c, t);
       if (c.stun <= 0) { c.cooked = 0; c.cookT = 0; }
+      continue;
+    }
+    // 被龙吼吼晕 / 被漩涡卷住：原地打晃（漩涡的吸力在 sim.js 里加）
+    if (c.daze > 0) {
+      c.daze -= dt; c.vx *= .9; c.vy *= .9; c.vz *= .9; move(c, dt);
+      c.roll = Math.sin(t * 7 + c.id) * .45; c.flap = .15; c.phase += dt * 2;
+      if (d.hab === 'air') keepAir(c, 2); else keepWater(c, t, -.4);
+      if (c.daze <= 0) { if (!c.roast && !c.stun) { c.cooked = 0; c.cookT = 0; } c.skillHit = 0; }
       continue;
     }
     c.roll = c.st === 'flip' ? c.roll : lerp(c.roll, 0, damp(3, dt));
@@ -353,6 +364,7 @@ export function stepCreatures(S, dt) {
       }
       case 'patrol': stepPredator(S, c, g, d, hx, hy, hz, hd, dt); break;
     }
+    if (c.feared) { c.x = c.px + (c.x - c.px) * .3; c.y = c.py + (c.y - c.py) * .3; c.z = c.pz + (c.z - c.pz) * .3; c.flee = false; }
   }
   // 删掉回收完的
   for (let i = S.creatures.length - 1; i >= 0; i--) {

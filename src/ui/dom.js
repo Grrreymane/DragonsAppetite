@@ -30,7 +30,8 @@ export function button(ic, label, cls, fn) {
   b.type = 'button';
   return tap(b, fn);
 }
-export const setIcon = (b, ic) => { const s = b.querySelector('svg'); if (s) s.outerHTML = icon(ic); };
+// 换按钮上的图标（外层可能是画图标的 <span class="ic pic">，也可能直接是 SVG）
+export const setIcon = (b, ic) => { const s = b.querySelector('.ic'); if (s) s.outerHTML = icon(ic); };
 
 // 整块遮罩（面板）：按下不往下传，免得主程序出摇杆
 export function blocker(el) {
