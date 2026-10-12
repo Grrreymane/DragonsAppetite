@@ -47,7 +47,7 @@ function setAbilities(S) {
   S.abilities = []; for (let i = 0; i <= S.stage; i++) for (const a of st[i].unlock || []) if (!S.abilities.includes(a)) S.abilities.push(a);
   S.nextAbilities = S.stage < 2 ? [...(st[S.stage + 1].unlock || [])] : [];
   const sk = S.cfg.skill;
-  S.hero.skill = sk ? (S.hero.skill && S.hero.skill.id === sk.id ? S.hero.skill : { id: sk.id, cd: 0, cdMax: sk.cd, t: 0, r: sk.r }) : null;
+  S.hero.skill = sk ? (S.hero.skill && S.hero.skill.id === sk.id ? Object.assign(S.hero.skill, { cd: 0, cdMax: sk.cd, r: sk.r }) : { id: sk.id, cd: 0, cdMax: sk.cd, t: 0, r: sk.r }) : null;
 }
 
 // ---------- 小目标 ----------
@@ -80,6 +80,8 @@ function goalProgress(S, e) {
     g.done = true; S.goalDoneT = 1.2;
     S.events.push({ type: 'goal', idx: S.goalIdx, extra: !!g.extra });
     if (!g.extra) { S.pts += GOAL_REWARD[S.stage]; S.goalIdx++; }
+    // 成龙的三个小目标都做完 = 这条龙「通关」（弹结算卡，之后继续自由玩、补图鉴）
+    if (!g.extra && S.stage === 2 && S.goalIdx >= GOALS[S.kind][2].length) S.events.push({ type: 'complete' });
   }
 }
 // 小目标指向的猎物：能吃（或烤熟后能吃）、离得最近的那只
@@ -161,7 +163,8 @@ function interact(S, dt) {
     if (canEat && targetable(S, c)) {
       const ahead = (dx * f.x + dy * f.y + dz * f.z) / (d || 1);
       const magR = eatR * (h.medium === 'air' && !fire ? 3 : 2.6);
-      if (d < eatR) { eat(S, c, crossNow); continue; }
+      // 嚼一下：两口之间要停一会儿（幼 0.35 / 少 0.2 / 成 0.1 秒），不然一口气吸光整个鱼群
+      if (d < eatR && h.chewT <= 0) { eat(S, c, crossNow); h.chewT = [.35, .2, .1][S.stage]; continue; }
       // 扑咬（v2）：锁定的猎物进了扑咬距离、在前方 50° 以内 → 头往前一探，0.15 秒内吸进嘴里
       const lungeR = eatR * 3 + h.speed * .15;
       if (c.id === h.lock && d < lungeR && ahead > .64) {
@@ -258,6 +261,7 @@ export function step(S, inp) {
   S.events.length = 0; S.slowmo = 1;
   S.t += dt; S.stats.time += dt;
   h.px = h.x; h.py = h.y; h.pz = h.z;
+  h.chewT = Math.max(0, (h.chewT || 0) - dt);
   h.invuln = Math.max(0, h.invuln - dt); h.shield = Math.max(0, h.shield - dt); h.slowT = Math.max(0, h.slowT - dt); h.bumpT = Math.max(0, h.bumpT - dt);
   // 捕猎辅助：锁定 + 转向偏向
   const tgt = updateLock(S, inp, dt);

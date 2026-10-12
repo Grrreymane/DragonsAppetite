@@ -30,6 +30,7 @@ if (kind === 'fire') {
   await play(3);
 }
 D.give(45); await play(5);                                 // 进化到少年龙
+await play(4, t => ({ skillTap: t > .5 && t < .6 }));          // 少年龙的技能
 await play(8);
 D.save[kind].adultShown = 1;                                // 不弹结算卡，录到成龙的技能
 D.give(230); await play(5);                                // 进化到成龙

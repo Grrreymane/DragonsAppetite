@@ -193,6 +193,7 @@ function handleEvents(evs) {
         break;
       }
       case 'goal': saveT = 0; break;
+      case 'complete': if (!save[S.kind].adultShown) resultTimer = 1.6; break;
       case 'codex': break;
       case 'shield': break;
     }
@@ -220,7 +221,6 @@ function stepEvolve(dt) {
   }
   if (evo.t > 2.5) {
     const st = evo.stage; evo = null; dragon.rim.value = 0;
-    if (st === 2 && !save[S.kind].adultShown) resultTimer = 1;
     return 1;
   }
   return evo.t > .3 && evo.t < 1.3 ? .35 : 1;
@@ -334,7 +334,7 @@ function advance(dtReal) {
 function showResult() {
   const sv = save[S.kind]; sv.adultShown = 1; persist();
   state = 'pause'; input.reset();
-  ui.showResult({ kind: S.kind, timeSec: Math.round((sv.playSec || 0)), eaten: totalEaten(), codexN: SPECIES_IDS.filter(id => save.codex[id] && save.codex[id].n).length, codexMax: 12, stageName: STAGE_NAMES[2] }, () => { state = 'play'; last = performance.now(); });
+  ui.showResult({ kind: S.kind, timeSec: Math.round((sv.playSec || 0)), eaten: totalEaten(), codexN: SPECIES_IDS.filter(id => save.codex[id] && save.codex[id].n).length, codexMax: 12, stageName: '大胃王' }, () => { state = 'play'; last = performance.now(); });
 }
 
 // ---------- 尺寸 / 画质 ----------
