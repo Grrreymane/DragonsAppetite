@@ -4,7 +4,7 @@ import { createSim, step, DT, setStage, goalTarget, nearestEdible, cookableNow }
 import { DRAGONS, STAGE_PTS, STAGE_NAMES, ABILITIES } from './config/dragons.js';
 import { SPECIES, SPECIES_IDS } from './config/species.js';
 import { waveH, zoneAt } from './sim/world.js';
-import { GRAD, outlineMat, toonMat } from './view/toon.js';
+import { GRAD, outlineMat, toonMat, setOutlineMode } from './view/toon.js';
 import { createSky } from './view/sky.js';
 import { applyLook } from './view/look.js';
 import { createIslands } from './view/islands.js';
@@ -33,7 +33,8 @@ const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(62, .5, .3, 3000);
 const ctx = { THREE, scene, camera, renderer, GRAD, outlineMat, toonMat };
 const sky = createSky(ctx); ctx.sky = sky.sky;
-applyLook(Q.get('look') || 'cur', { renderer, sky });
+applyLook(Q.get('look') || 'a', { renderer, sky });   // 用户选了 A 明亮卡通
+if (Q.get('outline')) setOutlineMode(Q.get('outline'));
 const isl = createIslands(ctx);
 const clouds = createClouds(ctx);
 const P = createParticles(ctx);

@@ -10,14 +10,24 @@ export const GRAD = (() => {
 // extraVertex：可选的 GLSL，插在外扩之前（生物的扇翅、摆尾要和本体用同一段变形代码）；
 //   里面可以改 transformed（位置）和 oN（法线，默认 = 原始 normal）
 // 注意：MeshBasicMaterial 没开蒙皮时没有 objectNormal，只能用 normal 属性
+// 描边的全局开关（setOutlineMode）：on 一直有 / fade 远处渐渐变细直到没有 / off 全关。所有描边材质共用这个 uniform
+export const OUTLINE = { uOF: { value: new THREE.Vector2(1e5, 2e5) }, mats: [], mode: 'on' };
+export function setOutlineMode(mode) {
+  OUTLINE.mode = mode;
+  OUTLINE.uOF.value.set(mode === 'fade' ? 35 : 1e5, mode === 'fade' ? 110 : 2e5);
+  for (const m of OUTLINE.mats) m.visible = mode !== 'off';
+}
 export function outlineMat(color, w, { extraPars = '', extraVertex = '', key = '' } = {}) {
   const m = new THREE.MeshBasicMaterial({ color, side: THREE.BackSide, fog: true });
   m.userData.uW = { value: w };
+  m.visible = OUTLINE.mode !== 'off'; OUTLINE.mats.push(m);
   m.onBeforeCompile = sh => {
-    sh.uniforms.uW = m.userData.uW;
+    sh.uniforms.uW = m.userData.uW; sh.uniforms.uOF = OUTLINE.uOF;
     Object.assign(sh.uniforms, m.userData.extraUniforms || {});
-    sh.vertexShader = 'uniform float uW;\n' + extraPars + '\n' + sh.vertexShader.replace('#include <begin_vertex>',
-      '#include <begin_vertex>\n vec3 oN = normal;\n' + extraVertex + '\n transformed += normalize(oN) * uW;');
+    sh.vertexShader = 'uniform float uW; uniform vec2 uOF;\n' + extraPars + '\n' + sh.vertexShader.replace('#include <begin_vertex>',
+      '#include <begin_vertex>\n vec3 oN = normal;\n' + extraVertex +
+      '\n vec4 oWP = vec4(transformed, 1.0);\n#ifdef USE_INSTANCING\n oWP = instanceMatrix * oWP;\n#endif\n oWP = modelMatrix * oWP;' +
+      '\n float oK = 1.0 - smoothstep(uOF.x, uOF.y, distance(oWP.xyz, cameraPosition));\n transformed += normalize(oN) * uW * oK;');
   };
   m.customProgramCacheKey = () => 'outline' + key;
   return m;
