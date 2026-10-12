@@ -17,7 +17,7 @@
 <!-- font:end -->
 <style>
 :root{--title-font:"ZCOOL QingKe HuangYou","PingFang SC","Microsoft YaHei",sans-serif;--px-font:"Fusion Pixel","PingFang SC","Microsoft YaHei",sans-serif}
-html,body{margin:0;height:100%;background:#0b0e1c;overflow:hidden;touch-action:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-text-size-adjust:100%;text-size-adjust:100%;font-family:var(--px-font)}
+html,body{margin:0;height:100%;background:#0b0e1c;overflow:hidden;touch-action:none;overscroll-behavior:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-text-size-adjust:100%;text-size-adjust:100%;font-family:var(--px-font)}
 #wrap{position:fixed;top:0;bottom:0;left:50%;transform:translateX(-50%);width:min(100vw,calc(100vh * 9 / 16));overflow:hidden;background:#9cc4e4}
 #wrap>canvas{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none}
 #ui{position:absolute;inset:0;pointer-events:none}
@@ -39,6 +39,17 @@ html,body{margin:0;height:100%;background:#0b0e1c;overflow:hidden;touch-action:n
   <div id="boot"><img src="img/ui/logo.webp" alt="小龙大胃王" style="width:min(78%,360px);filter:drop-shadow(0 4px 0 rgba(28,58,102,.6))" onerror="this.outerHTML='<b>小龙大胃王</b>'"><span id="bootMsg">加载中…</span></div>
   <div id="err"></div>
 </div>
+<script>
+// 防止手机浏览器缩放画面：iOS 不认 user-scalable=no，「一根手指拖摇杆 + 另一根手指点技能」会被当成双指捏合放大；快速连点会被当成双击放大
+(function () {
+  var no = function (e) { e.preventDefault(); };
+  ['gesturestart', 'gesturechange', 'gestureend'].forEach(function (t) { document.addEventListener(t, no, { passive: false }); });
+  document.addEventListener('touchmove', function (e) { if (e.touches.length > 1 || (e.scale && e.scale !== 1)) e.preventDefault(); }, { passive: false });
+  document.addEventListener('dblclick', no, { passive: false });
+  var last = 0;
+  document.addEventListener('touchend', function (e) { var n = Date.now(); if (n - last < 400) e.preventDefault(); last = n; }, { passive: false });
+})();
+</script>
 <script>
 // 报错面板：崩溃时屏幕上显示错误，玩家可以截图发回来；8 秒还没启动也提示
 (function () {
