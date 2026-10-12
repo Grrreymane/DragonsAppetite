@@ -224,6 +224,59 @@ function splitByWater(g, lo, hi) {
   return { air: mk(A), water: mk(W) };
 }
 
+// 贴图「补边」：Tripo 贴图里每块 UV 外面是空白底色，双线性过滤 / mipmap 会把白色混进 UV 边缘，模型上就出现一道道白缝（看起来像碎了）。
+// 加载时按 UV 三角形画出「有用的像素」，再从边缘往外一圈圈把颜色抹到空白里（最多 24 像素），白缝就没了。只在加载时做一次。
+function dilateMap(map, geo) {
+  const img = map.image; if (!img || !img.width) return map;
+  const w = img.width, h = img.height;
+  const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+  const g = cv.getContext('2d', { willReadFrequently: true }); g.drawImage(img, 0, 0);
+  const px = g.getImageData(0, 0, w, h), D = px.data;
+  const mc = document.createElement('canvas'); mc.width = w; mc.height = h;
+  const mg = mc.getContext('2d'); mg.fillStyle = '#fff'; mg.strokeStyle = '#fff'; mg.lineWidth = 1.5; mg.lineJoin = 'round';
+  const uv = geo.getAttribute('uv'), idx = geo.index, n = idx ? idx.count : uv.count;
+  const fy = map.flipY;
+  mg.beginPath();
+  for (let i = 0; i < n; i += 3) {
+    for (let k = 0; k < 3; k++) {
+      const j = idx ? idx.getX(i + k) : i + k, x = uv.getX(j) * w, y = (fy ? 1 - uv.getY(j) : uv.getY(j)) * h;
+      k ? mg.lineTo(x, y) : mg.moveTo(x, y);
+    }
+    mg.closePath();
+  }
+  mg.fill(); mg.stroke();
+  const M = mg.getImageData(0, 0, w, h).data, mask = new Uint8Array(w * h), dist = new Uint8Array(w * h);
+  for (let i = 0; i < w * h; i++) mask[i] = M[i * 4] > 127 ? 1 : 0;
+  // 广度优先：从有用像素的边缘往外扩
+  let q = [];
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const i = y * w + x; if (mask[i]) continue;
+    if ((x > 0 && mask[i - 1]) || (x < w - 1 && mask[i + 1]) || (y > 0 && mask[i - w]) || (y < h - 1 && mask[i + w])) { q.push(i); dist[i] = 1; }
+  }
+  for (let d = 1; d <= 24 && q.length; d++) {
+    const next = [];
+    for (const i of q) {
+      const x = i % w, y = (i / w) | 0; let r = 0, gg = 0, b = 0, c = 0;
+      for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1], [-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+        const X = x + dx, Y = y + dy; if (X < 0 || Y < 0 || X >= w || Y >= h) continue;
+        const j = Y * w + X; if (!mask[j]) continue;
+        r += D[j * 4]; gg += D[j * 4 + 1]; b += D[j * 4 + 2]; c++;
+      }
+      if (c) { D[i * 4] = r / c; D[i * 4 + 1] = gg / c; D[i * 4 + 2] = b / c; D[i * 4 + 3] = 255; }
+    }
+    for (const i of q) mask[i] = 1;
+    for (const i of q) {
+      const x = i % w, y = (i / w) | 0;
+      for (const j of [x > 0 ? i - 1 : -1, x < w - 1 ? i + 1 : -1, y > 0 ? i - w : -1, y < h - 1 ? i + w : -1]) if (j >= 0 && !mask[j] && !dist[j]) { dist[j] = d + 1; next.push(j); }
+    }
+    q = next;
+  }
+  g.putImageData(px, 0, 0);
+  const t = new THREE.CanvasTexture(cv);
+  t.flipY = map.flipY; t.wrapS = map.wrapS; t.wrapT = map.wrapT; t.anisotropy = 4; t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
 // 一个形状的 glb → { lod0..2, lod0a / lod0w …（水上 / 水下的三角形）, map }
 const loader = new GLTFLoader();
 function loadShape(key) {
@@ -242,7 +295,7 @@ function loadShape(key) {
     if (!out.lod1) out.lod1 = out.lod0;
     if (!out.lod2) out.lod2 = out.lod1;
     for (const geo of new Set([out.lod0, out.lod1, out.lod2])) if (!geo.attributes.normal) weldedNormals(geo);
-    if (out.map) { out.map.anisotropy = 4; out.map.colorSpace = THREE.SRGBColorSpace; }
+    if (out.map) { out.map.anisotropy = 4; out.map.colorSpace = THREE.SRGBColorSpace; try { out.map = dilateMap(out.map, out.lod0); } catch (e) { console.warn('贴图补边失败', e && e.message); } }
     // 海面不透明：镜头在水上时只画碰得到水面以上的三角形（a），在水下时只画水面以下的（w）——共用顶点，只换索引
     const sy = Math.min(...islands.filter(is => is.shape === key).map(is => is.sy), 1e9), th = Math.min(.25, 3 / Math.max(1, sy));
     for (const L of ['lod0', 'lod1', 'lod2']) { const s = splitByWater(out[L], th, th); out[L + 'a'] = s.air; out[L + 'w'] = s.water; }
@@ -333,7 +386,7 @@ export function createIslands({ scene }) {
       if (!s) { procedural(o); continue; }
       o.shape = s; o.fine = true;
       o.U = { uK: o.uK, uCut: { value: s.d.cut ?? -.08 }, uWet: { value: V(...(WET[is.kind] || WET.spire)) }, uCrater: { value: V(0, -1e4, 0) }, uLava: { value: new THREE.Vector2(...(LAVA_T[key] || [.1, .38])) }, uVeins: { value: VEINS[key] || 0 } };
-      o.matA = bodyMat(s.map, is.kind, o.U, THREE.FrontSide);
+      o.matA = bodyMat(s.map, is.kind, o.U, THREE.DoubleSide);   // 双面：Tripo 网格有细缝，去掉描边壳后会透出天空；背面补上缝
       o.matW = bodyMat(s.map, is.kind, o.U, THREE.DoubleSide);
       o.body = new THREE.Mesh(s.lod0a, o.matA);
       o.hull = new THREE.Mesh(s.lod0a, o.hm = hullMat(is.kind, o.uK));

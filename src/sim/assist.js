@@ -40,7 +40,7 @@ export function updateLock(S, inp, dt) {
     return { d, cos: (dx * f.x + dy * f.y + dz * f.z) / d };
   };
   // 玩家用力往反方向拖：0.3 秒后放弃这只
-  if (cur && h.oppose > .3) { h.lock = 0; h.lockCd = .6; }
+  if (cur && h.oppose > .45) { h.lock = 0; h.lockCd = .6; }
   else if (cur && lockable(S, cur)) {
     const a = angTo(cur);
     if (a.d < A.range * 1.35 && a.cos > Math.cos(A.cone * 1.5 * D2R)) return cur;
@@ -67,15 +67,15 @@ export function assistSteer(S, inp, tgt) {
   const dx = tgt.x - h.x, dy = tgt.y - h.y, dz = tgt.z - h.z, dh = Math.hypot(dx, dz) || 1;
   const yawErr = wrapAngle(Math.atan2(dx, dz) - h.yaw);
   const turn = S.cfg.turn;
-  const yawRate = clamp(yawErr * 2.6, -turn, turn);
+  const yawRate = clamp(yawErr * 4, -turn * 1.4, turn * 1.4);   // v2.1：用户要更强的瞄准辅助
   const pitch = clamp(Math.atan2(dy, dh), -.75, .65);
   // 玩家的意图：摇杆往反方向用力 → 计时，超过 0.3 秒就放弃锁定
   const playerYaw = -inp.jx * turn;
-  const opp = Math.abs(inp.jx) > .45 && Math.sign(playerYaw) !== Math.sign(yawRate) && Math.abs(yawErr) > .1;
+  const opp = Math.abs(inp.jx) > .6 && Math.sign(playerYaw) !== Math.sign(yawRate) && Math.abs(yawErr) > .1;
   h.oppose = opp ? (h.oppose || 0) + 1 / 60 : 0;
   // 越靠近越用力（最后几米基本自动对准）
   const d = Math.hypot(dx, dy, dz), near = clamp(1 - d / S.cfg.assist.range, 0, 1);
-  const w = opp ? 0 : clamp(.55 + near * .45, 0, 1) * (1 - Math.min(.6, Math.abs(inp.jx) * .6));
+  const w = opp ? 0 : clamp(.8 + near * .2, 0, 1) * (1 - Math.min(.35, Math.abs(inp.jx) * .35));
   const wp = Math.abs(inp.jy) > .5 && Math.sign(-inp.jy) !== Math.sign(pitch) ? 0 : w;
   return { yawRate, pitch, w, wp };
 }

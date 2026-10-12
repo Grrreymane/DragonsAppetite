@@ -33,7 +33,7 @@ function fwdOf(h) {
 // 玩家输入 + 辅助：辅助的权重 w 在玩家没拖或往同一边拖时最大
 function steerYaw(inp, c, as) {
   let yr = -inp.jx * c.turn;
-  if (as) yr = clamp(yr * (1 - as.w * (1 - Math.abs(inp.jx))) + as.yawRate * as.w, -c.turn * 1.15, c.turn * 1.15);
+  if (as) yr = clamp(yr * (1 - as.w * (1 - Math.abs(inp.jx))) + as.yawRate * as.w, -c.turn * 1.5, c.turn * 1.5);
   return yr;
 }
 function steerPitch(base, as) { return as ? base * (1 - as.wp) + as.pitch * as.wp : base; }

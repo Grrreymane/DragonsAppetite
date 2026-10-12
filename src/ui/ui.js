@@ -85,13 +85,15 @@ export function createUI(root, api = {}) {
   // ---------- 首次提示：小手 / 箭头 + 不超过 5 个字 ----------
   // 'blocked_plunge' / 'blocked_breach'：想扎水 / 跃出但还没学会 →「长大后学会」，2.4 秒后自己消失，回到原来的提示
   const ab = (id, txt) => `<span class="d-pab">${icon(abIcon(id))}</span><span>${txt}</span>`;
+  // 教学小手：AI 画的（以前的 SVG 小手像竖中指）
+  const HAND = `<img class="d-handimg" src="${new URL('../../img/ui/hand.webp', import.meta.url).href}" alt="">`;
   const HINTS = {
-    drag: ['d-hc', icon('point'), '按住拖动'],
+    drag: ['d-hc', HAND, '按住拖动'],
     plunge: ['d-hc', icon('down'), ab('plunge', '扎水')],
     breach: ['d-hc', icon('up'), ab('breach', '跃出')],
-    fire: ['d-ha', icon('point'), '按住喷火'],
-    dash: ['d-ha', icon('point'), '点击冲刺'],
-    skill: ['d-ha d-hs', icon('point'), '点一下'],
+    fire: ['d-ha', HAND, '按住喷火'],
+    dash: ['d-ha', HAND, '点击冲刺'],
+    skill: ['d-ha d-hs', HAND, '点一下'],
     // 能力图标垫奶油色圆片（直接放在海面上会像场景里的东西）+ 右下角小锁
     blocked_plunge: ['d-hc d-hb', `<span class="d-hdisc">${icon('plunge')}</span><i class="d-hlk">${icon('lock')}</i>`, '长大后学会'],
     blocked_breach: ['d-hc d-hb', `<span class="d-hdisc">${icon('breach')}</span><i class="d-hlk">${icon('lock')}</i>`, '长大后学会'],

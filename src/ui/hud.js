@@ -49,8 +49,8 @@ export function createHUD(root, api, G, pic) {
   const combo = h('div', 'd-combo', '<i>×</i><b>2</b>'); const comboN = combo.querySelector('b');
 
   // ---------- 小目标卡 ----------
-  const goal = h('div', 'd-goal', `<div class="d-gpic"></div><div class="d-gnum"><b>0</b><i>/0</i></div><div class="d-gchk">${icon('check')}</div>`);
-  const gPic = goal.querySelector('.d-gpic'), gHave = goal.querySelector('.d-gnum b'), gN = goal.querySelector('.d-gnum i'), gChk = goal.querySelector('.d-gchk');
+  const goal = h('div', 'd-goal', `<div class="d-gpic"></div><div class="d-gnum"><b>0</b><i>/0</i></div><div class="d-gchk">${icon('check')}</div><div class="d-gcap"></div>`);
+  const gCap = goal.querySelector('.d-gcap'), gPic = goal.querySelector('.d-gpic'), gHave = goal.querySelector('.d-gnum b'), gN = goal.querySelector('.d-gnum i'), gChk = goal.querySelector('.d-gchk');
   // 小目标卡的宽度（屏幕边上的箭头 / 「!」要躲开它）：ResizeObserver 在排版之后给，update 里不用读布局
   let goalW = 0;
   if (typeof ResizeObserver === 'function') new ResizeObserver(es => { const e = es[es.length - 1]; goalW = e.borderBoxSize && e.borderBoxSize[0] ? e.borderBoxSize[0].inlineSize : e.contentRect.width + 22; }).observe(goal);
@@ -241,7 +241,7 @@ export function createHUD(root, api, G, pic) {
       const key = g.type + '|' + (g.sp || '') + '|' + g.n + '|' + g.icon + '|' + kind + '|' + st;
       if (key !== C.gkey || C.gRetry > 0 && (C.gRetry -= dt) <= 0) {
         const fresh = key !== C.gkey; C.gkey = key; pic.miss = false;
-        gPic.innerHTML = goalPic(g, kind, st); C.gRetry = pic.miss ? .4 : 0;
+        gPic.innerHTML = goalPic(g, kind, st); gCap.textContent = goalCap(g, kind); gCap.hidden = !gCap.textContent; C.gRetry = pic.miss ? .4 : 0;
         gN.textContent = '/' + g.n; C.ghave = -1;
         const gr = g.type === 'grow'; if (gr !== C.gGrow) { C.gGrow = gr; goal.classList.toggle('grow', gr); }
         // 换目标时从右边滑进来；新能力卡在的时候卡片本来就滑走了（d-abon），不放（卡片走了以后 CSS 过渡会把它滑回来）
@@ -402,6 +402,11 @@ export function createHUD(root, api, G, pic) {
     setOp(A.e, A.a);
   }
 
+  // 不是「吃某种生物」的小目标，图标看不懂：卡片下面加一行短字（用户问「这个是啥意思」）
+  function goalCap(g, kind) {
+    const fire = kind !== 'sea';
+    return ({ skill: fire ? '龙吼后吃' : '漩涡里吃', cooked: fire ? '烤熟再吃' : '撞晕再吃', cross: fire ? '扎水抓鱼' : '跃出抓鸟', combo: '连着吃' })[g.type] || '';
+  }
   function goalPic(g, kind, st) {
     if (g.type === 'grow') return `<span class="d-ggrow">${icon(`head_${kind === 'sea' ? 'sea' : 'fire'}${Math.min(2, (st || 0) + 1)}`)}<i>${icon('grow')}</i></span>`;
     const ic = g.icon || g.sp || g.type;

@@ -152,25 +152,25 @@ function interact(S, dt) {
   const fire = S.kind === 'fire';
   const mR = S.cfg.mouthR * h.sizeK;
   const crossNow = fire ? h.medium === 'water' : h.medium === 'air';
-  const coneCos = Math.cos(15 * Math.PI / 180), range = S.cfg.fireRange * h.sizeK;
+  const coneCos = Math.cos(24 * Math.PI / 180), range = S.cfg.fireRange * h.sizeK * 1.3;   // 火焰判定：锥角 24°、射程 ×1.3
   let autoAim = false;
   const vortex = h.skill && h.skill.id === 'vortex' && h.skill.t > 0 ? h.skill : null;
   for (let i = S.creatures.length - 1; i >= 0; i--) {
     const c = S.creatures[i]; if (!c || c.dying || c.size < .05) continue;   // 一口吞几只时数组会变短
     const dx = c.x - m.x, dy = c.y - m.y, dz = c.z - m.z, d = Math.hypot(dx, dy, dz);
     const canEat = c.edible || (c.cooked >= 1 && c.edibleCooked);
-    const eatR = mR + c.size * .5;
+    const eatR = mR * 1.35 + c.size * .7;   // v2.1：用户觉得还是难吃到，判定再放大
     if (canEat && targetable(S, c)) {
       const ahead = (dx * f.x + dy * f.y + dz * f.z) / (d || 1);
-      const magR = eatR * (h.medium === 'air' && !fire ? 3 : 2.6);
+      const magR = eatR * (h.medium === 'air' && !fire ? 3.4 : 3.1);
       // 嚼一下：两口之间要停一会儿（幼 0.35 / 少 0.2 / 成 0.1 秒），不然一口气吸光整个鱼群
       if (d < eatR && h.chewT <= 0) { eat(S, c, crossNow); h.chewT = [.35, .2, .1][S.stage]; continue; }
       // 扑咬（v2）：锁定的猎物进了扑咬距离、在前方 50° 以内 → 头往前一探，0.15 秒内吸进嘴里
-      const lungeR = eatR * 3 + h.speed * .15;
-      if (c.id === h.lock && d < lungeR && ahead > .64) {
+      const lungeR = eatR * 4 + h.speed * .22;
+      if (c.id === h.lock && d < lungeR && ahead > .5) {
         if (!c.lunged) { c.lunged = 1; S.events.push({ type: 'lunge', id: c.id }); }
         const k = Math.min(1, dt / .15); c.x -= dx * k; c.y -= dy * k; c.z -= dz * k;
-      } else if (d < magR && ahead > .7) {                 // 吸附：0.12 秒内吸进嘴里
+      } else if (d < magR && ahead > .6) {                 // 吸附：0.12 秒内吸进嘴里
         const k = Math.min(1, dt / .12); c.x -= dx * k; c.y -= dy * k; c.z -= dz * k;
       }
       // 擦肩统计（只算玩家正瞄着的那只）：锁定的猎物进了扑咬距离算一次「靠近」，没吃到又离开（> 2 倍）算一次「擦肩」

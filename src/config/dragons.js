@@ -1,8 +1,8 @@
 // 两条龙 × 三个阶段的数值（GDD §6.3 / §7.2 + v2：每个阶段解锁新能力、捕猎越来越容易，见 docs/V2_PLAN.md）。
 // 成年火龙的飞行数值 = 原型手感，不改。
 export const STAGE_NAMES = ['幼龙', '少年龙', '成龙'];
-export const STAGE_PTS = [0, 40, 220];          // 进入该阶段时的累计成长点
-export const ADULT_GOAL_PTS = 220;
+export const STAGE_PTS = [0, 55, 280];          // 进入该阶段时的累计成长点
+export const ADULT_GOAL_PTS = 280;
 
 // 能力表（界面用的名字 / 一句话 / 图标名）。图标名对应 ui/icons.js
 export const ABILITIES = {
@@ -28,30 +28,30 @@ export const DRAGONS = {
     zh: '火龙', action: '喷火',
     stages: [
       { model: 'fire_baby', fallback: { model: 'fire_adult', bones: { head: 1.4, neck1: 1.05, 'wing1.L': .62, 'wing1.R': .62, tail1: .8 } },
-        unlock: ['bite', 'flame'], canCross: false, bites: 1, assist: { range: 30, cone: 32 }, fear: 0,
-        flapHz: 1.333, len: 4.3, level: 18, dive: 34, climb: 13, turn: 1.4, pitchK: .70, fireRange: 11, cookTime: .5, waterTime: 2.0, plungeDepth: 8, mouthR: 1.9, eatTier: 1, cookTier: 2 },
+        unlock: ['bite', 'flame'], canCross: false, bites: 1, assist: { range: 38, cone: 42 }, fear: 0,
+        flapHz: 1.333, len: 4.3, level: 18, dive: 34, climb: 13, turn: 1.4, pitchK: .70, fireRange: 11, cookTime: .35, waterTime: 2.0, plungeDepth: 8, mouthR: 1.9, eatTier: 1, cookTier: 2 },
       { model: 'fire_teen', fallback: { model: 'fire_adult', bones: { head: 1.15, 'wing1.L': .82, 'wing1.R': .82 } },
-        unlock: ['plunge', 'roar'], canCross: true, bites: 2, assist: { range: 38, cone: 38 }, fear: 10,
+        unlock: ['plunge', 'roar'], canCross: true, bites: 2, assist: { range: 46, cone: 46 }, fear: 10,
         skill: { id: 'roar', cd: 12, r: 26, t: 3 },
-        len: 5.5, level: 22, dive: 40, climb: 16, turn: 1.2, pitchK: .66, fireRange: 17, cookTime: .35, waterTime: 2.6, plungeDepth: 12, mouthR: 2.6, eatTier: 2, cookTier: 3 },
+        len: 5.5, level: 22, dive: 40, climb: 16, turn: 1.2, pitchK: .66, fireRange: 17, cookTime: .25, waterTime: 2.6, plungeDepth: 12, mouthR: 2.6, eatTier: 2, cookTier: 3 },
       { model: 'fire_adult',
-        unlock: ['roar_up', 'gulp'], canCross: true, bites: 4, assist: { range: 46, cone: 44 }, fear: 22,
+        unlock: ['roar_up', 'gulp'], canCross: true, bites: 4, assist: { range: 54, cone: 50 }, fear: 22,
         skill: { id: 'roar', cd: 8, r: 44, t: 4 },
-        len: 10.3, level: 27, dive: 48, climb: 19, turn: 1.05, pitchK: .62, fireRange: 24, cookTime: .2, waterTime: 3.2, plungeDepth: 16, mouthR: 3.4, eatTier: 3, cookTier: 3 },
+        len: 10.3, level: 27, dive: 48, climb: 19, turn: 1.05, pitchK: .62, fireRange: 24, cookTime: .15, waterTime: 3.2, plungeDepth: 16, mouthR: 3.4, eatTier: 3, cookTier: 3 },
     ],
   },
   sea: {
     zh: '海龙', action: '冲刺',
     stages: [
       { model: 'sea_baby', fallback: { model: 'sea_adult', bones: { head: 1.35 } },
-        unlock: ['bite', 'dash'], canCross: false, bites: 1, assist: { range: 22, cone: 34 }, fear: 0,
+        unlock: ['bite', 'dash'], canCross: false, bites: 1, assist: { range: 28, cone: 44 }, fear: 0,
         len: 5, cruise: 16, dash: 28, dashT: .8, turn: 1.5, pitchK: .8, maxDepth: -25, breachVy: 18, mouthR: 1.9, eatTier: 1, cookTier: 2 },
       { model: 'sea_teen', fallback: { model: 'sea_adult', bones: { head: 1.12 } },
-        unlock: ['breach', 'vortex'], canCross: true, bites: 2, assist: { range: 28, cone: 38 }, fear: 8,
+        unlock: ['breach', 'vortex'], canCross: true, bites: 2, assist: { range: 34, cone: 48 }, fear: 8,
         skill: { id: 'vortex', cd: 12, r: 22, t: 2 },
         len: 9, cruise: 20, dash: 38, dashT: 1.2, turn: 1.3, pitchK: .8, maxDepth: -50, breachVy: 24, mouthR: 2.6, eatTier: 2, cookTier: 3 },
       { model: 'sea_adult',
-        unlock: ['vortex_up', 'gulp'], canCross: true, bites: 4, assist: { range: 34, cone: 44 }, fear: 16,
+        unlock: ['vortex_up', 'gulp'], canCross: true, bites: 4, assist: { range: 40, cone: 52 }, fear: 16,
         skill: { id: 'vortex', cd: 8, r: 36, t: 2.6 },
         len: 14, cruise: 24, dash: 45, dashT: 1.4, turn: 1.1, pitchK: .8, maxDepth: -90, breachVy: 30, mouthR: 3.4, eatTier: 3, cookTier: 3 },
     ],

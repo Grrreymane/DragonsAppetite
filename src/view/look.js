@@ -6,7 +6,7 @@ import { GRAD } from './toon.js';
 export const LOOKS = {
   cur: { zh: '现在', filter: '', exposure: 1.0, grad: [95, 170, 255], hemi: [0xdcecff, 0x6b5a4a, .9], sun: [0xfff0d8, 2.6] },
   // A 明亮卡通：阴影面提亮到六成，整体曝光高一点，颜色还是三档
-  a: { zh: '明亮卡通', filter: 'brightness(1.13) saturate(1.3)', exposure: 1.45, grad: [165, 215, 255], hemi: [0xeaf4ff, 0xa89478, 1.5], sun: [0xfff2dc, 2.5] },
+  a: { zh: '明亮卡通', filter: 'brightness(1.1) saturate(.94)', exposure: 1.45, grad: [165, 215, 255], hemi: [0xeaf4ff, 0xa89478, 1.5], sun: [0xfff2dc, 2.5] },
   // B 清透动画：两档硬分界（亮面 / 暗面），暗面很浅，地面反光也亮，像日系动画
   b: { zh: '清透动画', filter: 'brightness(1.2) contrast(.84) saturate(1.12)', exposure: 1.35, grad: [192, 255], hemi: [0xf4f8ff, 0xc8bca8, 1.9], sun: [0xffffff, 2.1] },
   // C 暖阳绘本：四档柔和过渡，太阳偏暖偏强，暗面带一点暖棕
