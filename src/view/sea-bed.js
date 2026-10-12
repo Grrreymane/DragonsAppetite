@@ -217,7 +217,7 @@ export function createSeabed(ctx) {
     sh.vertexShader = 'uniform float uKT;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n vec3 oN = vec3(0.0);\n' + KELP_V);
   };
   farFade(kelpMat, 'kelp');
-  const kelpHull = outlineMat(0x0b2a2c, .07, { extraPars: 'uniform float uKT;', extraVertex: KELP_V, key: 'kelp' });
+  const kelpHull = outlineMat(0x0b2a2c, .07, { scene: true, extraPars: 'uniform float uKT;', extraVertex: KELP_V, key: 'kelp' });
   kelpHull.userData.extraUniforms = { uKT };
   const inst = (g, mat, hullG, hullMat, max, name = '') => {
     const m = new THREE.InstancedMesh(g, mat, max), h = new THREE.InstancedMesh(hullG, hullMat, max);
@@ -230,10 +230,10 @@ export function createSeabed(ctx) {
   const kg = kelpGeo();
   const [kelp, kelpH] = inst(kg, kelpMat, kg, kelpHull, KELP_MAX, 'kelp');
   const [rg, rgH] = rockCluster();
-  const [rock, rockH] = inst(rg, farFade(toonMat({ flatShading: true, color: 0xffffff }), 'rock'), rgH, outlineMat(0x101c24, .07, { key: 'rock' }), ROCK_MAX, 'rock');
-  const corals = [0, 1].map(k => { const [g, h] = coralGeo(k); return inst(g, farFade(toonMat({ vertexColors: true, flatShading: true }), 'coral' + k), h, outlineMat(0x2a1420, .045, { key: 'coral' + k }), CORAL_MAX, 'coral' + k); });
+  const [rock, rockH] = inst(rg, farFade(toonMat({ flatShading: true, color: 0xffffff }), 'rock'), rgH, outlineMat(0x101c24, .07, { scene: true, key: 'rock' }), ROCK_MAX, 'rock');
+  const corals = [0, 1].map(k => { const [g, h] = coralGeo(k); return inst(g, farFade(toonMat({ vertexColors: true, flatShading: true }), 'coral' + k), h, outlineMat(0x2a1420, .045, { scene: true, key: 'coral' + k }), CORAL_MAX, 'coral' + k); });
     const cg = new THREE.CylinderGeometry(.45, 1.5, 1, 7, 1, true).translate(0, .5, 0);
-  const [vent, ventH] = inst(cg, farFade(toonMat({ flatShading: true, color: 0x2a2226 }), 'vent'), hullNormals(cg, .5, .3), outlineMat(0x120a0a, .08, { key: 'vent' }), VENT_MAX, 'vent');
+  const [vent, ventH] = inst(cg, farFade(toonMat({ flatShading: true, color: 0x2a2226 }), 'vent'), hullNormals(cg, .5, .3), outlineMat(0x120a0a, .08, { scene: true, key: 'vent' }), VENT_MAX, 'vent');
     const capMat = new THREE.MeshBasicMaterial({ color: 0xff7a30, fog: true });
   const cap = new THREE.InstancedMesh(new THREE.SphereGeometry(1, 8, 5), capMat, VENT_MAX); cap.count = 0; cap.frustumCulled = false; group.add(cap);
 

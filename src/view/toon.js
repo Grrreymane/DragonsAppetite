@@ -18,12 +18,15 @@ const OUTLINE_BROWN = new THREE.Color(0x4a2a1a);
 export function setOutlineMode(mode) {
   OUTLINE.mode = mode;
   OUTLINE.uOF.value.set(mode === 'fade' ? 35 : 1e5, mode === 'fade' ? 110 : 2e5);
-  for (const m of OUTLINE.mats) m.visible = mode !== 'off';
+  for (const m of OUTLINE.mats) m.visible = mode !== 'off' && (!m.userData.scene || OUTLINE.scene);
 }
-export function outlineMat(color, w, { extraPars = '', extraVertex = '', key = '' } = {}) {
+// 场景（岛、海底石头 / 海带 / 珊瑚）的描边：用户觉得去掉更好，只留角色（主角、生物）的描边。scene: true 的描边默认不画
+OUTLINE.scene = false;
+export function outlineMat(color, w, { extraPars = '', extraVertex = '', key = '', scene = false } = {}) {
   const m = new THREE.MeshBasicMaterial({ color: new THREE.Color(color).lerp(OUTLINE_BROWN, .65), side: THREE.BackSide, fog: true });
   m.userData.uW = { value: w };
-  m.visible = OUTLINE.mode !== 'off'; OUTLINE.mats.push(m);
+  m.userData.scene = scene;
+  m.visible = OUTLINE.mode !== 'off' && (!scene || OUTLINE.scene); OUTLINE.mats.push(m);
   m.onBeforeCompile = sh => {
     sh.uniforms.uW = m.userData.uW; sh.uniforms.uOF = OUTLINE.uOF;
     Object.assign(sh.uniforms, m.userData.extraUniforms || {});

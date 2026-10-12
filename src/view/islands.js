@@ -157,7 +157,7 @@ function findSeaTime(scene) {
 }
 // 描边壳。水下的雾（120 米就满）会把描边吃掉：水下时描边上的雾只算七成，轮廓在水里也看得清
 function hullMat(kind, uK) {
-  const m = outlineMat(OUTLINE_C[kind] || 0x2a1e1a, .01, {
+  const m = outlineMat(OUTLINE_C[kind] || 0x2a1e1a, .01, { scene: true,
     extraPars: 'uniform float uK;',
     // 镜头贴着石壁时描边壳会把镜头包进去，整面画成黑的：离镜头 1~5 米内把外扩收回去
     extraVertex: `if (transformed.y < 0.0) { transformed.y *= uK; oN.y /= uK; }
@@ -255,8 +255,8 @@ function loadShape(key) {
 
 // ---------------------------------------------------------------- 旧的程序化岛（退路）
 const islandToon = Object.assign(new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: GRAD }), { flatShading: true });
-const islandHull = outlineMat(0x2a1e1a, .45);
-const treeHull = outlineMat(0x1e2a18, .28);
+const islandHull = outlineMat(0x2a1e1a, .45, { scene: true });
+const treeHull = outlineMat(0x1e2a18, .28, { scene: true });
 const lavaMat = new THREE.MeshBasicMaterial({ color: 0xff6a1f, fog: true });
 
 function colorize(g, colorFn) {
@@ -376,7 +376,7 @@ export function createIslands({ scene }) {
         if (!o.fine || !o.grp.visible) continue;
         // LOD：离岸线的距离过阈值 10% 才换（来回飞过阈值时不会一帧一换）
         // 简化模型离得近时看得出破洞（用户反馈「远一点的山都破碎了」）：LOD1 推到 320 米外，LOD2 到 650 米外（快进雾里了）
-        const far = d - o.is.r * 1.25, t1 = 320 + o.is.r, t2 = 650, lv = o.lv;
+        const far = d - o.is.r * 1.25, t1 = 1e9, t2 = 1e9, lv = o.lv;   // 不用 LOD（简化模型远看像碎的，用户要求先关掉看看）
         const want = far > t2 * (lv >= 2 ? .9 : 1.1) ? 2 : far > t1 * (lv >= 1 ? .9 : 1.1) ? 1 : 0;
         o.lv = lv < 0 ? (far > t2 ? 2 : far > t1 ? 1 : 0) : want;
         const lod = 'lod' + o.lv + (under ? 'w' : 'a');
