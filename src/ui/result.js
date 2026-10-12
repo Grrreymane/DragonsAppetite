@@ -7,7 +7,7 @@ const FP = '"Fusion Pixel","PingFang SC","Microsoft YaHei",sans-serif';
 const mmss = s => { s = Math.max(0, Math.round(+s || 0)); return String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0'); };
 const loadImg = src => new Promise(r => { const i = new Image(); i.onload = () => r(i); i.onerror = () => r(null); i.src = src; });
 const LOGO = new URL('../../img/ui/logo.webp', import.meta.url).href;
-// 结算插画（AI 画的，吃得圆滚滚的成龙）；代替以前截的一帧 3D 画面（手机上又糊又常常只拍到背影）
+// 结算插画（AI 画的帅气成龙 CG）；代替以前截的一帧 3D 画面（手机上又糊又常常只拍到背影）
 const WIN = { fire: new URL('../../img/ui/win_fire.webp', import.meta.url).href, sea: new URL('../../img/ui/win_sea.webp', import.meta.url).href };
 const INK = '#2a1a14';
 const svgURL = s => 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(s);

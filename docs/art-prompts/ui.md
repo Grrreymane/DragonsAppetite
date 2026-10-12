@@ -143,3 +143,4 @@ Plain flat pure white background around the badges. No text, no letters, no numb
 - 一张图里画一整套（3×3 网格、写明每格内容 + 统一画风描述）比一张张画风格更统一；「NO background badge」能得到贴纸式图标，按钮底座用 CSS 画。
 - 宝石色按钮上不要放同色的画图标（橙色火焰放在橙色按钮上看不清）：动作键后面垫了一块奶油色圆，「开始 / 继续」用白色 SVG 三角。
 - 结算插画（win_fire / win_sea）：用 ref/fire-adult.png、ref/sea-adult.png 做参考，nano-banana 编辑，4:3；提示词要点：胜利、朝镜头飞 / 跃出海面、开心、肚子吃得圆滚滚、海岛背景、卡通描边画风、不要文字。
+- 结算 CG（第二版，用户说第一版「像怀孕了」）：fire_cg / sea_cg，提示词强调 epic key art、lean athletic body (NOT fat, no round belly)、低机位仰拍、喷火 / 冲出海浪、体积光。
