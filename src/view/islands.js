@@ -375,7 +375,8 @@ export function createIslands({ scene }) {
         o.grp.visible = d - R < (under ? 170 : FOG_FAR);           // 水下的雾 120 米就满了
         if (!o.fine || !o.grp.visible) continue;
         // LOD：离岸线的距离过阈值 10% 才换（来回飞过阈值时不会一帧一换）
-        const far = d - o.is.r * 1.25, t1 = 90 + o.is.r * .8, t2 = 430, lv = o.lv;
+        // 简化模型离得近时看得出破洞（用户反馈「远一点的山都破碎了」）：LOD1 推到 320 米外，LOD2 到 650 米外（快进雾里了）
+        const far = d - o.is.r * 1.25, t1 = 320 + o.is.r, t2 = 650, lv = o.lv;
         const want = far > t2 * (lv >= 2 ? .9 : 1.1) ? 2 : far > t1 * (lv >= 1 ? .9 : 1.1) ? 1 : 0;
         o.lv = lv < 0 ? (far > t2 ? 2 : far > t1 ? 1 : 0) : want;
         const lod = 'lod' + o.lv + (under ? 'w' : 'a');

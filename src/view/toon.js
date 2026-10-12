@@ -11,14 +11,17 @@ export const GRAD = (() => {
 //   里面可以改 transformed（位置）和 oN（法线，默认 = 原始 normal）
 // 注意：MeshBasicMaterial 没开蒙皮时没有 objectNormal，只能用 normal 属性
 // 描边的全局开关（setOutlineMode）：on 一直有 / fade 远处渐渐变细直到没有 / off 全关。所有描边材质共用这个 uniform
-export const OUTLINE = { uOF: { value: new THREE.Vector2(1e5, 2e5) }, mats: [], mode: 'on' };
+// 默认 fade（用户选的）：35 米内有描边，到 110 米渐渐没有
+export const OUTLINE = { uOF: { value: new THREE.Vector2(35, 110) }, mats: [], mode: 'fade' };
+// 描边颜色往深棕拉（用户：用深棕，不要纯黑）
+const OUTLINE_BROWN = new THREE.Color(0x4a2a1a);
 export function setOutlineMode(mode) {
   OUTLINE.mode = mode;
   OUTLINE.uOF.value.set(mode === 'fade' ? 35 : 1e5, mode === 'fade' ? 110 : 2e5);
   for (const m of OUTLINE.mats) m.visible = mode !== 'off';
 }
 export function outlineMat(color, w, { extraPars = '', extraVertex = '', key = '' } = {}) {
-  const m = new THREE.MeshBasicMaterial({ color, side: THREE.BackSide, fog: true });
+  const m = new THREE.MeshBasicMaterial({ color: new THREE.Color(color).lerp(OUTLINE_BROWN, .65), side: THREE.BackSide, fog: true });
   m.userData.uW = { value: w };
   m.visible = OUTLINE.mode !== 'off'; OUTLINE.mats.push(m);
   m.onBeforeCompile = sh => {
