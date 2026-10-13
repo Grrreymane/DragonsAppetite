@@ -5,6 +5,7 @@ import { clamp, wrapAngle } from './rng.js';
 import { waveH } from './world.js';
 
 const D2R = Math.PI / 180;
+const CLOSE_TURN_COS = Math.cos(110 * D2R);
 
 // 这只现在能不能当瞄准目标：能吃（或已烤熟 / 撞晕后能吃），而且够得着（不在另一个地盘、或者已经学会跨界）
 export function targetable(S, c) {
@@ -39,11 +40,20 @@ export function updateLock(S, inp, dt) {
     const dx = c.x - h.x, dy = c.y - h.y, dz = c.z - h.z, d = Math.hypot(dx, dy, dz) || 1;
     return { d, cos: (dx * f.x + dy * f.y + dz * f.z) / d };
   };
+  // Acquire side targets only when the player is already turning toward them.
+  // Otherwise a nearby fish can stay inside the flight turning circle forever.
+  // Keep the wider cone within the bite approach plus half a second of travel.
+  const closeR = S.cfg.mouthR * h.sizeK * 5 + h.speed * .45;
+  const closeTurnTarget = (c, a) => {
+    const yawErr = wrapAngle(Math.atan2(c.x - h.x, c.z - h.z) - h.yaw);
+    return Math.abs(inp.jx) > .35 && Math.sign(-inp.jx) === Math.sign(yawErr)
+      && a.d < closeR && a.cos > CLOSE_TURN_COS;
+  };
   // 玩家用力往反方向拖：0.3 秒后放弃这只
   if (cur && h.oppose > .45) { h.lock = 0; h.lockCd = .6; }
   else if (cur && lockable(S, cur)) {
     const a = angTo(cur);
-    if (a.d < A.range * 1.35 && a.cos > Math.cos(A.cone * 1.5 * D2R)) return cur;
+    if (a.d < A.range * 1.35 && (a.cos > Math.cos(A.cone * 1.5 * D2R) || closeTurnTarget(cur, a))) return cur;
   }
   h.lock = 0;
   if ((h.lockCd = Math.max(0, (h.lockCd || 0) - dt)) > 0) return null;
@@ -52,7 +62,7 @@ export function updateLock(S, inp, dt) {
   for (const c of S.creatures) {
     if (!lockable(S, c)) continue;
     const a = angTo(c);
-    if (a.d > A.range || a.cos < cosC) continue;
+    if (a.d > A.range || (a.cos < cosC && !closeTurnTarget(c, a))) continue;
     const s = a.d / A.range + (1 - a.cos) * 6 + (c.gold ? -.2 : 0);
     if (s < bs) { bs = s; best = c; }
   }

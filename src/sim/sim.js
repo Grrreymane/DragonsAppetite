@@ -311,7 +311,7 @@ export function step(S, inp) {
       S.encT = 70;
     }
     if (S.noEat > 12 && (S.rescueT || 0) <= 0) {
-      const sp = pickRescue(S); if (sp) rescueSpawn(S, sp); S.rescueT = 8; S.noEat = 6;
+      const sp = pickRescue(S); if (sp) rescueSpawn(S, sp); S.rescueT = 8;
     }
   }
   S.rescueT = (S.rescueT || 0) - dt;

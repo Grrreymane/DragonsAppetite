@@ -28,11 +28,12 @@ export function runOne(kind, tier, seed, minutes, verbose) {
     }
     if (stageAt[2] != null && S.t > stageAt[2] + 20) break;
   }
+  maxGap = Math.max(maxGap, gap); // Include an unfinished no-eat interval at the end.
   return { missRate: S.stats.misses / Math.max(1, S.stats.passes), skills: S.stats.skills, stageAt, eats, eatPerMin: eats / (S.t / 60), maxGap, bites: S.stats.bites, bitesPerMinBaby: S.stats.bites / ((stageAt[1] ?? S.t) / 60), cross, crossEnter, crossExit, nan: S.stats.nan || 0, stuck: S.stats.stuck || 0, goalIdx: S.goalIdx, stage: S.stage, pts: S.pts, t: S.t, evts, creatures: S.creatures.length };
 }
 
 const med = a => { const b = a.filter(x => x != null).sort((x, y) => x - y); return b.length ? b[Math.floor(b.length / 2)] : null; };
-const p90 = a => { const b = a.filter(x => x != null).sort((x, y) => x - y); return b.length ? b[Math.floor(b.length * .9)] : null; };
+const percentile = (a, q) => { const b = a.filter(x => x != null).sort((x, y) => x - y); return b.length ? b[Math.max(0, Math.ceil(b.length * q) - 1)] : null; };
 
 if (process.argv[1] && /[\\/]tools[\\/]sim\.mjs$/.test(process.argv[1])) {
   const t0 = Date.now();
@@ -48,13 +49,13 @@ if (process.argv[1] && /[\\/]tools[\\/]sim\.mjs$/.test(process.argv[1])) {
     const notReach = res.filter(r => r.stageAt[2] == null).length;
     report[TIERS[ti].name] = {
       runs: RUNS,
-      toTeen_med: med(res.map(r => r.stageAt[1])), toTeen_p90: p90(res.map(r => r.stageAt[1])),
-      toAdult_med: med(res.map(r => r.stageAt[2])), toAdult_p90: p90(res.map(r => r.stageAt[2])),
+      toTeen_med: med(res.map(r => r.stageAt[1])), toTeen_p90: percentile(res.map(r => r.stageAt[1]), .9),
+      toAdult_med: med(res.map(r => r.stageAt[2])), toAdult_p90: percentile(res.map(r => r.stageAt[2]), .9),
       teenToAdult_med: med(res.map(r => r.stageAt[2] != null && r.stageAt[1] != null ? r.stageAt[2] - r.stageAt[1] : null)),
       notAdultIn: `${notReach}/${RUNS} (${MIN} min)`,
       eatPerMin_med: med(res.map(r => r.eatPerMin))?.toFixed(1),
       missRate_med: med(res.map(r => r.missRate))?.toFixed(2), skills_med: med(res.map(r => r.skills)),
-      maxGap_p95: p90(res.map(r => r.maxGap))?.toFixed(1),
+      maxGap_p95: percentile(res.map(r => r.maxGap), .95)?.toFixed(1),
       bitesPerMinBaby_med: med(res.map(r => r.bitesPerMinBaby))?.toFixed(2),
       cross_med: med(res.map(r => r.cross)), crossEnterExit: res.reduce((a, r) => a + r.crossEnter, 0) + '/' + res.reduce((a, r) => a + r.crossExit, 0),
       nan: res.reduce((a, r) => a + r.nan, 0), stuck: res.reduce((a, r) => a + r.stuck, 0),

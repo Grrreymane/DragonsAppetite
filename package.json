@@ -2,5 +2,6 @@
   "name": "dragon",
   "private": true,
   "type": "module",
+  "scripts": { "test": "node tools/test-hunting.mjs" },
   "description": "小龙大胃王 Dragon's Appetite：手机竖屏网页 3D 小游戏（three.js）。这个文件只为了让 Node 把 src/sim/*.js 当 ES module 跑机器人（tools/sim.mjs）。"
 }
