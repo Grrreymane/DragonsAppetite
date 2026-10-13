@@ -7,11 +7,12 @@ import { makeHero, stepFire, stepSea, heroMouth } from './hero.js';
 import { stepCreatures, spawnInitial, manageSpawns, rescueSpawn, makeGroup } from './creatures.js';
 import { updateLock, assistSteer, targetable } from './assist.js';
 import { seabedY, groundAt } from './world.js';
+import { initHunts, stepHunts, recordHuntEat } from './hunts.js';
 
 export const DT = 1 / 60;
 const TIER_PTS = [0, 1, 4, 10];
 
-export function createSim({ kind = 'fire', seed = 1, stage = 0, pts, goalIdx = 0, codex = {}, x = 0, z = 0, yaw = 0 } = {}) {
+export function createSim({ kind = 'fire', seed = 1, stage = 0, pts, goalIdx = 0, codex = {}, discoveries = {}, x = 0, z = 0, yaw = 0 } = {}) {
   const cfg = DRAGONS[kind].stages[stage];
   const S = {
     t: 0, kind, stage, cfg, seed, rng: makeRng(seed),
@@ -30,6 +31,7 @@ export function createSim({ kind = 'fire', seed = 1, stage = 0, pts, goalIdx = 0
   setGoal(S);
   S.bite = c => bite(S, c);
   spawnInitial(S);
+  initHunts(S, discoveries);
   return S;
 }
 
@@ -132,6 +134,7 @@ function eat(S, c, cross, extra) {
   S.events.push(e);
   if (first) S.events.push({ type: 'codex', sp: c.sp });
   goalProgress(S, e);
+  recordHuntEat(S, c);
   S.noEat = 0;
   c.dying = 1; c.size = 0; c.g.members--;
   const i = S.creatures.indexOf(c); if (i >= 0) { S.creatures[i] = S.creatures[S.creatures.length - 1]; S.creatures.pop(); }
@@ -275,6 +278,7 @@ export function step(S, inp) {
   h.stuckT = moved < 3 ? h.stuckT + dt : 0;
   if (h.stuckT > 2) { h.y += S.kind === 'fire' ? 20 : 0; h.yaw += Math.PI / 2; h.stuckT = 0; S.stats.stuck = (S.stats.stuck || 0) + 1; }
   heroMouth(h);
+  stepHunts(S, dt);
   stepCreatures(S, dt);
   interact(S, dt);
   stepOrbs(S, dt);

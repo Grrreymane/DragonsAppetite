@@ -31,6 +31,16 @@ tools/rec3d.py        无头 Chrome（GPU）跑页面 + 导演脚本，录视频
 - 体验准则（WORKFLOW §3）：不晃屏、闪烁 ≤ 5 次/秒、大面积闪白要弱、少文字、按钮「图标 + 两个字」、难度低不卡死。
 - 卡通描边是硬要求：所有实体（主角、岛、生物）都要 `MeshToonMaterial`（`gradientMap: GRAD`）+ 背面外扩描边（`outlineMat`）。云、烟、粒子不描边。
 
+## 猎场与探索
+
+- `sim/hunts.js` 管理云海追猎 / 浅海鱼潮：可接近的线索 → 分批追猎 → 猎群聚拢；最多 26 秒，提前吃完会加快下一批 / 结束，一次一个，忽略或离开会自然结束。
+- `createSim({ discoveries })` 克隆探索记录；`stepHunts` 在生物移动前更新队形，`recordHuntEat` 只在真正吃到时计数。普通猎物、保底刷新与成长目标照常运行。
+- `S.hunt` 为 `null` 或 `{ id, kind: 'cloud'|'tide', phase: 'cue'|'chase'|'finale', x, y, z, yaw, elapsed, duration, caught, total, route, first }`；`route` 是世界坐标点列。猎场个体 / 群带 `huntId`。
+- `S.discoveries` / `save.discoveries` 只存已发现的种类：`{ cloud: { found: 1, best, completed }, tide: ... }`。旧档默认为空，发现和结束时立即保存；读档重新寻找猎场，已有纪录不丢失。
+- `huntDiscover { kind, first }`、`huntPhase { kind, phase }`、`huntEnd { kind, caught, total, completed }` 驱动提示和存档，不额外发成长奖励。
+- `view/hunts.js` 的 `createHuntView(scene).update(S, dt)` 复用金色云隙 / 水下微光和路线光点；HUD 只读状态，图鉴展示探索印记与最好纪录。
+- 验证：`npm test`；`tools/scenarios/hunts_review.js` 配合 `tools/rec3d.py --dom` 实际转向追猎并截图，支持 `kind` / `stage` 参数。
+
 ## sim 状态（view / ui / audio 只读）
 
 `const S = createSim({ kind, seed, stage, pts })`，主循环每 1/60 秒调用 `step(S, input)`。

@@ -5,7 +5,7 @@ const blank = () => ({
   tut: { drag: 0, plunge: 0, breach: 0, fire: 0, dash: 0 },
   fire: { stage: 0, pts: 0, eaten: 0, goal: 0, adultShown: 0, playSec: 0 },
   sea: { stage: 0, pts: 0, eaten: 0, goal: 0, adultShown: 0, playSec: 0 },
-  codex: {},
+  codex: {}, discoveries: {},
 });
 function merge(base, extra) {
   if (!extra || typeof extra !== 'object') return base;

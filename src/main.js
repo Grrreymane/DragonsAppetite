@@ -9,6 +9,7 @@ import { createSky } from './view/sky.js';
 import { applyLook } from './view/look.js';
 import { createIslands } from './view/islands.js';
 import { createClouds } from './view/clouds.js';
+import { createHuntView } from './view/hunts.js';
 import { createParticles } from './view/particles.js';
 import { createDragonView, loadModel } from './view/dragon.js';
 import { createCamera } from './view/camera.js';
@@ -37,6 +38,7 @@ applyLook(Q.get('look') || 'a', { renderer, sky });   // 用户选了 A 明亮�
 if (Q.get('outline')) setOutlineMode(Q.get('outline'));
 const isl = createIslands(ctx);
 const clouds = createClouds(ctx);
+const hunts = createHuntView(scene);
 const P = createParticles(ctx);
 const dragon = createDragonView(ctx);
 const cam = createCamera(camera);
@@ -121,7 +123,7 @@ async function startGame(k) {
   kind = k; save.pick = k; writeSave(save);
   const sv = save[k];
   const seed = +(Q.get('seed') || 1) + (sv.playSec | 0);
-  S = createSim({ kind: k, seed, stage: sv.stage | 0, pts: sv.pts | 0, goalIdx: sv.goal | 0, codex: save.codex });
+  S = createSim({ kind: k, seed, stage: sv.stage | 0, pts: sv.pts | 0, goalIdx: sv.goal | 0, codex: save.codex, discoveries: save.discoveries });
   eatenBase = sv.eaten | 0;
   if (Q.has('stage')) setStage(S, +Q.get('stage'));
   ui.hideTitle(); ui.setLoading && ui.setLoading(0, '');
@@ -148,6 +150,7 @@ function persist() {
   sv.stage = S.stage; sv.pts = Math.round(S.pts); sv.goal = S.goalIdx; sv.eaten = (eatenBase | 0) + S.stats.eaten;
   sv.playSec = (sv.playSec || 0) + playSecAcc; playSecAcc = 0;
   save.codex = S.codex;
+  save.discoveries = S.discoveries;
   writeSave(save);
   const n = SPECIES_IDS.filter(id => save.codex[id] && save.codex[id].n).length;
   reportProgress(`${DRAGONS[S.kind].zh}·${STAGE_NAMES[S.stage]} · 吃了 ${totalEaten()} 只 · 图鉴 ${n}/12`);
@@ -195,6 +198,14 @@ function handleEvents(evs) {
         }
         break;
       }
+      case 'huntDiscover':
+        // Keep the new discovery even if the player leaves before the hunt finishes.
+        persist();
+        break;
+      case 'huntEnd':
+        if (e.caught > 0 && !evo && !ui.abilityLeft && !evs.some(event => event.type === 'evolve')) ui.toast(`这次吃到 ${e.caught} 只`);
+        persist();
+        break;
       case 'goal': saveT = 0; break;
       case 'complete': if (!save[S.kind].adultShown) resultTimer = 1.6; break;
       case 'codex': break;
@@ -323,6 +334,7 @@ function advance(dtReal) {
     const a = T * .05; camera.position.set(Math.sin(a) * 120, 45, Math.cos(a) * 120 - 40); camera.lookAt(30, 35, 260);
   }
   if (S) creatures.update(S, alpha, dtReal, T);
+  hunts.update(state === 'title' ? null : S, dtReal);
   sea.update(S || { creatures: [], spots: [], hero: { x: 0, y: 60, z: 0, len: 10 }, t: T, kind: 'fire' }, alpha, dtReal, T, camera);
   const under = sea.underwater || 0;
   creatures.setUnderwater && creatures.setUnderwater(under);

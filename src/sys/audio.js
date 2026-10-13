@@ -687,6 +687,8 @@ export function createAudio(opt = {}) {
       case 'alert': { const c = S && S.creatures.find(c => c.id === e.id); E.play('alert', { pan: c ? where(c, h).pan : 0 }); break; }
       case 'orb': st.orbN = t - st.orbT < .7 ? st.orbN + 1 : 0; st.orbT = t; E.play('orb', { n: st.orbN }); break;
       case 'goal': case 'codex': { const at = Math.max(t + .14, st.cueT + .4); st.cueT = at; E.play(e.type, e, at); break; }   // 晚一点，别和「咔」叠在一起；同一口里两个铃错开 0.4 秒
+      case 'huntDiscover': if (e.first) E.play('codex', {}, t + .18); break;
+      case 'huntPhase': if (e.phase === 'finale') E.play('ready', { kind: S && S.kind }); break;
       case 'evolve': st.evoT = t; E.play('evolve', { stage: e.stage }); break;
       // 新能力：跟着进化来的话等进化的龙吼收住、卡片弹出来（进化后 UNLOCK_AT 秒）再响；开局头 1 秒的（初始能力）不响
       case 'unlock': if (!S || S.t >= 1) E.play('unlock', { stage: S ? S.stage : 1, kind: S && S.kind }, Math.max(t + .03, st.evoT + UNLOCK_AT)); break;

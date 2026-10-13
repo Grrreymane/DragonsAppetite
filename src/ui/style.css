@@ -514,3 +514,54 @@
 /* 小目标卡下面的说明（只在看图标不好懂的目标上出现） */
 .dui .d-goal .d-gcap{ position:absolute; left:0; right:0; top:100%; margin-top:4px; text-align:center; white-space:nowrap; font:12px/1.4 var(--px-font,"Fusion Pixel",sans-serif); color:#fff8e6; text-shadow:0 1px 0 #4a2a1a,1px 0 0 #4a2a1a,-1px 0 0 #4a2a1a,0 -1px 0 #4a2a1a; pointer-events:none; }
 .dui .d-goal .d-gcap[hidden]{ display:none; }
+
+/* 猎场：轻量的行进提示，放在小目标卡下面；能力解锁期间暂时让出画面。 */
+.dui .d-hunt{ position:absolute; left:50%; top:calc(var(--st) + 180px * var(--s)); transform:translateX(-50%);
+  width:min(calc(212px * var(--s)),calc(100% - 72px)); padding:6px 11px 8px; border-radius:13px; overflow:hidden;
+  background:rgba(59,40,29,.78); border:1.5px solid rgba(255,222,146,.7); color:#fff4d8; pointer-events:none; }
+.dui .d-hunt.sea{ background:rgba(13,57,68,.8); border-color:rgba(151,243,225,.75); color:#dcfff7; }
+.dui .d-hunt-row{ display:flex; align-items:center; gap:6px; }
+.dui .d-hunt-icon .ic{ font-size:22px; color:#ffdf88; }
+.dui .d-hunt.sea .d-hunt-icon .ic{ color:#b4ffed; }
+.dui .d-hunt-row b{ font:normal 21px/24px var(--fT); letter-spacing:1px; }
+.dui .d-hunt-count{ margin-left:auto; font:normal 21px/24px var(--fT); color:#ffdf88; }
+.dui .d-hunt.sea .d-hunt-count{ color:#b4ffed; }
+.dui .d-hunt-hint{ display:block; padding-left:28px; font:12px/16px var(--fP); white-space:nowrap; }
+.dui .d-hunt-progress{ position:absolute; bottom:0; left:0; right:0; height:3px; background:rgba(255,255,255,.12); }
+.dui .d-hunt-progress u{ position:absolute; inset:0; background:#e9c478; transform:scaleX(0); transform-origin:0 50%; transition:transform .25s linear; }
+.dui .d-hunt.sea .d-hunt-progress u{ background:#87e4d1; }
+.dui .d-hunt.cue .d-hunt-progress{ display:none; }
+.dui .d-hunt.finale{ border-color:#fff1be; }
+.dui .d-hunt.finale.sea{ border-color:#d0fff7; }
+.dui.d-abon .d-hunt{ visibility:hidden; }
+.dui .d-hunt-mark{ width:0; height:0; }
+.dui .d-hunt-mark > span{ position:absolute; left:-14px; top:-14px; display:flex; align-items:center; justify-content:center;
+  width:28px; height:28px; border-radius:50%; background:rgba(66,40,23,.8); border:1.5px solid #ffdf88; }
+.dui .d-hunt-mark > span .ic{ color:#ffdf88; font-size:19px; }
+.dui .d-hunt-mark > i{ position:absolute; left:-20px; top:-20px; width:40px; height:40px; }
+.dui .d-hunt-mark > i .ic{ position:absolute; left:13px; top:-11px; font-size:14px; color:#ffdf88; }
+.dui .d-hunt-mark.sea > span{ background:rgba(13,57,68,.8); border-color:#b4ffed; }
+.dui .d-hunt-mark.sea .ic{ color:#b4ffed; }
+
+/* 图鉴沿用原入口；窄屏可上下滑动，猎场印记不会挤小原来的生物格子。 */
+.dui .d-codex{ touch-action:pan-y; }
+.dui .d-cxscroll{ overflow-y:auto; min-height:0; overscroll-behavior:contain; touch-action:pan-y; padding:1px 1px 5px; }
+.dui .d-cxscroll .d-grid{ overflow:visible; }
+.dui .d-explore-title{ margin:13px 2px 7px; font:normal 20px/24px var(--fT); color:var(--txt2); }
+.dui .d-explore{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
+.dui .d-explore-entry{ position:relative; display:flex; align-items:center; gap:6px; min-height:61px; padding:7px 5px; border-radius:12px;
+  background:rgba(120,80,30,.08); border:1.5px solid rgba(120,80,30,.24); }
+.dui .d-explore-entry.found{ background:#fff3d5; border-color:#ba9045; }
+.dui .d-explore-entry.tide.found{ background:#e0f5ed; border-color:#64a89d; }
+.dui .d-explore-stamp{ display:flex; align-items:center; justify-content:center; flex:none; width:30px; height:30px; border-radius:50%;
+  background:rgba(145,113,72,.14); color:#b8a17a; }
+.dui .d-explore-stamp .ic{ font-size:21px; }
+.dui .d-explore-entry.found .d-explore-stamp{ background:#f4d886; color:#fff3bb; }
+.dui .d-explore-entry.tide.found .d-explore-stamp{ background:#8dcebf; color:#e1fff6; }
+.dui .d-explore-entry > div{ min-width:0; display:flex; flex-direction:column; gap:5px; }
+.dui .d-explore-entry b{ font:normal 18px/20px var(--fT); color:var(--txt); white-space:nowrap; }
+.dui .d-explore-entry > div > span{ font:12px/12px var(--fP); color:var(--txt2); white-space:nowrap; }
+.dui .d-explore-check{ position:absolute; right:3px; top:3px; color:#83bd87; font-size:12px; }
+.dui.d-narrow .d-explore-entry{ justify-content:center; text-align:center; padding-left:4px; padding-right:4px; }
+.dui.d-narrow .d-explore-stamp{ display:none; }
+.dui.d-narrow .d-explore-entry b{ font-size:16px; }

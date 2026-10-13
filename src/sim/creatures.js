@@ -135,7 +135,7 @@ export function manageSpawns(S, force = false) {
   for (let i = S.groups.length - 1; i >= 0; i--) {
     const g = S.groups[i], d = Math.hypot(g.x - h.x, g.z - h.z);
     const far = SPECIES[g.sp].hab === 'air' ? AIR_FAR : WATER_FAR;
-    if (g.members <= 0 || d > far + (g.spot ? 300 : 0)) { g.dead = true; S.groups.splice(i, 1); }
+    if (g.members <= 0 || (g.huntRetire && S.t >= g.huntRetire) || (!g.huntId && d > far + (g.spot ? 300 : 0))) { g.dead = true; S.groups.splice(i, 1); }
   }
   for (const c of S.creatures) if (c.g.dead && !c.dying) c.dying = .001;
   // 觅食点：保持 4~6 个在 400 以内；吃空 20 秒后换地方
@@ -152,7 +152,7 @@ export function manageSpawns(S, force = false) {
   }
   // 各种生物的群数
   for (const [sp, n, dMin, dMax, hab] of wants(S)) {
-    const have = S.groups.filter(g => g.sp === sp && !g.spot && Math.hypot(g.x - h.x, g.z - h.z) < dMax * 1.4).length;
+    const have = S.groups.filter(g => g.sp === sp && !g.spot && !g.huntId && Math.hypot(g.x - h.x, g.z - h.z) < dMax * 1.4).length;
     if (have >= n) continue;
     const d = SPECIES[sp];
     if (sp === 'turtle' && zoneAt(h.x, h.z) === 'volcano' && r() < .5) continue;
@@ -193,6 +193,7 @@ export function stepCreatures(S, dt) {
   for (const g of S.groups) {
     g.t += dt; g.scatter = Math.max(0, g.scatter - dt); g.scd = Math.max(0, (g.scd || 0) - dt);
     const d = SPECIES[g.sp];
+    if (g.huntMotion) continue; // 猎场锚点由 hunts.js 沿路线推进
     if (g.home && g.spot) { g.x = lerp(g.x, g.home.x, damp(.5, dt)); g.z = lerp(g.z, g.home.z, damp(.5, dt)); continue; }
     if (g.beh === 'orbit' && g.home) continue;
     // 慢慢转向的游荡（安排来的天敌：锚点朝玩家飘过来，30 秒后恢复游荡）
@@ -253,6 +254,29 @@ export function stepCreatures(S, dt) {
     }
     c.roll = c.st === 'flip' ? c.roll : lerp(c.roll, 0, damp(3, dt));
     c.flee = false;
+
+    // 猎场内的猎物保持清楚的长带，末段聚成一球。烤熟、撞晕和技能仍先于队形生效。
+    if (g.huntMotion) {
+      const finale = g.huntPhase === 'finale', slot = c.huntSlot || 0;
+      let tx, ty, tz;
+      if (finale) {
+        const a = c.off.a + t * .65, rr = 1.5 + c.off.r * (fire ? 3.5 : 3);
+        tx = g.x + Math.cos(a) * rr; ty = g.y + c.off.h * 1.8; tz = g.z + Math.sin(a) * rr;
+      } else {
+        const side = (slot % 2 ? 1 : -1) * (1.8 + c.off.r * 2), back = Math.floor(slot / 2) * 3.4;
+        tx = g.x + Math.cos(g.yaw) * side - Math.sin(g.yaw) * back;
+        ty = g.y + c.off.h * 1.3 + Math.sin(t * 1.2 + c.off.a) * .35;
+        tz = g.z - Math.sin(g.yaw) * side - Math.cos(g.yaw) * back;
+      }
+      steer(c, tx, ty, tz, d.speed * (finale ? .7 : 1.1), 3.5, dt);
+      move(c, dt);
+      if (d.hab === 'air') keepAir(c, 8); else keepWater(c, t, -2.5);
+      face(c, dt, fire ? .6 : .3);
+      c.flap = fire ? .55 + .25 * Math.sin(t * 1.3 + c.off.a) : .8;
+      c.phase += dt * (fire ? 11 : 14);
+      if (c.feared) { c.x = c.px + (c.x - c.px) * .3; c.y = c.py + (c.y - c.py) * .3; c.z = c.pz + (c.z - c.pz) * .3; }
+      continue;
+    }
 
     switch (d.beh) {
       case 'flock': {          // 小雀：队形绕锚点；龙靠近就四散，1 秒后回来

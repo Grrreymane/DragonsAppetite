@@ -5,6 +5,7 @@ import { SPECIES, SPECIES_IDS } from '../config/species.js';
 import { STAGE_PTS, DRAGONS, ABILITIES } from '../config/dragons.js';
 import { icon, painted } from './icons.js';
 import { h, button, setIcon, pop } from './dom.js';
+import { createHuntHUD } from './hunts.js';
 
 export const STAGE_CH = ['幼', '少', '成'];
 const clamp01 = v => (v < 0 ? 0 : v > 1 ? 1 : v);
@@ -27,6 +28,7 @@ const nextAbs = S => S.nextAbilities || (S.stage < 2 ? (DRAGONS[S.kind].stages[S
 
 export function createHUD(root, api, G, pic) {
   const el = h('div', 'd-hud'); el.hidden = true; root.appendChild(el);
+  const huntHUD = createHuntHUD(el);
 
   // ---------- 顶部：菜单 / 声音 ----------
   const bMenu = button('menu', '菜单', 'd-sbtn d-menu', () => api.onPause && api.onPause());
@@ -70,6 +72,9 @@ export function createHUD(root, api, G, pic) {
   const tags = [0, 1, 2].map(() => ({ e: mk('d-tag', ''), a: 0, k: '' }));
   const ring = mk('d-ring', `<svg viewBox="0 0 84 84"><circle class="tr" cx="42" cy="42" r="36"/><circle class="pr" cx="42" cy="42" r="36" stroke-dasharray="${RING_C}" stroke-dashoffset="0"/></svg><div class="d-rbang">${icon('bang')}</div>`);
   const ringPr = ring.querySelector('.pr');
+  const huntMark = mk('d-hunt-mark', '<i></i><span></span>');
+  const huntArrow = huntMark.querySelector('i'), huntIcon = huntMark.querySelector('span');
+  huntArrow.innerHTML = icon('arrow');
 
   // ---------- 动作键（右下 88px；外圈 = 冷却） ----------
   const act = h('div', 'd-act', `<svg class="d-acr" viewBox="0 0 104 104"><circle class="tr" cx="52" cy="52" r="48"/><circle class="pr" cx="52" cy="52" r="48" stroke-dasharray="${ACT_C}" stroke-dashoffset="0"/></svg><div class="d-actin"></div><i class="d-wipe"></i>`);
@@ -162,6 +167,11 @@ export function createHUD(root, api, G, pic) {
       const w = 70 + pad, bot = st + 116 * s1 + 52 + pad;
       if (y < bot && (G.left ? x > G.W - G.sr - 14 - w : x < G.sl + 14 + w)) y = bot;
     }
+    if (!huntHUD.el.hidden && !root.classList.contains('d-abon')) {
+      const w = Math.min(212 * s1, G.W - 72) / 2 + pad;
+      const top = st + 180 * s1, bot = top + 58 + pad;
+      if (Math.abs(x - G.W / 2) < w && y + pad > top && y < bot) y = bot;
+    }
     return y;
   }
   // 屏幕里的点（头顶箭头、大家伙的小牌）会不会压在顶栏 / 小目标卡 / 连吃上
@@ -188,6 +198,7 @@ export function createHUD(root, api, G, pic) {
   function update(S, dt, events) {
     if (el.hidden || !S || !S.hero || !api.project) return;
     const H0 = S.hero, kind = S.kind;
+    huntHUD.update(S);
     if (events) for (const e of events) {
       if (e.type === 'eat') { if (S.t - (C.bumpT || -9) > .15) { C.bumpT = S.t; pop(S.stage >= 2 ? cbar : gbar, 1.06, 200); } }
       else if (e.type === 'codex') { newQ.push(e.sp); showNew(); }
@@ -252,6 +263,22 @@ export function createHUD(root, api, G, pic) {
       const done = !!g.done;
       if (done !== C.gdone) { C.gdone = done; goal.classList.toggle('done', done); if (done) { pop(gChk, 1.8, 420); pop(goal, 1.12, 360); } }
     }
+
+    // 猎场入口：在画面内显示小徽记，画面外贴边指向；新能力卡出现时让出视线。
+    const hunt = S.hunt;
+    if (hunt && hunt.phase === 'cue' && !huntHUD.el.hidden && !root.classList.contains('d-abon')) {
+      const p = api.project(hunt.x, hunt.y, hunt.z);
+      if (p && Number.isFinite(p.x) && Number.isFinite(p.y)) {
+        if (C.huntKind !== hunt.kind) {
+          C.huntKind = hunt.kind; huntIcon.innerHTML = icon(hunt.kind === 'tide' ? 'fish' : 'bird');
+          huntMark.classList.toggle('sea', hunt.kind === 'tide');
+        }
+        const inside = onScreen(p, G);
+        const q = inside ? { x: p.x, y: belowCards(p.x, Math.max(p.y - 24, topZ() + 20), 24), deg: 180 } : pin(p, isBehind(p, hunt, H0), 28);
+        setTf(huntMark, q.x, q.y); huntArrow.style.transform = `rotate(${Math.round(q.deg)}deg)`;
+        setOp(huntMark, .85);
+      } else setOp(huntMark, 0);
+    } else setOp(huntMark, 0);
 
     // 箭头：①小目标的猎物 ②最近能吃的；顺便找锁定的那只
     let tg = null, ne = null, tgD = 400 * 400, neD = 300 * 300, lc = null;
