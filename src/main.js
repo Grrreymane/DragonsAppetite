@@ -11,6 +11,7 @@ import { createIslands } from './view/islands.js';
 import { createClouds } from './view/clouds.js';
 import { createHuntView } from './view/hunts.js';
 import { createParticles } from './view/particles.js';
+import { createSpeedFx } from './view/speedfx.js';
 import { createDragonView, loadModel } from './view/dragon.js';
 import { createCamera } from './view/camera.js';
 import { fallbackCreatures, fallbackSea, fallbackUI, fallbackAudio } from './view/fallback.js';
@@ -40,6 +41,7 @@ const isl = createIslands(ctx);
 const clouds = createClouds(ctx);
 const hunts = createHuntView(scene);
 const P = createParticles(ctx);
+const speedFx = createSpeedFx(ctx);
 const dragon = createDragonView(ctx);
 const cam = createCamera(camera);
 
@@ -307,6 +309,12 @@ function advance(dtReal) {
     if (!evo) dragon.flash.value = blink;
     dragon.update(h, S, dtReal * (state === 'play' ? 1 : 0), T);
     cam.update(h, S, dtReal, waveT);
+    // 速度感：空气里的线从镜头旁掠过；火龙快的时候翼尖拉出白色尾迹
+    speedFx.update(camera, h, cam.sf || 0, camera.position.y < waveH(camera.position.x, camera.position.z, waveT), dtReal);
+    if (S.kind === 'fire' && h.medium === 'air' && (cam.sf || 0) > .35) {
+      const rx = Math.cos(h.yaw), rz = -Math.sin(h.yaw), w = h.len * .62;
+      for (const sgn of [-1, 1]) P.emit('splash', h.x + rx * w * sgn, h.y + h.len * .08, h.z + rz * w * sgn, 0, 0, 0, .5, (.22 + h.speed * dtReal * .5) * Math.max(1, h.len / 6), { grow: .3, alpha: .7 * cam.sf, drag: 0 });
+    }
     // 喷火粒子 + 嘴边发光
     const firing = h.firing && state === 'play';
     dragon.mouth(_m); dragon.forward(_f);

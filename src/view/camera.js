@@ -16,7 +16,11 @@ export function createCamera(camera) {
     C.span += (spanWant - C.span) * damp(1.6, dt);               // 进化后约 1.5 秒拉到新距离
     const span = C.span;
     const hTan = Math.tan(camera.fov * Math.PI / 360) * Math.min(1, camera.aspect);
-    const dist = span * .46 / hTan + 3 * span / 11;
+    // 速度系数 sf：平飞 0 → 俯冲 / 冲刺 1。快的时候镜头稍微落后一点、视野变宽（速度感）
+    const lv = fire ? S.cfg.level : S.cfg.cruise, top = fire ? S.cfg.dive : S.cfg.dash;
+    const sf = Math.max(0, Math.min(1, (h.speed - lv) / Math.max(1, top - lv)));
+    C.sf = sf;
+    const dist = (span * .46 / hTan + 3 * span / 11) * (1 + .14 * sf);
     back.set(Math.sin(h.yaw), 0, Math.cos(h.yaw));
     const cp = Math.cos(h.pitch);
     fwd.set(Math.sin(h.yaw) * cp, Math.sin(h.pitch), Math.cos(h.yaw) * cp);
@@ -50,9 +54,8 @@ export function createCamera(camera) {
     if (C.lookFirst !== false) { C.look.copy(lk); C.lookFirst = false; }
     C.look.lerp(lk, damp(6, dt));
     camera.lookAt(C.look);
-    const level = fire ? S.cfg.level : S.cfg.cruise;
-    const fov = 62 + (h.speed - level) * .3 * (fire ? 1 : .6);
-    camera.fov += (Math.max(50, Math.min(80, fov)) - camera.fov) * damp(2, dt);
+    const fov = 60 + sf * 20 - (h.speed < lv ? (lv - h.speed) * .3 : 0);
+    camera.fov += (Math.max(52, Math.min(84, fov)) - camera.fov) * damp(sf > .3 ? 3 : 2, dt);
     camera.updateProjectionMatrix();
     C.under = camera.position.y < waveH(camera.position.x, camera.position.z, time) ? 1 : 0;
   };
