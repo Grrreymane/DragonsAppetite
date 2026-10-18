@@ -207,7 +207,7 @@ function handleEvents(evs) {
         persist();
         break;
       case 'huntEnd':
-        if (e.caught > 0 && !evo && !ui.abilityLeft && !evs.some(event => event.type === 'evolve')) ui.toast(`吃到 ${e.caught} 只${e.bonus ? ` · 成长 +${e.bonus}` : ''}`);
+        if (e.caught > 0 && !evo && !ui.abilityLeft && !evs.some(event => event.type === 'evolve')) ui.toast(`${e.record ? '新纪录 ' : '吃到 '}${e.caught} 只${e.bonus ? `\n成长 +${e.bonus}` : ''}`);
         persist();
         break;
       case 'goal': saveT = 0; break;

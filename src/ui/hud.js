@@ -198,7 +198,7 @@ export function createHUD(root, api, G, pic) {
   function update(S, dt, events) {
     if (el.hidden || !S || !S.hero || !api.project) return;
     const H0 = S.hero, kind = S.kind;
-    huntHUD.update(S);
+    huntHUD.update(S, events, api.project);
     if (events) for (const e of events) {
       if (e.type === 'eat') { if (S.t - (C.bumpT || -9) > .15) { C.bumpT = S.t; pop(S.stage >= 2 ? cbar : gbar, 1.06, 200); } }
       else if (e.type === 'codex') { newQ.push(e.sp); showNew(); }

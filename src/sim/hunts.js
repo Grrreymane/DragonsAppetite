@@ -4,6 +4,8 @@ import { groundAt, seabedY } from './world.js';
 import { makeGroup } from './creatures.js';
 
 const CHASE = 18, DURATION = 26, CUE_TIME = 35;
+// 奖励（当场给，界面上看得见）：猎场里每吃一只 +1 成长；吃满 success 只再 +10；收尾的金色猎物本身就是 3 倍分
+export const HUNT_PER = 1, HUNT_GOAL_BONUS = 10;
 const SETTINGS = {
   cloud: { sp: 'sparrow', count: 5, finale: 6, radius: 66, ahead: 76, reach: 26, success: 5, far: 430 },
   tide: { sp: 'sardine', count: 7, finale: 9, radius: 45, ahead: 54, reach: 20, success: 7, far: 260 },
@@ -67,7 +69,7 @@ export function createHunt(S) {
     if (route.slice(1).some((p, i) => !clearSegment(route[i], p, kind))) continue;
     S.hunt = {
       id: `hunt-${++S.huntSerial}`, kind, phase: 'cue', x, y, z, yaw, route,
-      elapsed: 0, duration: DURATION, caught: 0, total: cfg.count * 3 + cfg.finale,
+      elapsed: 0, duration: DURATION, caught: 0, total: cfg.count * 3 + cfg.finale, goal: cfg.success, bonus: 0, goalHit: false,
       first: !S.discoveries[kind], groups: [], away: 0, waveCount: 0, emptyFor: 0,
     };
     return S.hunt;
@@ -104,6 +106,7 @@ function releaseWave(S, hunt) {
 function startHunt(S, hunt) {
   hunt.phase = 'chase'; hunt.elapsed = 0;
   hunt.first = !S.discoveries[hunt.kind];
+  hunt.prevBest = (S.discoveries[hunt.kind] && S.discoveries[hunt.kind].best) || 0;
   if (hunt.first) S.discoveries[hunt.kind] = { found: 1, best: 0, completed: 0 };
   releaseWave(S, hunt);
   S.events.push({ type: 'huntDiscover', kind: hunt.kind, first: hunt.first });
@@ -120,10 +123,8 @@ function endHunt(S, hunt) {
   // 恢复普通群体，不瞬间抹掉玩家正在追的猎物；已回收的群体仍按原规则消失。
   for (const g of hunt.groups) { g.huntRetire = S.t + 45; delete g.huntId; delete g.huntMotion; delete g.huntPhase; delete g.huntIndex; delete g.huntStart; delete g.huntProgress; }
   for (const c of S.creatures) if (c.huntId === hunt.id) { delete c.huntId; delete c.huntSlot; delete c.huntCounted; }
-  // 猎场奖励：每抓到一只多给 1 点成长，追满（success）再加 10 点；没抓到的不给（忽略 / 错过 = 0）
-  const bonus = active && hunt.caught > 0 ? hunt.caught + (completed ? 10 : 0) : 0;
-  if (bonus) S.pts += bonus;
-  if (active) S.events.push({ type: 'huntEnd', kind: hunt.kind, caught: hunt.caught, total: hunt.total, completed, bonus });
+  // 奖励已经在抓的时候当场给了（recordHuntEat），这里只汇总；best 用结束前的旧纪录判断是不是新纪录
+  if (active) S.events.push({ type: 'huntEnd', kind: hunt.kind, caught: hunt.caught, total: hunt.total, completed, bonus: hunt.bonus, record: hunt.caught > 0 && hunt.caught > (hunt.prevBest || 0) });
   S.hunt = null;
   S.huntNext = S.t + (active ? 35 : 20);
 }
@@ -178,6 +179,12 @@ export function recordHuntEat(S, c) {
   if (!hunt || hunt.phase === 'cue' || c.huntId !== hunt.id || c.huntCounted) return;
   c.huntCounted = true;
   hunt.caught++;
+  S.pts += HUNT_PER; hunt.bonus += HUNT_PER;
+  S.events.push({ type: 'huntCatch', kind: hunt.kind, x: c.x, y: c.y, z: c.z, bonus: HUNT_PER, caught: hunt.caught, goal: hunt.goal });
+  if (!hunt.goalHit && hunt.caught >= hunt.goal) {
+    hunt.goalHit = true; S.pts += HUNT_GOAL_BONUS; hunt.bonus += HUNT_GOAL_BONUS;
+    S.events.push({ type: 'huntGoal', kind: hunt.kind, bonus: HUNT_GOAL_BONUS });
+  }
   const rec = S.discoveries[hunt.kind];
   if (rec) rec.best = Math.max(rec.best, hunt.caught);
 }

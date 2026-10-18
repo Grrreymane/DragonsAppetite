@@ -37,7 +37,8 @@ tools/rec3d.py        无头 Chrome（GPU）跑页面 + 导演脚本，录视频
 - `createSim({ discoveries })` 克隆探索记录；`stepHunts` 在生物移动前更新队形，`recordHuntEat` 只在真正吃到时计数。普通猎物、保底刷新与成长目标照常运行。
 - `S.hunt` 为 `null` 或 `{ id, kind: 'cloud'|'tide', phase: 'cue'|'chase'|'finale', x, y, z, yaw, elapsed, duration, caught, total, route, first }`；`route` 是世界坐标点列。猎场个体 / 群带 `huntId`。
 - `S.discoveries` / `save.discoveries` 只存已发现的种类：`{ cloud: { found: 1, best, completed }, tide: ... }`。旧档默认为空，发现和结束时立即保存；读档重新寻找猎场，已有纪录不丢失。
-- `huntDiscover { kind, first }`、`huntPhase { kind, phase }`、`huntEnd { kind, caught, total, completed }` 驱动提示和存档，不额外发成长奖励。
+- `huntDiscover { kind, first }`、`huntPhase { kind, phase }`、`huntCatch { x,y,z, bonus, caught, goal }`、`huntGoal { bonus }`、`huntEnd { kind, caught, total, completed, bonus, record }` 驱动提示和存档。
+- 奖励（2026-10 起，用户反馈「不清楚事件有什么奖励」）：猎场里每吃一只当场 +1 成长（`HUNT_PER`），吃满 `goal`（云 5 / 鱼 7）只当场再 +10（`HUNT_GOAL_BONUS`）；忽略、错过、只靠近不吃 = 0。横幅在线索阶段就写明「每只 +1 · 吃满 N 只再 +10」，追猎时显示 已抓/目标，抓到时飘「+1」，达成时飘「达成 · 成长 +10」，结束大字两行：「吃到 / 新纪录 N 只」+「成长 +M」。
 - `view/hunts.js` 的 `createHuntView(scene).update(S, dt)` 复用金色云隙 / 水下微光和路线光点；HUD 只读状态，图鉴展示探索印记与最好纪录。
 - 验证：`npm test`；`tools/scenarios/hunts_review.js` 配合 `tools/rec3d.py --dom` 实际转向追猎并截图，支持 `kind` / `stage` 参数。
 

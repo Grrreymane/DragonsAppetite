@@ -582,3 +582,14 @@
 .dui .d-hunt.cue{ animation:d-huntpulse 1.6s ease-in-out infinite; }
 .dui .d-hunt.finale{ border-color:#c7741c; }
 @keyframes d-huntpulse{ 0%,100%{ box-shadow:var(--rim), 0 3px 0 var(--ink), 0 0 0 0 rgba(255,210,90,.0); } 50%{ box-shadow:var(--rim), 0 3px 0 var(--ink), 0 0 0 6px rgba(255,210,90,.35); } }
+
+/* 猎场：抓到时飘的「+1」、达成时的大字；达成后横幅变金边 */
+.dui .d-hfloat{ position:absolute; z-index:6; pointer-events:none; white-space:nowrap; transform:translate(-50%,-50%);
+  font:normal 22px/1 var(--fT); color:#ffe27a; text-shadow:0 2px 0 #6a3a14,2px 0 0 #6a3a14,-2px 0 0 #6a3a14,0 -2px 0 #6a3a14; }
+.dui .d-hfloat.big{ font-size:26px; color:#fff1b8; }
+.dui .d-hunt.won{ border-color:#d8941c; }
+.dui .d-hunt.won .d-hunt-count{ color:#e8a020; }
+
+/* 大字提示可以两行（猎场结束：第二行是成长奖励，小一号） */
+.dui .d-toast{ white-space:pre-line; }
+.dui .d-toast::first-line{ font-size:60px; }
