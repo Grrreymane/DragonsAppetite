@@ -60,12 +60,12 @@ export function fallbackUI(root, api) {
   const el = document.createElement('div');
   el.style.cssText = 'position:absolute;inset:0;pointer-events:none;color:#fff;font:16px/1.4 var(--px-font);text-shadow:0 1px 3px #000';
   el.innerHTML = `<div id="fbT" style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;pointer-events:auto;background:rgba(10,20,40,.35)">
-    <b style="font:40px var(--title-font)">小龙大胃王</b>
-    <button data-k="fire" style="font:20px var(--title-font);padding:12px 28px;border-radius:14px;border:0;background:#e2552a;color:#fff">火龙</button>
-    <button data-k="sea" style="font:20px var(--title-font);padding:12px 28px;border-radius:14px;border:0;background:#1f8a9a;color:#fff">海龙</button></div>
+    <b style="font:800 40px var(--title-font)">小龙大胃王</b>
+    <button data-k="fire" style="font:800 20px var(--title-font);padding:12px 28px;border-radius:14px;border:0;background:#e2552a;color:#fff">火龙</button>
+    <button data-k="sea" style="font:800 20px var(--title-font);padding:12px 28px;border-radius:14px;border:0;background:#1f8a9a;color:#fff">海龙</button></div>
     <div id="fbH" style="display:none;position:absolute;top:calc(12px + env(safe-area-inset-top));left:12px;right:12px"><div id="fbBar" style="height:10px;border-radius:5px;background:rgba(0,0,0,.35);overflow:hidden"><i style="display:block;height:100%;width:0;background:#ffd04a"></i></div><div id="fbG" style="margin-top:6px"></div></div>
-    <button id="fbA" style="display:none;position:absolute;right:16px;bottom:calc(22px + env(safe-area-inset-bottom));width:88px;height:88px;border-radius:50%;border:0;background:#e2552a;color:#fff;font:18px var(--title-font);pointer-events:auto">喷火</button>
-    <div id="fbToast" style="position:absolute;top:38%;left:0;right:0;text-align:center;font:36px var(--title-font);opacity:0;transition:opacity .4s"></div>`;
+    <button id="fbA" style="display:none;position:absolute;right:16px;bottom:calc(22px + env(safe-area-inset-bottom));width:88px;height:88px;border-radius:50%;border:0;background:#e2552a;color:#fff;font:800 18px var(--title-font);pointer-events:auto">喷火</button>
+    <div id="fbToast" style="position:absolute;top:38%;left:0;right:0;text-align:center;font:800 36px var(--title-font);opacity:0;transition:opacity .4s"></div>`;
   root.appendChild(el);
   const $ = s => el.querySelector(s);
   el.querySelectorAll('[data-k]').forEach(b => b.addEventListener('pointerdown', e => { e.stopPropagation(); e.preventDefault(); api.onPick(b.dataset.k); }));

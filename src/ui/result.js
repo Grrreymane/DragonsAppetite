@@ -2,8 +2,8 @@
 import { icon, iconSVG, DRAGON_ART, drawPainted, sheetReady } from './icons.js';
 import { h, button, blocker, show, setIcon } from './dom.js';
 
-const FT = '"ZCOOL QingKe HuangYou","PingFang SC","Microsoft YaHei",sans-serif';
-const FP = '"Fusion Pixel","PingFang SC","Microsoft YaHei",sans-serif';
+const FT = '"Source Han Sans SC","Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif';
+const FP = FT;
 const mmss = s => { s = Math.max(0, Math.round(+s || 0)); return String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0'); };
 const loadImg = src => new Promise(r => { const i = new Image(); i.onload = () => r(i); i.onerror = () => r(null); i.src = src; });
 const LOGO = new URL('../../img/ui/logo.webp', import.meta.url).href;
@@ -85,7 +85,7 @@ export function createResult(root, api) {
 // 竖版分享卡 720×1280
 async function drawCard(info, shot) {
   const W = 720, H = 1280, sea = info.kind === 'sea';
-  try { await sheetReady; await Promise.all([document.fonts.load(`96px ${FT}`, '小龙大胃王成少年！'), document.fonts.load(`48px ${FP}`, '用时吃了图鉴0123456789:/')]); } catch (_) { /* 字体没好就用系统字 */ }
+  try { await sheetReady; await Promise.all([document.fonts.load(`800 96px ${FT}`, '小龙大胃王成少年！'), document.fonts.load(`500 48px ${FP}`, '用时吃了图鉴0123456789:/')]); } catch (_) { /* 字体没好就用系统字 */ }
   const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
   const x = cv.getContext('2d');
   const g = x.createLinearGradient(0, 0, 0, H);
@@ -100,7 +100,7 @@ async function drawCard(info, shot) {
   };
   const logo = await loadImg(LOGO);
   if (logo) { const lw = 520, lh = logo.height * lw / logo.width; x.drawImage(logo, (W - lw) / 2, 16, lw, lh); }
-  else txt('小龙大胃王', W / 2, 112, `96px ${FT}`, '#fff');
+  else txt('小龙大胃王', W / 2, 112, `800 96px ${FT}`, '#fff');
   // 照片框
   const fx = 60, fy = 262, fw = 600, fh = 590, rr = 36;
   const rrect = () => { x.beginPath(); x.moveTo(fx + rr, fy); x.arcTo(fx + fw, fy, fx + fw, fy + fh, rr); x.arcTo(fx + fw, fy + fh, fx, fy + fh, rr); x.arcTo(fx, fy + fh, fx, fy, rr); x.arcTo(fx, fy, fx + fw, fy, rr); x.closePath(); };
@@ -110,16 +110,16 @@ async function drawCard(info, shot) {
   else { const a = await loadImg(svgURL(DRAGON_ART[sea ? 'sea' : 'fire'])); if (a) x.drawImage(a, fx + 20, fy + 40, fw - 40, fw - 40); }
   x.restore();
   rrect(); x.lineWidth = 10; x.strokeStyle = INK; x.stroke(); x.lineWidth = 4; x.strokeStyle = '#f2bd3e'; x.stroke();
-  txt((info.stageName || '成龙') + '！', W / 2, 936, `120px ${FT}`, sea ? '#c9fff6' : '#ffeaa0', INK, 7);
+  txt((info.stageName || '成龙') + '！', W / 2, 936, `800 120px ${FT}`, sea ? '#c9fff6' : '#ffeaa0', INK, 7);
   // 三项数字
   const cols = [['clock', '用时', mmss(info.timeSec)], [sea ? 'gulp_sea' : 'gulp', '吃了', String(info.eaten | 0)], ['book', '图鉴', (info.codexN | 0) + '/' + (info.codexMax || 12)]];
   for (let i = 0; i < 3; i++) {
     const cx = 130 + i * 230;
     if (!drawPainted(x, cols[i][0], cx - 36, 1028, 72)) { const ic = await loadImg(svgURL(iconSVG(cols[i][0]))); if (ic) x.drawImage(ic, cx - 28, 1040, 56, 56); }
-    txt(cols[i][1], cx, 1122, `24px ${FP}`, '#fff', INK, 3);
-    txt(cols[i][2], cx, 1170, `48px ${FP}`, '#fff', INK, 4);
+    txt(cols[i][1], cx, 1122, `500 24px ${FP}`, '#fff', INK, 3);
+    txt(cols[i][2], cx, 1170, `500 48px ${FP}`, '#fff', INK, 4);
   }
   const url = (location.origin + location.pathname).replace(/^https?:\/\//, '').replace(/index\.html$/, '');
-  txt(url.length > 46 ? url.slice(0, 46) : url, W / 2, 1240, `24px ${FP}`, '#ffffffcc', INK, 2);
+  txt(url.length > 46 ? url.slice(0, 46) : url, W / 2, 1240, `500 24px ${FP}`, '#ffffffcc', INK, 2);
   return cv;
 }

@@ -1,7 +1,7 @@
 /* 小龙大胃王 · 界面样式（ui/*.js 用）。
    风格：暖色羊皮纸面板 + 金边 + 深棕描边（和卡通描边的 3D 画面一致）；主按钮是宝石色（火龙橙红 / 海龙青蓝）。
    图标：AI 画的图集 img/ui/icons.webp（网址带版本号，由 ui.js 写进变量 --pi-sheet；根节点有 .pi-ok 时显示），没加载好就显示内联 SVG。
-   字体：标题大字 = 庆科黄油体（任意字号）；按钮和小字 = Fusion Pixel（只用 12 / 24px，像素字才清晰）
+   字体：全部用思源黑体（Source Han Sans SC，本地子集 fonts/sans.woff2）；标题 800 粗，正文 500
    尺寸：--s 是整体缩放（宽屏 ≥ 480px 时 1.2），只缩放框和图标，不缩放像素字 */
 .dui{
   --ink:#2a1a14; --txt:#4a2a14; --txt2:#8a6038;
@@ -10,8 +10,8 @@
   --fa:#ffc061; --fb:#f2722c; --fc:#b8361c; --sa:#8ff0e2; --sb2:#26aab4; --sc:#146a8a; --gold:#ffd23f;
   --k1:var(--fa); --k2:var(--fb); --k3:var(--fc); --kt:#8a2e10;
   --s:1;
-  --fT:"ZCOOL QingKe HuangYou","PingFang SC","Microsoft YaHei",sans-serif;
-  --fP:"Fusion Pixel","PingFang SC","Microsoft YaHei",sans-serif;
+  --fT:"Source Han Sans SC","Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif;
+  --fP:"Source Han Sans SC","Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif;
   --st:max(6px,env(safe-area-inset-top,0px)); --sbm:max(8px,env(safe-area-inset-bottom,0px));
   --sl:env(safe-area-inset-left,0px); --sr:env(safe-area-inset-right,0px);
   --o1:1px 0 0 var(--ink),-1px 0 0 var(--ink),0 1px 0 var(--ink),0 -1px 0 var(--ink),1px 1px 0 var(--ink),-1px 1px 0 var(--ink),1px -1px 0 var(--ink),-1px -1px 0 var(--ink);
@@ -23,7 +23,7 @@
   --paper:linear-gradient(180deg,var(--p1),var(--p2) 55%,var(--p3));
   --rim:inset 0 0 0 2.5px var(--g2), inset 0 0 0 4.5px rgba(255,255,255,.55);
   position:absolute; inset:0; overflow:hidden; pointer-events:none; z-index:5;
-  color:#fff; font:12px/1.2 var(--fP); letter-spacing:0;
+  color:#fff; font:500 12px/1.2 var(--fP); letter-spacing:0;
   -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; -webkit-tap-highlight-color:transparent;
 }
 .dui.d-wide{ --s:1.2; }
@@ -92,7 +92,7 @@
 /* 面板顶上的金色缎带标题 */
 .dui .d-ribbon{ position:absolute; left:50%; top:-22px; transform:translateX(-50%); display:flex; align-items:center; gap:6px; height:40px; padding:0 20px; border-radius:12px; white-space:nowrap;
   background:linear-gradient(180deg,var(--g1),var(--g2) 60%,var(--g3)); border:3px solid var(--ink); box-shadow:inset 0 2px 0 rgba(255,255,255,.6), 0 3px 0 var(--ink);
-  font:normal 28px/1 var(--fT); color:#fff; text-shadow:var(--o2r); }
+  font:800 28px/1 var(--fT); color:#fff; text-shadow:var(--o2r); }
 .dui .d-ribbon .ic{ font-size:30px; }
 
 /* ---------- HUD ---------- */
@@ -111,7 +111,7 @@
 .dui .d-node.cur .d-nh .ic{ font-size:calc(54px * var(--s)); }
 .dui .d-node:not(.on) .d-nh{ filter:grayscale(.9) brightness(.85) contrast(.9); opacity:.8; }
 .dui .d-node em{ position:absolute; left:50%; bottom:-11px; transform:translateX(-50%); min-width:20px; height:18px; padding:0 3px; border-radius:9px;
-  font:normal 12px/14px var(--fP); text-align:center; color:var(--txt); background:var(--p2); border:2px solid var(--ink); }
+  font:500 12px/14px var(--fP); text-align:center; color:var(--txt); background:var(--p2); border:2px solid var(--ink); }
 .dui .d-node.on em{ color:#fff; background:linear-gradient(180deg,var(--k2),var(--k3)); text-shadow:var(--o1); }
 .dui .d-node.cur{ width:calc(47px * var(--s)); height:calc(47px * var(--s)); box-shadow:0 0 0 3px var(--g1), 0 0 0 5px var(--ink), 0 3px 0 5px var(--ink); }
 .dui .d-seg{ position:relative; flex:1; height:calc(15px * var(--s)); margin:0 -4px; border-radius:8px; overflow:hidden; background:rgba(42,26,20,.62); border:2.5px solid var(--ink); }
@@ -160,7 +160,7 @@
 .dui .d-gstun{ position:relative; display:flex; }
 .dui .d-gstun > i{ position:absolute; right:calc(-13px * var(--s)); top:calc(-14px * var(--s)); }
 .dui .d-gstun > i .ic{ font-size:calc(20px * var(--s)); }
-.dui .d-x{ font:normal 36px/1 var(--fT); color:var(--gold); text-shadow:var(--o2); }
+.dui .d-x{ font:800 36px/1 var(--fT); color:var(--gold); text-shadow:var(--o2); }
 /* 「长大」目标：下一阶段的头像（画的金框圆章）+ 右下角绿色上箭头；不写数字，卡片只剩头像 */
 .dui .d-ggrow{ position:relative; display:flex; }
 .dui .d-gpic .d-ggrow > .ic{ font-size:calc(50px * var(--s)); }
@@ -196,7 +196,7 @@
 .dui .d-tag{ width:0; height:0; }
 .dui .d-tag .ic{ position:absolute; left:-13px; top:-13px; font-size:26px; color:#ffb347; }
 .dui .d-tag.lk .ic{ left:-21px; color:#e8eef5; }
-.dui .d-tag i{ position:absolute; left:2px; top:-11px; width:22px; height:22px; border-radius:50%; font:normal 12px/18px var(--fP); font-style:normal; text-align:center;
+.dui .d-tag i{ position:absolute; left:2px; top:-11px; width:22px; height:22px; border-radius:50%; font:500 12px/18px var(--fP); font-style:normal; text-align:center;
   color:#fff; background:linear-gradient(180deg,var(--k2),var(--k3)); border:2px solid var(--ink); text-shadow:var(--o1); }
 /* 锁定圈：金色四段弧 + 向内的小三角，慢转 + 轻轻呼吸，不闪 */
 .dui .d-lock{ width:0; height:0; }
@@ -327,7 +327,7 @@
 .dui .d-pab .ic{ font-size:30px; }
 
 /* ---------- 大字（阶段名） ---------- */
-.dui .d-toast{ position:absolute; z-index:3; left:0; right:0; top:30%; text-align:center; font:normal 60px/1.1 var(--fT); color:#fff; opacity:0; pointer-events:none;
+.dui .d-toast{ position:absolute; z-index:3; left:0; right:0; top:30%; text-align:center; font:800 60px/1.1 var(--fT); color:#fff; opacity:0; pointer-events:none;
   text-shadow:var(--o3), 0 0 24px rgba(255,170,60,.7); }
 .dui .d-toast.sea{ text-shadow:var(--o3), 0 0 24px rgba(80,240,220,.7); }
 
@@ -340,7 +340,7 @@
 .dui .d-abrib::before,.dui .d-abrib::after{ content:''; position:absolute; top:10px; width:18px; height:26px; z-index:-1; background:var(--g3); border:3px solid var(--ink); }
 .dui .d-abrib::before{ left:-14px; border-radius:6px 0 0 6px; clip-path:polygon(0 0,100% 0,100% 100%,0 100%,40% 50%); }
 .dui .d-abrib::after{ right:-14px; border-radius:0 6px 6px 0; clip-path:polygon(0 0,100% 0,60% 50%,100% 100%,0 100%); }
-.dui .d-abrib span{ font:normal 30px/1 var(--fT); color:#fff; text-shadow:var(--o2r); letter-spacing:2px; margin-top:-2px; }
+.dui .d-abrib span{ font:800 30px/1 var(--fT); color:#fff; text-shadow:var(--o2r); letter-spacing:2px; margin-top:-2px; }
 .dui .d-abrows{ display:flex; flex-direction:column; gap:10px; }
 .dui .d-abrow{ display:flex; align-items:center; gap:12px; }
 .dui .d-abic{ position:relative; flex:none; width:calc(68px * var(--s)); height:calc(68px * var(--s)); border-radius:50%; display:flex; align-items:center; justify-content:center; overflow:hidden;
@@ -365,7 +365,7 @@
 .dui:not(.d-wide) .d-abil.two .d-abtx span{ grid-column:1 / -1; text-align:center; }
 .dui .d-rays{ position:absolute; inset:-30%; background:repeating-conic-gradient(rgba(255,255,255,.55) 0 10deg,transparent 10deg 30deg); animation:d-spin 9s linear infinite; }
 .dui .d-abtx{ display:flex; flex-direction:column; gap:6px; min-width:0; }
-.dui .d-abtx b{ font:normal calc(36px * var(--s))/1 var(--fT); color:var(--kt); white-space:nowrap; }
+.dui .d-abtx b{ font:800 calc(36px * var(--s))/1 var(--fT); color:var(--kt); white-space:nowrap; }
 .dui .d-abtx span{ font-size:24px; line-height:26px; color:var(--txt); text-wrap:balance; }   /* 24px（像素字 12 的倍数）；折行时两行差不多长，不剩一个字 */
 /* 只有一个能力：卡片放宽一点，8 个字一行放得下 */
 .dui .d-abil:not(.two){ width:min(calc(330px * var(--s)), calc(100% - 24px)); }
@@ -382,12 +382,12 @@
 .dui .d-tin{ position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; padding:calc(var(--st) + 76px) 16px calc(var(--sbm) + 14px); }
 .dui .d-logo{ position:relative; margin:0; display:flex; flex-direction:column; align-items:center; width:min(90%, 400px); font-weight:normal; }
 .dui .d-limg{ display:block; width:100%; height:auto; filter:drop-shadow(0 6px 10px rgba(40,20,10,.35)); }
-.dui .d-ltx{ display:flex; gap:2px; font:normal 64px/1 var(--fT); text-shadow:var(--o3); letter-spacing:2px; }
+.dui .d-ltx{ display:flex; gap:2px; font:800 64px/1 var(--fT); text-shadow:var(--o3); letter-spacing:2px; }
 .dui .d-ltx span:first-child{ color:#fff2d6; }
 .dui .d-ltx span:last-child{ color:var(--g1); }
 .dui .d-logo:not(.noimg) .d-ltx{ display:none; }
 .dui .d-logo.noimg .d-limg{ display:none; }
-.dui .d-sub{ margin-top:4px; padding:3px 14px 4px; border-radius:12px; font:normal 22px/1 var(--fT); letter-spacing:1px; color:#fff; text-shadow:var(--o1);
+.dui .d-sub{ margin-top:4px; padding:3px 14px 4px; border-radius:12px; font:800 22px/1 var(--fT); letter-spacing:1px; color:#fff; text-shadow:var(--o1);
   background:rgba(42,26,20,.55); border:2px solid rgba(255,234,180,.7); }
 .dui .d-logo.sm{ width:min(80%, 340px); }
 .dui .d-cards{ margin-top:auto; display:flex; gap:14px; width:100%; max-width:420px; justify-content:center; }
@@ -408,7 +408,7 @@
 .dui .d-card.img .d-cart{ background:radial-gradient(circle at 50% 50%,rgba(255,246,220,.85),rgba(255,246,220,0) 62%); }
 .dui .d-card.img .art{ display:none; }
 .dui .d-cname{ position:absolute; z-index:1; left:50%; bottom:10px; transform:translateX(-50%); height:40px; display:flex; align-items:center; gap:4px; padding:0 14px 0 6px; border-radius:20px; white-space:nowrap;
-  background:var(--paper); border:2.5px solid var(--ink); box-shadow:0 3px 0 var(--ink); font:normal 30px/1 var(--fT); color:var(--txt); }
+  background:var(--paper); border:2.5px solid var(--ink); box-shadow:0 3px 0 var(--ink); font:800 30px/1 var(--fT); color:var(--txt); }
 .dui .d-cname .ic{ font-size:34px; }
 .dui .d-card.fire .d-cname{ color:#8a2e10; }
 .dui .d-card.sea .d-cname{ color:#0e5068; }
@@ -448,7 +448,7 @@
 /* ---------- 图鉴 ---------- */
 .dui .d-codex{ z-index:14; }
 .dui .d-cxin{ width:calc(100% - 24px); max-width:440px; max-height:calc(100% - var(--st) - var(--sbm) - 40px); margin-top:14px; padding:30px 12px 14px; display:flex; flex-direction:column; gap:10px; }
-.dui .d-cxn{ font-weight:normal; font:normal 24px/1 var(--fP); color:#fff; text-shadow:var(--o1); margin-left:4px; }
+.dui .d-cxn{ font-weight:normal; font:500 24px/1 var(--fP); color:#fff; text-shadow:var(--o1); margin-left:4px; }
 .dui .d-grid{ display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; min-height:0; overflow:hidden; }
 .dui .d-cell{ position:relative; aspect-ratio:1/1.02; border-radius:14px; background:rgba(120,80,30,.12); border:2px solid rgba(120,80,30,.35);
   display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; padding:4px; min-height:0; }
@@ -465,14 +465,14 @@
 .dui .d-cneed .ic{ font-size:22px; }
 .dui.d-narrow .d-cneed .ic,.dui.d-mid .d-cneed .ic{ font-size:20px; }
 .dui .d-cneed .w-sea{ color:#4fd8ca; }
-.dui .d-chip{ display:inline-block; min-width:22px; height:20px; padding:0 3px; border-radius:10px; font:normal 12px/16px var(--fP); font-style:normal; text-align:center;
+.dui .d-chip{ display:inline-block; min-width:22px; height:20px; padding:0 3px; border-radius:10px; font:500 12px/16px var(--fP); font-style:normal; text-align:center;
   color:#fff; text-shadow:var(--o1); background:linear-gradient(180deg,#b88a50,#7a5228); border:2px solid var(--ink); }
 .dui .d-cxbot{ display:flex; justify-content:center; padding-top:2px; }
 
 /* ---------- 结算卡 ---------- */
 .dui .d-result{ z-index:16; }
 .dui .d-rin{ width:calc(100% - 40px); max-width:360px; padding:16px 16px 18px; display:flex; flex-direction:column; align-items:center; gap:12px; }
-.dui .d-rtitle{ margin:0; font:normal 60px/1.05 var(--fT); color:var(--g1); text-shadow:var(--o3), 0 0 20px rgba(255,160,60,.6); }
+.dui .d-rtitle{ margin:0; font:800 60px/1.05 var(--fT); color:var(--g1); text-shadow:var(--o3), 0 0 20px rgba(255,160,60,.6); }
 .dui .d-result.sea .d-rtitle{ color:#c9fff6; text-shadow:var(--o3), 0 0 20px rgba(80,240,220,.6); }
 .dui .d-rshot{ position:relative; width:100%; aspect-ratio:16/11; border-radius:16px; overflow:hidden; border:3px solid var(--ink); background:#ffe2b8;
   box-shadow:0 3px 0 var(--ink); }
@@ -512,7 +512,7 @@
 .dui .d-handimg{ display:block; width:48px; height:auto; filter:drop-shadow(0 2px 2px rgba(40,20,10,.35)); }
 
 /* 小目标卡下面的说明（只在看图标不好懂的目标上出现） */
-.dui .d-goal .d-gcap{ position:absolute; left:0; right:0; top:100%; margin-top:4px; text-align:center; white-space:nowrap; font:12px/1.4 var(--px-font,"Fusion Pixel",sans-serif); color:#fff8e6; text-shadow:0 1px 0 #4a2a1a,1px 0 0 #4a2a1a,-1px 0 0 #4a2a1a,0 -1px 0 #4a2a1a; pointer-events:none; }
+.dui .d-goal .d-gcap{ position:absolute; left:0; right:0; top:100%; margin-top:4px; text-align:center; white-space:nowrap; font:500 12px/1.4 var(--fP); color:#fff8e6; text-shadow:0 1px 0 #4a2a1a,1px 0 0 #4a2a1a,-1px 0 0 #4a2a1a,0 -1px 0 #4a2a1a; pointer-events:none; }
 .dui .d-goal .d-gcap[hidden]{ display:none; }
 
 /* 猎场：轻量的行进提示，放在小目标卡下面；能力解锁期间暂时让出画面。 */
@@ -523,10 +523,10 @@
 .dui .d-hunt-row{ display:flex; align-items:center; gap:6px; }
 .dui .d-hunt-icon .ic{ font-size:22px; color:#ffdf88; }
 .dui .d-hunt.sea .d-hunt-icon .ic{ color:#b4ffed; }
-.dui .d-hunt-row b{ font:normal 21px/24px var(--fT); letter-spacing:1px; }
-.dui .d-hunt-count{ margin-left:auto; font:normal 21px/24px var(--fT); color:#ffdf88; }
+.dui .d-hunt-row b{ font:800 21px/24px var(--fT); letter-spacing:1px; }
+.dui .d-hunt-count{ margin-left:auto; font:800 21px/24px var(--fT); color:#ffdf88; }
 .dui .d-hunt.sea .d-hunt-count{ color:#b4ffed; }
-.dui .d-hunt-hint{ display:block; padding-left:28px; font:12px/16px var(--fP); white-space:nowrap; }
+.dui .d-hunt-hint{ display:block; padding-left:28px; font:500 12px/16px var(--fP); white-space:nowrap; }
 .dui .d-hunt-progress{ position:absolute; bottom:0; left:0; right:0; height:3px; background:rgba(255,255,255,.12); }
 .dui .d-hunt-progress u{ position:absolute; inset:0; background:#e9c478; transform:scaleX(0); transform-origin:0 50%; transition:transform .25s linear; }
 .dui .d-hunt.sea .d-hunt-progress u{ background:#87e4d1; }
@@ -547,7 +547,7 @@
 .dui .d-codex{ touch-action:pan-y; }
 .dui .d-cxscroll{ overflow-y:auto; min-height:0; overscroll-behavior:contain; touch-action:pan-y; padding:1px 1px 5px; }
 .dui .d-cxscroll .d-grid{ overflow:visible; }
-.dui .d-explore-title{ margin:13px 2px 7px; font:normal 20px/24px var(--fT); color:var(--txt2); }
+.dui .d-explore-title{ margin:13px 2px 7px; font:800 20px/24px var(--fT); color:var(--txt2); }
 .dui .d-explore{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
 .dui .d-explore-entry{ position:relative; display:flex; align-items:center; gap:6px; min-height:61px; padding:7px 5px; border-radius:12px;
   background:rgba(120,80,30,.08); border:1.5px solid rgba(120,80,30,.24); }
@@ -559,8 +559,8 @@
 .dui .d-explore-entry.found .d-explore-stamp{ background:#f4d886; color:#fff3bb; }
 .dui .d-explore-entry.tide.found .d-explore-stamp{ background:#8dcebf; color:#e1fff6; }
 .dui .d-explore-entry > div{ min-width:0; display:flex; flex-direction:column; gap:5px; }
-.dui .d-explore-entry b{ font:normal 18px/20px var(--fT); color:var(--txt); white-space:nowrap; }
-.dui .d-explore-entry > div > span{ font:12px/12px var(--fP); color:var(--txt2); white-space:nowrap; }
+.dui .d-explore-entry b{ font:800 18px/20px var(--fT); color:var(--txt); white-space:nowrap; }
+.dui .d-explore-entry > div > span{ font:500 12px/12px var(--fP); color:var(--txt2); white-space:nowrap; }
 .dui .d-explore-check{ position:absolute; right:3px; top:3px; color:#83bd87; font-size:12px; }
 .dui.d-narrow .d-explore-entry{ justify-content:center; text-align:center; padding-left:4px; padding-right:4px; }
 .dui.d-narrow .d-explore-stamp{ display:none; }
@@ -572,10 +572,10 @@
 .dui .d-hunt-icon{ display:flex; width:30px; height:30px; border-radius:50%; align-items:center; justify-content:center; background:#ffd977; box-shadow:inset 0 -2px 0 rgba(120,70,20,.35); }
 .dui .d-hunt.sea .d-hunt-icon{ background:#8fe6d6; }
 .dui .d-hunt-icon .ic, .dui .d-hunt.sea .d-hunt-icon .ic{ font-size:22px; color:#6a3d1c; }
-.dui .d-hunt-row b{ font:normal 23px/28px var(--fT); color:var(--txt); }
-.dui .d-hunt-count, .dui .d-hunt.sea .d-hunt-count{ font:normal 24px/28px var(--fT); color:#d2661c; }
+.dui .d-hunt-row b{ font:800 23px/28px var(--fT); color:var(--txt); }
+.dui .d-hunt-count, .dui .d-hunt.sea .d-hunt-count{ font:800 24px/28px var(--fT); color:#d2661c; }
 .dui .d-hunt.sea .d-hunt-count{ color:#16808a; }
-.dui .d-hunt-hint{ padding-left:36px; font:12px/18px var(--fP); color:#7a5434; }
+.dui .d-hunt-hint{ padding-left:36px; font:500 12px/18px var(--fP); color:#7a5434; }
 .dui .d-hunt-progress{ left:10px; right:10px; bottom:5px; height:5px; border-radius:3px; background:rgba(90,52,32,.18); overflow:hidden; }
 .dui .d-hunt-progress u{ background:linear-gradient(90deg,#ffb53a,#ffd977); }
 .dui .d-hunt.sea .d-hunt-progress u{ background:linear-gradient(90deg,#2bb3b0,#8fe6d6); }
@@ -585,7 +585,7 @@
 
 /* 猎场：抓到时飘的「+1」、达成时的大字；达成后横幅变金边 */
 .dui .d-hfloat{ position:absolute; z-index:6; pointer-events:none; white-space:nowrap; transform:translate(-50%,-50%);
-  font:normal 22px/1 var(--fT); color:#ffe27a; text-shadow:0 2px 0 #6a3a14,2px 0 0 #6a3a14,-2px 0 0 #6a3a14,0 -2px 0 #6a3a14; }
+  font:800 22px/1 var(--fT); color:#ffe27a; text-shadow:0 2px 0 #6a3a14,2px 0 0 #6a3a14,-2px 0 0 #6a3a14,0 -2px 0 #6a3a14; }
 .dui .d-hfloat.big{ font-size:26px; color:#fff1b8; }
 .dui .d-hunt.won{ border-color:#d8941c; }
 .dui .d-hunt.won .d-hunt-count{ color:#e8a020; }
