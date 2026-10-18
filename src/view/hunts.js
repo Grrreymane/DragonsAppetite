@@ -41,6 +41,14 @@ export function createHuntView(scene) {
   const ripples = instances(geo(new THREE.RingGeometry(.965, 1, 48)), seaMat, 3);
   const bed = new THREE.Mesh(geo(new THREE.RingGeometry(3.5, 4.2, 40)), mat(0x57e5d8, .22));
   bed.rotation.x = -Math.PI / 2; root.add(bed);
+  // 远处就能看见的光柱（线索阶段最亮；追猎时淡淡地跟着当前的鸟群 / 鱼群）。上下两头渐隐，中间柔，正对镜头的地方亮
+  const beamU = { uCol: { value: new THREE.Color(0xffd36a) }, uA: { value: 0 }, uT: { value: 0 } };
+  const beam = new THREE.Mesh(geo(new THREE.CylinderGeometry(1, 1, 1, 28, 1, true).translate(0, .5, 0)), new THREE.ShaderMaterial({
+    uniforms: beamU, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false, toneMapped: false,
+    vertexShader: 'varying float vY; varying float vF; void main(){ vY = position.y; vec4 w = modelMatrix * vec4(position, 1.0); vec3 n = normalize(mat3(modelMatrix) * vec3(position.x, 0.0, position.z)); vec3 v = normalize(cameraPosition - w.xyz); vF = abs(dot(n, v)); gl_Position = projectionMatrix * viewMatrix * w; }',
+    fragmentShader: 'uniform vec3 uCol; uniform float uA, uT; varying float vY; varying float vF; void main(){ float ends = smoothstep(0.0, .18, vY) * smoothstep(1.0, .55, vY); float shimmer = .85 + .15 * sin(vY * 40.0 - uT * 3.0); float a = uA * ends * pow(vF, 1.6) * shimmer; gl_FragColor = vec4(uCol * a, 1.0); }',
+  }));
+  beam.frustumCulled = false; beam.renderOrder = 4; root.add(beam);
   let last = null, route = [], lengths = [], total = 0;
   const set = (mesh, i, x, y, z, sx, sy = sx, sz = sx, rx = 0, ry = 0, rz = 0) => {
     dummy.position.set(x, y, z); dummy.scale.set(sx, sy, sz); dummy.rotation.set(rx, ry, rz);
@@ -108,6 +116,15 @@ export function createHuntView(scene) {
           s, s * 1.7, s, 0, t * .25 + i, 0);
       }
       sparks.count = n; sparks.instanceMatrix.needsUpdate = true;
+      // 光柱：天上从云下 20 米一直到云上；海里从海底一直穿出水面
+      {
+        beamU.uT.value = t; beamU.uCol.value.setHex(sea ? 0x7ff5e4 : 0xffd36a);
+        const bx = anchor.x, bz = anchor.z, d = Math.hypot(hero.x - bx, hero.z - bz);
+        const y0 = sea ? seabedY(bx, bz) : anchor.y - 30, y1 = sea ? waveH(bx, bz, t) + 22 : anchor.y + 150;
+        beam.position.set(bx, y0, bz); beam.scale.set(sea ? 4 : 5, y1 - y0, sea ? 4 : 5);
+        const nearDim = .25 + .75 * clamp01((d - 15) / 45);          // 飞到跟前就变淡，不挡视线
+        beamU.uA.value = (cue ? .55 : finale ? .3 : .16) * nearDim * endFade;
+      }
     },
     dispose() {
       scene.remove(root);

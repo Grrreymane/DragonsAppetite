@@ -11,7 +11,7 @@ import { createIslands } from './view/islands.js';
 import { createClouds } from './view/clouds.js';
 import { createHuntView } from './view/hunts.js';
 import { createParticles } from './view/particles.js';
-import { createSpeedFx } from './view/speedfx.js';
+import { createSpeedFx, createTrails } from './view/speedfx.js';
 import { createDragonView, loadModel } from './view/dragon.js';
 import { createCamera } from './view/camera.js';
 import { fallbackCreatures, fallbackSea, fallbackUI, fallbackAudio } from './view/fallback.js';
@@ -42,6 +42,8 @@ const clouds = createClouds(ctx);
 const hunts = createHuntView(scene);
 const P = createParticles(ctx);
 const speedFx = createSpeedFx(ctx);
+const trails = createTrails(ctx);
+const _tips = [{ x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 0 }];
 const dragon = createDragonView(ctx);
 const cam = createCamera(camera);
 
@@ -205,7 +207,7 @@ function handleEvents(evs) {
         persist();
         break;
       case 'huntEnd':
-        if (e.caught > 0 && !evo && !ui.abilityLeft && !evs.some(event => event.type === 'evolve')) ui.toast(`这次吃到 ${e.caught} 只`);
+        if (e.caught > 0 && !evo && !ui.abilityLeft && !evs.some(event => event.type === 'evolve')) ui.toast(`吃到 ${e.caught} 只${e.bonus ? ` · 成长 +${e.bonus}` : ''}`);
         persist();
         break;
       case 'goal': saveT = 0; break;
@@ -311,9 +313,12 @@ function advance(dtReal) {
     cam.update(h, S, dtReal, waveT);
     // 速度感：空气里的线从镜头旁掠过；火龙快的时候翼尖拉出白色尾迹
     speedFx.update(camera, h, cam.sf || 0, camera.position.y < waveH(camera.position.x, camera.position.z, waveT), dtReal);
-    if (S.kind === 'fire' && h.medium === 'air' && (cam.sf || 0) > .35) {
-      const rx = Math.cos(h.yaw), rz = -Math.sin(h.yaw), w = h.len * .62;
-      for (const sgn of [-1, 1]) P.emit('splash', h.x + rx * w * sgn, h.y + h.len * .08, h.z + rz * w * sgn, 0, 0, 0, .5, (.22 + h.speed * dtReal * .5) * Math.max(1, h.len / 6), { grow: .3, alpha: .7 * cam.sf, drag: 0 });
+    {
+      // 翼尖尾迹（连续细带）：火龙在空中、速度快的时候才有
+      const rx = Math.cos(h.yaw), rz = -Math.sin(h.yaw), w = h.len * (.62 - .3 * (h.tuck || 0)), on = S.kind === 'fire' && h.medium === 'air' ? Math.max(0, ((cam.sf || 0) - .3) / .5) : 0;
+      _tips[0].x = h.x + rx * w; _tips[0].y = h.y + h.len * .08; _tips[0].z = h.z + rz * w;
+      _tips[1].x = h.x - rx * w; _tips[1].y = h.y + h.len * .08; _tips[1].z = h.z - rz * w;
+      trails.update(_tips, Math.min(1, on), .05 * Math.max(1, h.len / 6), dtReal);
     }
     // 喷火粒子 + 嘴边发光
     const firing = h.firing && state === 'play';

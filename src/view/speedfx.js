@@ -72,3 +72,50 @@ export function createSpeedFx({ scene }) {
     },
   };
 }
+
+// 翼尖尾迹：两条连续的细带（用户：不要圆点）。记下翼尖最近 0.6 秒的位置，相邻两点画一段，越老越淡、越细
+export function createTrails({ scene }) {
+  const M = 40, N = M * 2;
+  const geo = new THREE.InstancedBufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute([0, -1, 0, 1, -1, 0, 1, 1, 0, 0, 1, 0], 3));
+  geo.setIndex([0, 1, 2, 0, 2, 3]);
+  const iA = new THREE.InstancedBufferAttribute(new Float32Array(N * 3), 3).setUsage(THREE.DynamicDrawUsage);
+  const iB = new THREE.InstancedBufferAttribute(new Float32Array(N * 3), 3).setUsage(THREE.DynamicDrawUsage);
+  const iW = new THREE.InstancedBufferAttribute(new Float32Array(N * 4), 4).setUsage(THREE.DynamicDrawUsage);   // 宽 A、宽 B、透明 A、透明 B
+  geo.setAttribute('iA', iA); geo.setAttribute('iB', iB); geo.setAttribute('iW', iW); geo.instanceCount = 0;
+  const mat = new THREE.ShaderMaterial({
+    transparent: true, depthWrite: false,
+    vertexShader: `attribute vec3 iA, iB; attribute vec4 iW; varying float vS, vA;
+      void main(){
+        vec4 a = viewMatrix * vec4(iA, 1.0), b = viewMatrix * vec4(iB, 1.0);
+        vec3 p = mix(a.xyz, b.xyz, position.x);
+        vec3 d = normalize(b.xyz - a.xyz + vec3(1e-4));
+        vec3 s = normalize(cross(d, normalize(p)));
+        p += s * position.y * mix(iW.x, iW.y, position.x) * max(1.0, -p.z * .03);
+        vS = position.y; vA = mix(iW.z, iW.w, position.x);
+        gl_Position = projectionMatrix * vec4(p, 1.0);
+      }`,
+    fragmentShader: `varying float vS, vA; void main(){ float a = vA * (1.0 - vS * vS); if (a < .01) discard; gl_FragColor = vec4(1.0, 1.0, 1.0, a); }`,
+  });
+  const mesh = new THREE.Mesh(geo, mat); mesh.frustumCulled = false; mesh.renderOrder = 3; scene.add(mesh);
+  const hist = [[], []]; let acc = 0, k = 0;
+  return {
+    // tips：两个翼尖的世界坐标 [{x,y,z},{x,y,z}]；on：0..1 强度；w：带子宽（米）
+    update(tips, on, w, dt) {
+      k += (on - k) * Math.min(1, dt * 4);
+      acc += dt;
+      if (acc > .015) { acc = 0; for (let s = 0; s < 2; s++) { hist[s].unshift({ ...tips[s] }); if (hist[s].length > M) hist[s].pop(); } }
+      if (k < .02) { for (const hh of hist) hh.length = 0; geo.instanceCount = 0; return; }
+      let n = 0;
+      for (let s = 0; s < 2; s++) {
+        const H = [tips[s], ...hist[s]];
+        for (let i = 0; i < H.length - 1 && n < N; i++) {
+          const a = H[i], b = H[i + 1], fa = 1 - i / (H.length - 1), fb = 1 - (i + 1) / (H.length - 1);
+          iA.array.set([a.x, a.y, a.z], n * 3); iB.array.set([b.x, b.y, b.z], n * 3);
+          iW.array.set([w * (.3 + .7 * fa), w * (.3 + .7 * fb), .7 * k * fa, .7 * k * fb], n * 4); n++;
+        }
+      }
+      geo.instanceCount = n; iA.needsUpdate = iB.needsUpdate = iW.needsUpdate = true;
+    },
+  };
+}

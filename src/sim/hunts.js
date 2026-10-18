@@ -120,7 +120,10 @@ function endHunt(S, hunt) {
   // 恢复普通群体，不瞬间抹掉玩家正在追的猎物；已回收的群体仍按原规则消失。
   for (const g of hunt.groups) { g.huntRetire = S.t + 45; delete g.huntId; delete g.huntMotion; delete g.huntPhase; delete g.huntIndex; delete g.huntStart; delete g.huntProgress; }
   for (const c of S.creatures) if (c.huntId === hunt.id) { delete c.huntId; delete c.huntSlot; delete c.huntCounted; }
-  if (active) S.events.push({ type: 'huntEnd', kind: hunt.kind, caught: hunt.caught, total: hunt.total, completed });
+  // 猎场奖励：每抓到一只多给 1 点成长，追满（success）再加 10 点；没抓到的不给（忽略 / 错过 = 0）
+  const bonus = active && hunt.caught > 0 ? hunt.caught + (completed ? 10 : 0) : 0;
+  if (bonus) S.pts += bonus;
+  if (active) S.events.push({ type: 'huntEnd', kind: hunt.kind, caught: hunt.caught, total: hunt.total, completed, bonus });
   S.hunt = null;
   S.huntNext = S.t + (active ? 35 : 20);
 }

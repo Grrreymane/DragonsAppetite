@@ -565,3 +565,20 @@
 .dui.d-narrow .d-explore-entry{ justify-content:center; text-align:center; padding-left:4px; padding-right:4px; }
 .dui.d-narrow .d-explore-stamp{ display:none; }
 .dui.d-narrow .d-explore-entry b{ font-size:16px; }
+/* 猎场横幅 v2：羊皮纸卡（和小目标卡一套），标题大字、进度条金色 */
+.dui .d-hunt{ width:min(calc(236px * var(--s)),calc(100% - 64px)); padding:7px 14px 10px; border-radius:16px;
+  background:var(--paper); border:2.5px solid var(--ink); box-shadow:var(--rim), 0 3px 0 var(--ink), 0 6px 10px rgba(0,0,0,.22); color:var(--txt); }
+.dui .d-hunt.sea{ background:var(--paper); border-color:var(--ink); color:var(--txt); }
+.dui .d-hunt-icon{ display:flex; width:30px; height:30px; border-radius:50%; align-items:center; justify-content:center; background:#ffd977; box-shadow:inset 0 -2px 0 rgba(120,70,20,.35); }
+.dui .d-hunt.sea .d-hunt-icon{ background:#8fe6d6; }
+.dui .d-hunt-icon .ic, .dui .d-hunt.sea .d-hunt-icon .ic{ font-size:22px; color:#6a3d1c; }
+.dui .d-hunt-row b{ font:normal 23px/28px var(--fT); color:var(--txt); }
+.dui .d-hunt-count, .dui .d-hunt.sea .d-hunt-count{ font:normal 24px/28px var(--fT); color:#d2661c; }
+.dui .d-hunt.sea .d-hunt-count{ color:#16808a; }
+.dui .d-hunt-hint{ padding-left:36px; font:12px/18px var(--fP); color:#7a5434; }
+.dui .d-hunt-progress{ left:10px; right:10px; bottom:5px; height:5px; border-radius:3px; background:rgba(90,52,32,.18); overflow:hidden; }
+.dui .d-hunt-progress u{ background:linear-gradient(90deg,#ffb53a,#ffd977); }
+.dui .d-hunt.sea .d-hunt-progress u{ background:linear-gradient(90deg,#2bb3b0,#8fe6d6); }
+.dui .d-hunt.cue{ animation:d-huntpulse 1.6s ease-in-out infinite; }
+.dui .d-hunt.finale{ border-color:#c7741c; }
+@keyframes d-huntpulse{ 0%,100%{ box-shadow:var(--rim), 0 3px 0 var(--ink), 0 0 0 0 rgba(255,210,90,.0); } 50%{ box-shadow:var(--rim), 0 3px 0 var(--ink), 0 0 0 6px rgba(255,210,90,.35); } }
