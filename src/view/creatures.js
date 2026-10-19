@@ -16,6 +16,7 @@ const CULL_DEPTH = 8, CULL_HEIGHT = 6;            // 镜头在水上：比 -8 �
 const FOG_UW = new THREE.Color(0x06303c);         // 水下描边往这个深青色偏一点（不用纯黑，也不能淡到看不见）
 const ROAST = new THREE.Color(0xa8531e);          // 烤熟的橙褐
 const GOLD_C = new THREE.Color(GOLD);
+const SPECIAL_C = { ember: new THREE.Color(0xff5a1e), eddy: new THREE.Color(0x3ff0ff) };   // 领头（带特性的特殊猎物）：跟普通金色分得开
 const DAZE_T = 4;                                 // skillHit 是布尔值时：打中后晕多久（秒）
 const PORT_PAD = .07;                             // 小图四周留白（给浅色光边），占边长的比例
 const HEAT_MAX = .55;                           // 正在被火烤：st.heat 的上限（除以它 = 烤的进度 0..1，传给着色器）
@@ -166,14 +167,15 @@ export function createCreatures(ctx) {
     // 换色：烤熟 > 金色（正在烤不换色：只在片元里乘一点暖色 + 边缘热光，保留本身的颜色）
     let col = null, amt = 0;
     if (c.roast > 0) { col = ROAST; amt = .9; }
+    else if (c.special) { col = SPECIAL_C[c.special] || GOLD_C; amt = 1; }
     else if (c.gold) { col = GOLD_C; amt = 1; }
     if (col) { C[j] = col.r; C[j + 1] = col.g; C[j + 2] = col.b; C[j + 3] = amt; } else C[j + 3] = 0;
     // 状态 = 眼睛 + 金色 8 + 正在烤的热光（小数部分，0..0.8；金色的也有，烤的进度看得出来）
     const roasted = c.roast > 0;
-    A[j + 3] = eye + (c.gold && !roasted ? 8 : 0) + (st.heat > .005 && !roasted ? .8 * clamp01(st.heat / HEAT_MAX) : 0);
+    A[j + 3] = eye + ((c.gold || c.special) && !roasted ? 8 : 0) + (st.heat > .005 && !roasted ? .8 * clamp01(st.heat / HEAT_MAX) : 0);
     // 头顶的星星 / 金色闪星（每种生物近的先写，名额先给近的）
     if ((st.daze > .05 || st.sk > .02) && dizzy.length < 48) dizzy.push([_p.x, _p.y, _p.z, L, c.id, st.daze, st]);
-    if (c.gold && !(c.roast > 0) && shiny.length < 32) shiny.push([_p.x, _p.y, _p.z, L, c.id, 1]);
+    if ((c.gold || c.special) && !(c.roast > 0) && shiny.length < 32) shiny.push([_p.x, _p.y, _p.z, L, c.id, 1]);
   }
 
   const range = (attr, n, w) => { attr.clearUpdateRanges(); attr.addUpdateRange(0, n * w); attr.needsUpdate = true; };

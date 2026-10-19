@@ -170,6 +170,15 @@ ui 新接口：`api.onSkill()`（第二技能按钮按下）；`ui.showAbility(l
 - `view/ambient.js`：远处的生命（鲸、海豚、候鸟、魔鬼鱼、海龟、夜里水下发光水母），纯画面，读 `ctx.env`。
 - 调试：`?tod=0.75`（定住时间）、`?weather=rain|mist|bow`；`window.__env`（`fixed`、`f`、`setWeather(w, 秒)`、`onLightning()`、`onMeteor()`）。截图：`tools/scenarios/env_shots.js`（`tods=…&ws=…&tp=x,y,z&yaw=`）、`spectacle_check.js`、`region_check.js`。
 
+## 金色领头与特性（GDD §19.11）
+
+- `sim/leaders.js`：`S.leader = null | { phase: 'cue'|'chase', trait, x,y,z, cid（领头生物 id）, g（跟班群）, t, tired, first }`；领头生物带 `c.special = 'ember'|'eddy'`、`c.leadMotion`（creatures.js 不推它，烤熟 / 撞晕 / 吼晕照常）；跟班群带 `g.leadMotion`。
+- `S.traits = { ember: 1 }`（`createSim({ traits })`，存在 `save[龙].traits`）；`S.eddy` = 残留漩涡（或 null）；`S.env` 由主程序挂上 `ctx.env`（只读）。
+- 和猎场互斥：`S.leader` 在场时 `stepHunts` 不开新猎场；`S.hunt` 在场时不出领头。
+- 新事件：`leaderCue {trait, first}`、`leaderChase`、`leaderTired`、`leaderEnd {caught, trait, first?, pts?}`、`trait {id, zh, desc, icon}`（第一次学会）、`heatwave {x,y,z,r,n}`、`eddy {x,y,z,r}`。
+- 画面：`view/spectacle.js` 画领头光柱；`view/creatures.js` 用 `SPECIAL_C` 给领头上色；主程序拖火星 / 泡泡尾迹。界面：`ui/hunts.js` 的横幅（没有猎场时显示领头）、`ui.showAbility([{ …, rib: '新特性' }])`。
+- 测试：`tools/test-leaders.mjs`（在 `npm test` 里）；截图：`tools/scenarios/leader_check.js`（`?trait=ember` 预先学会并在前方放一只烤熟的看热浪）。
+
 ## 调试钩子
 
 `window.__dg = { S, step(n), input, setStage(stage), give(pts), teleport(x,y,z), render(), ready }`，`?debug` 显示 fps / 绘制调用 / 三角面，`?rec` 打开 preserveDrawingBuffer，`?seed=`、`?kind=fire|sea`、`?stage=0|1|2`、`?autostart`（跳过标题直接开局）。

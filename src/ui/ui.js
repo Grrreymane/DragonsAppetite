@@ -191,7 +191,7 @@ export function createUI(root, api = {}) {
   const norm = list => (Array.isArray(list) ? list : [list]).map(a => {
     if (typeof a === 'string') a = { id: a };
     const d = ABILITIES[a.id] || {};
-    return { id: a.id, zh: a.zh || d.zh || '', desc: a.desc || d.desc || '', icon: abIcon(a.id, kind) || a.icon || a.id };
+    return { id: a.id, zh: a.zh || d.zh || '', desc: a.desc || d.desc || '', icon: a.icon ? abIcon(a.icon, kind) : abIcon(a.id, kind) || a.id, rib: a.rib };
   }).filter(a => a.id);
   const abDur = L => 2500 + 500 * (L.length - 1);
   function showAbility(list) {
@@ -216,7 +216,7 @@ export function createUI(root, api = {}) {
     if (wait > 0) { clearTimeout(abTimer); abTimer = setTimeout(nextAbility, wait); return; }
     abCur = abQ.shift(); const { L } = abCur; abBusy = true;
     abEl.className = 'd-abil ' + (kind === 'sea' ? 'sea' : 'fire') + (L.length > 1 ? ' two' : '');
-    abEl.innerHTML = `<div class="d-abrib"><span>新能力</span></div><div class="d-abrows">${L.map(a =>
+    abEl.innerHTML = `<div class="d-abrib"><span>${L[0].rib || '新能力'}</span></div><div class="d-abrows">${L.map(a =>
       `<div class="d-abrow"><div class="d-abic"><i class="d-rays"></i>${icon(a.icon)}</div><div class="d-abtx"><b>${a.zh}</b><span>${a.desc}</span></div></div>`).join('')}</div>`;
     abEl.hidden = false; root.classList.add('d-abon');   // 卡片在的时候小目标卡和连吃先让开（不叠在一起），放完再滑回来
     G.abBot = G.st + 6 + 38 + 44 * G.s + (L.length > 1 ? 150 : 132) * G.s;   // 先估一个，ResizeObserver 排版后给准的

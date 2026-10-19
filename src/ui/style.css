@@ -603,3 +603,9 @@
 .dui .d-region b::before{ right:100%; }
 .dui .d-region b::after{ left:100%; transform:scaleX(-1); }
 .dui .d-region i{ display:block; margin-top:2px; font:500 12px/16px var(--fP); font-style:normal; letter-spacing:3px; opacity:.85; text-transform:uppercase; }
+
+/* 金色领头的横幅：橙红（火龙）/ 亮青（海龙），和猎场的金色分开 */
+.dui .d-hunt.lead{ border-color:rgba(255,140,70,.9); }
+.dui .d-hunt.lead .d-hunt-icon .ic{ color:#ff9a5a; }
+.dui .d-hunt.lead.sea{ border-color:rgba(100,240,255,.9); }
+.dui .d-hunt.lead.sea .d-hunt-icon .ic{ color:#7ff4ff; }

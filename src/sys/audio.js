@@ -312,6 +312,18 @@ export function buildEngine(ac) {
       noise(v, t + .25, .3, 2.4, .5, 'lowpass', 260, 90, .8, BROWN, .3);
       fin(v);
     },
+    heatwave(t) {        // 余烬热浪：一口短短的火「呼」+ 一点噼啪
+      const v = V(t, 1, .2);
+      noise(v, t, .02, .35, .3, 'bandpass', 500, 1600, 1.5);
+      noise(v, t + .03, .01, .3, .1, 'highpass', 1800, 2400, 0, CRACK);
+      fin(v);
+    },
+    eddy(t) {            // 残留漩涡：水「呼」地转一下 + 两颗往上的泡泡
+      const v = V(t, 1, .2);
+      noise(v, t, .05, .5, .22, 'bandpass', 400, 900, 2);
+      tone(v, 'sine', 420, 900, t + .08, .004, .09, .08); tone(v, 'sine', 560, 1100, t + .2, .004, .08, .06);
+      fin(v);
+    },
     star(t) {            // 吃到星星：亮晶晶的三连铃
       const v = V(t, 1, .4, cue);
       [91, 96, 100].forEach((m, i) => bell(v, mtof(m), t + i * .05, .8, .1));
@@ -709,6 +721,10 @@ export function createAudio(opt = {}) {
       case 'orb': st.orbN = t - st.orbT < .7 ? st.orbN + 1 : 0; st.orbT = t; E.play('orb', { n: st.orbN }); break;
       case 'goal': case 'codex': { const at = Math.max(t + .14, st.cueT + .4); st.cueT = at; E.play(e.type, e, at); break; }   // 晚一点，别和「咔」叠在一起；同一口里两个铃错开 0.4 秒
       case 'huntDiscover': if (e.first) E.play('codex', {}, t + .18); break;
+      case 'leaderCue': E.play('stars', {}); break;                                   // 领头出现：一串往下飘的铃
+      case 'trait': E.play('unlock', { stage: 1, kind: S && S.kind }, t + .2); break;  // 学会特性：和新能力同一个号角
+      case 'heatwave': E.play('heatwave', {}); break;
+      case 'eddy': E.play('eddy', {}); break;
       case 'huntPhase': if (e.phase === 'finale') E.play('ready', { kind: S && S.kind }); break;
       case 'evolve': st.evoT = t; E.play('evolve', { stage: e.stage }); break;
       // 新能力：跟着进化来的话等进化的龙吼收住、卡片弹出来（进化后 UNLOCK_AT 秒）再响；开局头 1 秒的（初始能力）不响

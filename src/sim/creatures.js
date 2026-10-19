@@ -193,7 +193,7 @@ export function stepCreatures(S, dt) {
   for (const g of S.groups) {
     g.t += dt; g.scatter = Math.max(0, g.scatter - dt); g.scd = Math.max(0, (g.scd || 0) - dt);
     const d = SPECIES[g.sp];
-    if (g.huntMotion) continue; // 猎场锚点由 hunts.js 沿路线推进
+    if (g.huntMotion || g.leadMotion) continue; // 猎场锚点由 hunts.js 沿路线推进；领头的跟班由 leaders.js 推
     if (g.home && g.spot) { g.x = lerp(g.x, g.home.x, damp(.5, dt)); g.z = lerp(g.z, g.home.z, damp(.5, dt)); continue; }
     if (g.beh === 'orbit' && g.home) continue;
     // 慢慢转向的游荡（安排来的天敌：锚点朝玩家飘过来，30 秒后恢复游荡）
@@ -252,6 +252,7 @@ export function stepCreatures(S, dt) {
       if (c.daze <= 0) { if (!c.roast && !c.stun) { c.cooked = 0; c.cookT = 0; } c.skillHit = 0; }
       continue;
     }
+    if (c.leadMotion) continue;   // 领头本身由 leaders.js 推（烤熟 / 撞晕 / 吼晕还是上面照常处理）
     c.roll = c.st === 'flip' ? c.roll : lerp(c.roll, 0, damp(3, dt));
     c.flee = false;
 

@@ -134,6 +134,7 @@ export function stepHunts(S, dt) {
   let hunt = S.hunt;
   if (!hunt) {
     if (S.t < S.huntNext || S.stats.eaten < 1) return;
+    if (S.leader) { S.huntNext = S.t + 8; return; }   // 同一时间只有一个大事件：领头在场时不开猎场
     hunt = createHunt(S);
     if (!hunt) S.huntNext = S.t + 5;
     return;

@@ -166,8 +166,9 @@ async function startGame(k) {
   kind = k; save.pick = k; writeSave(save);
   const sv = save[k];
   const seed = +(Q.get('seed') || 1) + (sv.playSec | 0);
-  S = createSim({ kind: k, seed, stage: sv.stage | 0, pts: sv.pts | 0, goalIdx: sv.goal | 0, codex: save.codex, discoveries: save.discoveries, landmarks: sv.landmarks });
+  S = createSim({ kind: k, seed, stage: sv.stage | 0, pts: sv.pts | 0, goalIdx: sv.goal | 0, codex: save.codex, discoveries: save.discoveries, landmarks: sv.landmarks, traits: sv.traits });
   eatenBase = sv.eaten | 0;
+  S.env = ctx.env;   // 昼夜 / 天气（只读：夜里、下雨时领头来得勤一点）
   if (Q.has('stage')) setStage(S, +Q.get('stage'));
   ui.hideTitle(); ui.setLoading && ui.setLoading(0, '');
   await applyHero(k, S.stage, S.hero.len);
@@ -195,6 +196,7 @@ function persist() {
   save.codex = S.codex;
   save.discoveries = S.discoveries;
   sv.landmarks = Object.assign(sv.landmarks || {}, S.landmarks);
+  sv.traits = Object.assign(sv.traits || {}, S.traits);
   writeSave(save);
   const n = SPECIES_IDS.filter(id => save.codex[id] && save.codex[id].n).length;
   reportProgress(`${DRAGONS[S.kind].zh}·${STAGE_NAMES[S.stage]} · 吃了 ${totalEaten()} 只 · 图鉴 ${n}/12`);
@@ -249,6 +251,18 @@ function handleEvents(evs) {
         if (ui.region) ui.region(e.zh, e.first ? `发现 · 成长 +${e.pts}` : e.en);
         if (e.first) { P.burst('gold', h.x, h.y, h.z, 24, 8, 1, .7); persist(); }
         break;
+      // 金色领头 / 特性
+      case 'trait':
+        if (ui.showAbility) ui.showAbility([{ id: 'trait_' + e.id, zh: e.zh, desc: e.desc, icon: e.icon, rib: '新特性' }]);
+        persist();
+        break;
+      case 'leaderEnd':
+        if (e.caught) { P.burst('gold', e.x, e.y, e.z, 14, 7, .8, .45); P.burst('spark', e.x, e.y, e.z, 12, 6, .5, .4); persist(); }
+        break;
+      case 'heatwave':
+        for (let i = 0; i < 36; i++) { const a = i / 36 * Math.PI * 2; P.emit('fire', e.x, e.y, e.z, Math.cos(a) * e.r * 1.6, (Math.random() - .3) * 3, Math.sin(a) * e.r * 1.6, .55, 1.6, { drag: 1.5, grow: 1.2, alpha: .75 }); }
+        break;
+      case 'eddy': P.burst('bubble', e.x, e.y, e.z, 20, 4, .8, .15, { rise: 2, grow: .6, alpha: .8 }); break;
       case 'archPass': P.burst('gold', e.x, e.y, e.z, 30, 10, .9, .8); P.burst('spark', e.x, e.y, e.z, 20, 8, .6, .6); dragon.roar = .5; break;
       case 'huntDiscover':
         // Keep the new discovery even if the player leaves before the hunt finishes.
@@ -390,6 +404,19 @@ function advance(dtReal) {
     // 烤熟的猎物冒烟、光点
     for (const c of S.creatures) if (c.roast > 0 && Math.random() < .25) P.emit('smoke', c.x, c.y, c.z, 0, 1.5, 0, 1, c.size * .5, { rise: 1 });
     for (const o of S.orbs) if (!o.star) P.emit('orb', o.x, o.y, o.z, 0, 0, 0, .06, 1.1, { grow: 0 });
+    // 领头：火龙那边拖一串火星，海龙那边拖一串发光的泡泡
+    if (S.leader) {
+      const c = S.creatures.find(o => o.id === S.leader.cid);
+      if (c && !c.dying && Math.random() < .8) {
+        if (S.kind === 'fire') P.emit('fire', c.x, c.y, c.z, (Math.random() - .5) * 2, 1, (Math.random() - .5) * 2, .5, .7 + Math.random() * .5, { rise: 2, alpha: .8 });
+        else P.emit('bubble', c.x, c.y, c.z, (Math.random() - .5), 1, (Math.random() - .5), .7, .14, { rise: 3, grow: .6, alpha: .8 });
+      }
+    }
+    // 残留漩涡：一圈转着的泡泡
+    if (S.eddy) for (let i = 0; i < 3; i++) {
+      const E = S.eddy, a = Math.random() * Math.PI * 2, r = E.r * (.3 + Math.random() * .7);
+      P.emit('bubble', E.x + Math.cos(a) * r, E.y + (Math.random() - .5) * 3, E.z + Math.sin(a) * r, -Math.sin(a) * 9 - Math.cos(a) * 3, .5, Math.cos(a) * 9 - Math.sin(a) * 3, .8, .16, { rise: 1, grow: .6, alpha: .75, drag: .4 });
+    }
     // 护盾
     shield.visible = h.shield > 0; if (shield.visible) { shield.position.set(h.x, h.y, h.z); shield.scale.setScalar(h.len * .75); shieldMat.opacity = .18 + .05 * Math.sin(T * 3); }
   } else if (!S || state === 'title') {

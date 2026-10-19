@@ -3,6 +3,7 @@
 // 没有倒数警报，不占用操作按钮。
 import { h } from './dom.js';
 import { icon } from './icons.js';
+import { TRAITS, LEADER_PTS } from '../sim/leaders.js';
 
 export function createHuntHUD(parent) {
   const el = h('div', 'd-hunt', '<div class="d-hunt-row"><span class="d-hunt-icon"></span><b></b><span class="d-hunt-count"></span></div><span class="d-hunt-hint"></span><i class="d-hunt-progress"><u></u></i>');
@@ -40,6 +41,23 @@ export function createHuntHUD(parent) {
         }
       }
       tutorial ||= root.querySelector('.d-hint');
+      // 金色领头（没有猎场时才有）：同一个横幅，写清楚抓到它有什么
+      if (!S.hunt && S.leader) {
+        const L = S.leader, T = TRAITS[L.trait], cue = L.phase === 'cue';
+        el.hidden = false;
+        const nextKey = `lead|${L.trait}|${L.phase}|${L.tired}|${L.first}`;
+        if (nextKey !== key) {
+          key = nextKey; lastCount = ''; count.textContent = '';
+          el.classList.toggle('sea', S.kind === 'sea'); el.classList.add('lead'); el.classList.toggle('cue', cue); el.classList.remove('finale', 'won');
+          symbol.innerHTML = icon(T.icon); title.textContent = T.leader;
+          const prize = L.first ? `学会「${T.zh}」` : `成长 +${LEADER_PTS}`;
+          hint.textContent = cue ? `抓到它 · ${prize}` : L.tired ? '它累了 · 快追！' : `追上它 · ${prize}`;
+        }
+        const p = cue ? 0 : Math.round(Math.min(1, L.t / 45) * 100);
+        if (p !== progress) { progress = p; fill.style.transform = `scaleX(${p / 100})`; }
+        return;
+      }
+      el.classList.remove('lead');
       const teaching = root.classList.contains('d-short') && tutorial && !tutorial.hidden && tutorial.classList.contains('d-hc');
       el.hidden = !hu || teaching;
       if (!hu || teaching) return;

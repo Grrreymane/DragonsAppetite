@@ -1,6 +1,7 @@
 // 大场面的画面：闪电（一道折线 + 分叉，朝镜头的带子）、流星（天上划过的亮线）、落下来的星星（发光的星 + 拖尾，落到位以后闪着等主角来吃）。
 // 玩法效果在 sim.js（zap / spawnStars），这里只画。
 import * as THREE from 'three';
+import { waveH, seabedY } from '../sim/world.js';
 
 const MAXQ = 900;   // 带子的四边形上限（闪电 + 流星 + 星星拖尾共用一个网格）
 
@@ -48,6 +49,15 @@ export function createSpectacle({ scene, camera }) {
     s.visible = false; scene.add(s); return s;
   });
 
+  // ---- 领头的光柱：线索阶段很亮（远处就看得见），追的时候淡淡地跟着它 ----
+  const beamU = { uCol: { value: new THREE.Color(0xff8a3a) }, uA: { value: 0 }, uT: { value: 0 } };
+  const beam = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 1, 24, 1, true).translate(0, .5, 0), new THREE.ShaderMaterial({
+    uniforms: beamU, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false, toneMapped: false,
+    vertexShader: 'varying float vY; varying float vF; void main(){ vY = position.y; vec4 w = modelMatrix * vec4(position, 1.0); vec3 n = normalize(mat3(modelMatrix) * vec3(position.x, 0.0, position.z)); vec3 v = normalize(cameraPosition - w.xyz); vF = abs(dot(n, v)); gl_Position = projectionMatrix * viewMatrix * w; }',
+    fragmentShader: 'uniform vec3 uCol; uniform float uA, uT; varying float vY; varying float vF; void main(){ float ends = smoothstep(0.0, .15, vY) * smoothstep(1.0, .5, vY); float a = uA * ends * pow(vF, 1.6) * (.85 + .15 * sin(vY * 36.0 - uT * 4.0)); gl_FragColor = vec4(uCol * a, 1.0); }',
+  }));
+  beam.frustumCulled = false; beam.renderOrder = 4; beam.visible = false; scene.add(beam);
+
   // ---- 闪电 ----
   const bolts = [];   // { pts: [[x,y,z]...], branches: [[...]], t }
   function strike(x0, y0, z0, x1, y1, z1) {
@@ -75,6 +85,16 @@ export function createSpectacle({ scene, camera }) {
     get busy() { return showerT > 0 || bolts.length > 0; },
     update(S, dt) {
       nq = 0;
+      // 领头光柱
+      const L = S && S.leader;
+      beam.visible = !!L;
+      if (L) {
+        const sea = S.kind === 'sea', cue = L.phase === 'cue', h = S.hero, d = Math.hypot(h.x - L.x, h.z - L.z);
+        beamU.uT.value = S.t; beamU.uCol.value.setHex(sea ? 0x5ff4ff : 0xff8a3a);
+        const y0 = sea ? seabedY(L.x, L.z) : L.y - 30, y1 = sea ? waveH(L.x, L.z, S.t) + 30 : L.y + 160;
+        beam.position.set(L.x, y0, L.z); beam.scale.set(cue ? 5 : 3, y1 - y0, cue ? 5 : 3);
+        beamU.uA.value = (cue ? .6 : .22) * (.25 + .75 * Math.min(1, Math.max(0, (d - 15) / 45))) * Math.min(1, L.t / .8 + (cue ? 0 : 1));
+      }
       // 闪电：0.35 秒，前 0.1 秒最亮，中间闪一下
       for (let i = bolts.length - 1; i >= 0; i--) {
         const B = bolts[i]; B.t += dt;

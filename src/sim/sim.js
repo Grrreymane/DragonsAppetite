@@ -9,11 +9,12 @@ import { updateLock, assistSteer, targetable } from './assist.js';
 import { seabedY, groundAt } from './world.js';
 import { initHunts, stepHunts, recordHuntEat } from './hunts.js';
 import { stepLandmarks, pushOutOfLandmarks } from './landmarks.js';
+import { initLeaders, stepLeaders, leaderCaught, heatWave, eddyCheck } from './leaders.js';
 
 export const DT = 1 / 60;
 const TIER_PTS = [0, 1, 4, 10];
 
-export function createSim({ kind = 'fire', seed = 1, stage = 0, pts, goalIdx = 0, codex = {}, discoveries = {}, landmarks = {}, x = 0, z = 0, yaw = 0 } = {}) {
+export function createSim({ kind = 'fire', seed = 1, stage = 0, pts, goalIdx = 0, codex = {}, discoveries = {}, landmarks = {}, traits = {}, x = 0, z = 0, yaw = 0 } = {}) {
   const cfg = DRAGONS[kind].stages[stage];
   const S = {
     t: 0, kind, stage, cfg, seed, rng: makeRng(seed),
@@ -34,6 +35,7 @@ export function createSim({ kind = 'fire', seed = 1, stage = 0, pts, goalIdx = 0
   S.bite = c => bite(S, c);
   spawnInitial(S);
   initHunts(S, discoveries);
+  initLeaders(S, traits);
   return S;
 }
 
@@ -137,6 +139,8 @@ function eat(S, c, cross, extra) {
   if (first) S.events.push({ type: 'codex', sp: c.sp });
   goalProgress(S, e);
   recordHuntEat(S, c);
+  if (cooked) heatWave(S, c);           // 特性：余烬热浪
+  if (c.special) leaderCaught(S, c);    // 吃到领头
   S.noEat = 0;
   c.dying = 1; c.size = 0; c.g.members--;
   const i = S.creatures.indexOf(c); if (i >= 0) { S.creatures[i] = S.creatures[S.creatures.length - 1]; S.creatures.pop(); }
@@ -322,6 +326,7 @@ export function step(S, inp) {
   if (S.kind === 'fire') stepFire(S, inp, dt, as); else stepSea(S, inp, dt, as);
   if (pushOutOfLandmarks(h, Math.max(2, h.len * .4)) > .5 && h.bumpT <= 0) { h.bumpT = 1; S.events.push({ type: 'bump', x: h.x, y: h.y, z: h.z }); }
   stepLandmarks(S, dt);
+  eddyCheck(S);
   stepSkill(S, inp, dt);
   // 卡住 / NaN 保护
   if (!Number.isFinite(h.x + h.y + h.z + h.yaw + h.pitch)) { h.x = h.px || 0; h.y = S.kind === 'fire' ? 60 : -6; h.z = h.pz || 0; h.pitch = 0; h.speed = 15; h.yawRate = 0; S.stats.nan = (S.stats.nan || 0) + 1; }
@@ -331,6 +336,7 @@ export function step(S, inp) {
   heroMouth(h);
   stepHunts(S, dt);
   stepCreatures(S, dt);
+  stepLeaders(S, dt);
   interact(S, dt);
   stepOrbs(S, dt);
   S.combo.t = Math.max(0, S.combo.t - dt); if (S.combo.t <= 0) S.combo.n = 0;
