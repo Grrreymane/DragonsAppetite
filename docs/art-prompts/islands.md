@@ -1,8 +1,8 @@
-# 岛的美术提示词（AI）
+# 岛的美术提示词（AI 生图）
 
 流水线：nano-banana pro 概念图（白底、3/4 俯视、带水下岩基）→ Tripo P1 智能网格（`generate_3d.py --model P1-20260311 --face-limit 10000~12000`）→ `blender/env_island.py build`（归一化、切掉水下换程序化岩裙、减面、LOD、贴图 1024 WebP、量高度图）→ `blender/env_shapes.py` 生成 `src/config/island-shapes.js`。
 
-中间文件：`.cache/art/islands/`（概念图 `concepts/` `edits/`，Tripo 原模 `models/`，检查图 `build/check/`）。批量跑：`.cache/art/islands/tools/lai.py <jobs.json>`（一次只能有一个 AI 任务，429 自动重试）。
+中间文件：`.cache/art/islands/`（概念图 `concepts/` `edits/`，Tripo 原模 `models/`，检查图 `build/check/`）。批量跑：`.cache/art/islands/tools/lai.py <jobs.json>`（一次只能有一个生图任务，429 自动重试）。
 
 ## 第一轮（直接生图，结果是「浮空岛 / 底座」，水下部分往里收或是直壁，弃用，只留上半部分）
 
@@ -100,7 +100,7 @@
 
 - nano-banana 画「海岛」默认是浮空岛 / 方形底座：一定要写清「把海水抽干后看到的整座山，水下部分往外、往下越来越宽」，并且用改图把第一轮满意的上半部分保留下来。
 - Tripo 给面是按面积分的：水下岩基很大时，水上只分到一小半。先要 10000~12000 面，再在 Blender 里优先减水下的。
-- AI 同一个 key 同时只能跑一个任务（别的 agent 也在用），`lai.py` 遇到 429 每 20 秒重试。
+- 生图服务同一个 key 同时只能跑一个任务（别的 agent 也在用），`lai.py` 遇到 429 每 20 秒重试。
 - Tripo 的水下岩基（就算概念图画得好）减面后在水下近看很糙；水上留 Tripo，水下换程序化岩裙 + 着色器画颜色，又省面又干净。
 - 原模要切在海平面下很浅的地方（约半米），岩基顶圈取原模在切口附近「最外面」的半径，再用盖子封口：切深了水线下会留一圈有洞、外伸的原模。
 - 量化 glb：坐标要在 ±1 内，导出前顶点 ÷ 4、节点缩放 4；`islands.js` 加载时把节点变换乘回坐标（`bakeNode`）。

@@ -8,7 +8,7 @@
 #     （rebuild_club 把展开坐标改成和 3D 切面只差一个缩放：u 按棱上的实际位置，尾尖的 UV 放在切面的垂足上）
 #   - 左右不再共用一块贴图（mirror=False）：v3 镜像展开，追尾镜头同时看到左右两半，裂纹拼成左右对称的「字」
 #   - 光晕收窄（约 2 像素），核心约 2 像素宽（导出贴图里；WEBP 会把 1 像素的亮线压成一串点）
-#   - src：可以给一张「玄武岩 + 熔岩裂纹」参考图（AI，见 docs/art-prompts/firemodels.md）的裂纹点云（从正后方看的平面坐标），
+#   - src：可以给一张「玄武岩 + 熔岩裂纹」参考图（AI 生成，见 docs/art-prompts/firemodels.md）的裂纹点云（从正后方看的平面坐标），
 #     代替程序生成的裂纹
 import math, random
 import numpy as np

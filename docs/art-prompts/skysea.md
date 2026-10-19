@@ -1,6 +1,6 @@
-# 天空 / 云 / 海（skysea）用到的 AI 提示词
+# 天空 / 云 / 海（skysea）用到的 AI 生图提示词
 
-工具：`AI 生图工具`（nano-banana pro，`--size 2K --aspect-ratio 16:9`），
+工具：AI 生图工具（nano-banana pro，`--size 2K --aspect-ratio 16:9`），
 输出在 `.cache/art/skysea/`（不进仓库）。生成 → `tools/skysea_key.py` 绿幕抠图切块 → `tools/skysea_atlas.py` 拼图集
 → `img/clouds.webp`（2048×880，带透明，约 290 KB）+ `src/view/cloud-atlas-rects.js`。
 拼图集时 sm0 会先过 `fix_glow`（底下橙色辉光和绿幕混出来的黄绿边拉回橙色、压低透明度）；块之间留 16 像素（mip 不串色），下面没用的行裁掉。
@@ -21,7 +21,7 @@ Game art sprite sheet: six separate hand-painted stylized cumulus clouds for a s
 Game art sprite sheet for a sunny fantasy dragon adventure game, hand-painted painterly style matching soft toon-shaded cumulus clouds (bright warm tops lit from the upper left, cooler shaded undersides, visible soft brush strokes), arranged in a neat 3 by 2 grid with wide empty gaps so nothing touches anything else or the image edge. Top row: three separate billowing volcanic smoke puffs, each a single rounded cluster of soft round smoke balls, warm ash grey with lighter pale grey sunlit tops and darker charcoal-brown shaded undersides, a faint warm orange glow on the very bottom of one puff. Bottom row: three separate thin high-altitude wispy cirrus clouds, long horizontal feathery streaks made of a few sweeping brush strokes, white to very pale cream, tapered thin ends, wide and short. Background: perfectly flat solid pure chroma-key green (#00FF00) everywhere, no gradient, no sky, no ground, no shadows, no text, no labels, no border, no frame.
 ```
 
-## 3. 准备好、但这一轮没生成成的（2026-10-11：AI 的 key 过期，401，自动刷新要 playwright + 内网登录）
+## 3. 准备好、但这一轮没生成成的（2026-10-11：生图服务的 key 过期，401，自动刷新要 playwright + 内网登录）
 
 key 换好后可以直接用（`.cache/art/skysea/gen2.sh <前缀> 16:9 "<提示词>"`），出来的图照上面的流程抠图、拼进图集：
 

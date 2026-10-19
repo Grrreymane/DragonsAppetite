@@ -105,7 +105,7 @@ Using image 1 as the character reference (the sea dragon concept sheet; use the 
 （深色描边 + 白芯 + 下沿淡青，和图标的卡通描边一致），44px 的按钮上也一眼看出「快」，没有水花、不往上。
 
 本来想用 AI 重画一张 2×2（冲刺两个方案 + 火龙 / 海龙「大口吞」鼓腮帮子版，让它和「龙吼」分得更开），提示词在
-`.cache/art/ui/p3_dashgulp.txt`、脚本 `.cache/art/ui/queue3.py`；但 AI 的 key 过期了（401，自动刷新退回手动），这次没生成。
+`.cache/art/ui/p3_dashgulp.txt`、脚本 `.cache/art/ui/queue3.py`；但 生图服务的 key 过期了（401，自动刷新退回手动），这次没生成。
 key 换好后跑 `python .cache/art/ui/queue3.py`，出图 `raw/dashgulp_01.png`，在 `SOURCES` 里接上即可。提示词：
 
 ```
@@ -122,7 +122,7 @@ Generous white space, big gaps, plain flat pure white background, no text, no gr
 
 §3 下排的海龙头像是浅天蓝色，和海龙模型、标题龙卡、§7 的海龙图标（深海军蓝鳞片 + 青色鳍 + 奶油色喉咙）对不上。
 
-**这次 AI 连不上**（`AI 生图服务` TLS 握手失败，关沙盒也一样，可能是内网 / VPN 没开），所以先在本地改色上线：
+**这次生图服务连不上**（服务端 TLS 握手失败，关沙盒也一样，可能是内网 / VPN 没开），所以先在本地改色上线：
 `tools/ui_icons.py` 的 `navy_sea()` 只改金圈以内——蓝色鳞片（色相 190–235°）压暗成深海军蓝（保留明暗）、很亮的蓝（眼睛）换成青色、
 发白的淡蓝（喉咙 / 肚皮）换成奶油色、幼龙肉粉色的耳鳍换成青色；青绿色底光、金圈、描边不动。检查图：`.cache/art/ui/preview_icons_dark.png`。
 
@@ -139,7 +139,7 @@ Plain flat pure white background around the badges. No text, no letters, no numb
 
 ## 小贴士
 
-- AI 同一个 key 同时只能跑一个任务（别的 agent 在跑时返回 429「当前有AI任务在生成」），`.cache/art/ui/queue.py` 会排队、遇到 429 等 20 秒重试。
+- 生图服务同一个 key 同时只能跑一个任务（别的 agent 在跑时返回 429「当前有AI任务在生成」），`.cache/art/ui/queue.py` 会排队、遇到 429 等 20 秒重试。
 - 一张图里画一整套（3×3 网格、写明每格内容 + 统一画风描述）比一张张画风格更统一；「NO background badge」能得到贴纸式图标，按钮底座用 CSS 画。
 - 宝石色按钮上不要放同色的画图标（橙色火焰放在橙色按钮上看不清）：动作键后面垫了一块奶油色圆，「开始 / 继续」用白色 SVG 三角。
 - 结算插画（win_fire / win_sea）：用 ref/fire-adult.png、ref/sea-adult.png 做参考，nano-banana 编辑，4:3；提示词要点：胜利、朝镜头飞 / 跃出海面、开心、肚子吃得圆滚滚、海岛背景、卡通描边画风、不要文字。

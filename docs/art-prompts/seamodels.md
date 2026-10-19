@@ -1,4 +1,4 @@
-# 海龙主角（seamodels）用过的 AI 提示词
+# 海龙主角（seamodels）用过的 AI 生图提示词
 
 流程：设定图裁出单只龙（`ref/sea_<阶段>.png`，16:9 补边到 1600x900）→ `upload_cos.py` →
 `edit_image.py`（nano-banana pro，`--aspect-ratio 16:9 --image-size 2K`）出「绑定姿势」图 →
@@ -12,8 +12,8 @@
 | 少年龙 | (140,288)-(1375,553) | `ref/sea_teen_rigpose_01.png` 2752x1536 | 6500 | 6,300 面 |
 | 成龙 | 见 `.cache/art/sea_adult/` | `ref/sea_adult_rigpose_01.png` | 8000 | 7,957 面 |
 
-注意：AI 同一账号同时只能跑一个任务（别的模块也在用），忙时返回 429，脚本
-`.cache/art/sea_AI_retry.sh` 每 20 秒重试。每张图约 1 分钟，Tripo 约 1.5 分钟。
+注意：生图服务同一账号同时只能跑一个任务（别的模块也在用），忙时返回 429，脚本
+`.cache/` 里的重试脚本 每 20 秒重试。每张图约 1 分钟，Tripo 约 1.5 分钟。
 
 ## 幼龙 · 绑定姿势（edit_image，参考图 = ref/sea_baby.png）
 
@@ -74,7 +74,7 @@ Plain pure white background, soft even lighting, no cast shadow, no ground line,
 
 三段的第二部分（姿势、镜头、背景）完全一样，只换第一段的设计描述；幼龙强调「保持幼龙比例、不要画老」。
 
-## 贴图调色（不是 AI，代码做的；v3 起 rig_sea.py 自动调用）
+## 贴图调色（不是 AI 生成，代码做的；v3 起 rig_sea.py 自动调用）
 
 `rig_sea.py` 先按 3D 位置给每个面贴标签（尾鳍 = x < fan_x；背鳍 = 脊线上方、贴中线的竖片；腿 = 前臂 / 爪 / 小腿 / 脚，加上收腿时看得见的大臂 / 大腿面；头），
 写成 UV 三角形交给 `python blender/sea_tex.py <tripo.glb> .cache/art/<名>/tex/base_v2.png --labels ...`：
@@ -82,7 +82,7 @@ Plain pure white background, soft even lighting, no cast shadow, no ground line,
 奶白 (176,187,172)、发光斑点 (72,224,218) 亮度 ≥0.8 饱和 ≥0.6（整块填实、外扩 1 像素）；腿上的奶白改藏青；UV 岛之间的空白用周围颜色平滑填满（省体积）。
 验收量导出后的 glb 里的图：`python blender/sea_tex.py --report-only models/sea_<名>_anim.glb`（发光键 色相 165–200 / 饱和 >0.5 / 亮度 >0.68 的占比 ≥0.25%）。
 
-v4（2026-10-11，第三轮 review 修改）：没有新的 AI 调用，只改了标签和调色：
+v4（2026-10-11，第三轮 review 修改）：没有新的 AI 生图调用，只改了标签和调色：
 - 头冠 / 耳鳍：按 rigs json `weights.head_fin` 的头骨轮廓（侧视 / 俯视网格图量的头顶高度、头半宽，随 x 变）找伸出去的部分；往上的 = 头冠 → 海青（铜色尖不动），往两边的薄片 = 耳鳍 → 奶白（铜边不动）。往后倒的背刺（面朝上）只要够薄也算鳍。
 - 鳍里很暗的部分往海青提（亮的渐变照留）；铜色三个年纪拉到同一个 (160,110,80)。
 - Breach 拱背时转到朝上的大臂根也压成藏青。
