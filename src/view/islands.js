@@ -178,7 +178,7 @@ function hullMat(kind, uK) {
 }
 
 // glb 里不存法线（省体积）：按位置焊接后算平滑法线——贴图接缝处法线也连续，描边壳不会裂
-function weldedNormals(g) {
+export function weldedNormals(g) {
   const p = g.attributes.position, n = p.count, idx = g.index;
   const map = new Map(), id = new Int32Array(n); let u = 0;
   for (let i = 0; i < n; i++) {
@@ -201,7 +201,7 @@ function weldedNormals(g) {
   g.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
 }
 // glb 是量化过的（KHR_mesh_quantization：坐标是 16 位整数、节点缩放 4）：把节点变换乘进坐标，换回浮点（后面的代码都按模型单位算）
-function bakeNode(o) {
+export function bakeNode(o) {
   const g = o.geometry, p = g.attributes.position;
   o.updateWorldMatrix(true, false);
   if (!p.normalized && p.array instanceof Float32Array && o.matrixWorld.equals(new THREE.Matrix4())) return g;
@@ -226,7 +226,7 @@ function splitByWater(g, lo, hi) {
 
 // 贴图「补边」：Tripo 贴图里每块 UV 外面是空白底色，双线性过滤 / mipmap 会把白色混进 UV 边缘，模型上就出现一道道白缝（看起来像碎了）。
 // 加载时按 UV 三角形画出「有用的像素」，再从边缘往外一圈圈把颜色抹到空白里（最多 24 像素），白缝就没了。只在加载时做一次。
-function dilateMap(map, geo) {
+export function dilateMap(map, geo) {
   const img = map.image; if (!img || !img.width) return map;
   const w = img.width, h = img.height;
   const cv = document.createElement('canvas'); cv.width = w; cv.height = h;

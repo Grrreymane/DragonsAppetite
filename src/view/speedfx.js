@@ -13,7 +13,7 @@ export function createSpeedFx({ scene }) {
   const iW = new THREE.InstancedBufferAttribute(new Float32Array(N * 2), 2).setUsage(THREE.DynamicDrawUsage);   // 宽度、透明度
   geo.setAttribute('iA', iA); geo.setAttribute('iB', iB); geo.setAttribute('iW', iW);
   geo.instanceCount = 0;
-  const U = { uCol: { value: new THREE.Color(1, 1, 1) } };
+  const U = { uCol: { value: new THREE.Color(1, 1, 1) }, uK: { value: 1 } };   // uK：整体透明度（夜里淡一点，见 setDim）
   const mat = new THREE.ShaderMaterial({
     transparent: true, depthWrite: false, uniforms: U,
     vertexShader: `attribute vec3 iA, iB; attribute vec2 iW; varying float vT, vS, vA;
@@ -26,11 +26,11 @@ export function createSpeedFx({ scene }) {
         vT = position.x; vS = position.y; vA = iW.y;
         gl_Position = projectionMatrix * vec4(p, 1.0);
       }`,
-    fragmentShader: `uniform vec3 uCol; varying float vT, vS, vA;
+    fragmentShader: `uniform vec3 uCol; uniform float uK; varying float vT, vS, vA;
       void main(){
         float a = vA * smoothstep(0.0, 0.35, vT) * smoothstep(1.0, 0.75, vT) * (1.0 - abs(vS));
         if (a < 0.01) discard;
-        gl_FragColor = vec4(uCol, a);
+        gl_FragColor = vec4(uCol, a * uK);
       }`,
   });
   const mesh = new THREE.Mesh(geo, mat); mesh.frustumCulled = false; mesh.renderOrder = 3; scene.add(mesh);
@@ -38,6 +38,7 @@ export function createSpeedFx({ scene }) {
   const fwd = new THREE.Vector3(), right = new THREE.Vector3(), up = new THREE.Vector3(), v = new THREE.Vector3();
   let k = 0;
   return {
+    setDim(k) { U.uK.value = k; },
     // h：插值后的主角（speed、yaw、pitch）；sf：0..1 速度系数（俯冲 / 冲刺接近 1）；under：镜头在水下
     update(camera, h, sf, under, dt) {
       const cp = Math.cos(h.pitch);

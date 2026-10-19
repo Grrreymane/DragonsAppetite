@@ -156,6 +156,20 @@ c.skillHit                      // 生物被龙吼 / 漩涡影响（吃到时算
 
 ui 新接口：`api.onSkill()`（第二技能按钮按下）；`ui.showAbility(list)`（list = [{id, zh, desc, icon}]，进化后弹出约 2.5 秒，不挡操作）；`ui.update` 里读 `S.hero.lock`（锁定圈）、`S.hero.skill`（技能按钮 + 冷却）、`S.nextAbilities`（成长条旁的下一阶段能力图标）。
 
+## 昼夜 / 天气 / 区域 / 大场面（2026-10，用户反馈「场景看久了无聊」）
+
+- `view/env.js`：`createEnv(ctx, { sky, sea })` → `{ E, update(dt, S|null, playing) }`，主循环在 `sea.update` 之前调。
+  - 一天 `CYCLE = 300` 秒（只在玩的时候走，开局 f = 0.05 上午）：关键帧表 `KEYS`（上午 / 正午 / 金色傍晚 0.48 / 日落 0.55 / 暮色 0.6 / 夜 0.66–0.86 / 黎明 0.92）插值天空颜色、太阳 / 月亮高度、光、雾、海、云的乘数、星星、曝光。
+  - 直接改 `sky.js` 的 `SKY` 颜色对象（天空球和海面反射都引用它们）；雾的冷暖染色改成共享 uniform（`sky.js` 的 `FOG_U` / `setFogTint`，Float32Array 按引用共享给所有带雾的材质）。
+  - 天气 `E.weather`：clear / rain（阴天压灰、雨丝、雷电，`E.onLightning`）/ mist；雨停后 45 秒彩虹。区域按 `zoneValue` 平滑混合：熔岩海雾偏暖偏浊 + 火山灰 / 火星粒子；外海看得更远。进入新区域 2.5 秒后 `E.onRegion(zone, {zh, en})` → `ui.region(zh, en)` 弹区域名。每天夜里一次 `E.onMeteor` → 流星雨。
+  - 写给别的模块读：`ctx.env = { night, dusk, rain, over, mist, bow, zone, under, tod, v, o, flash, sunEl }`。
+  - 主角 / 猎物夜里自发光（用户要求「主角要保持一定的亮度」）：`dragon.nrim`（淡蓝轮廓 + 自身颜色）、`creatures.setNight(k)`。
+  - 海：`sea.U.uEnv / uEnvU`（水上 / 水下乘数）、`uNight`（夜里浪尖和小星点发青色荧光）、`sea.setSun(dir)`、`sea.shaftK`。云：`clouds.js` 的 `CLOUD_TINT`。
+- `sim/sim.js`：`zap(S, x, y, z, r)`（雷劈：火龙那边烤熟、海龙那边电晕）、`spawnStars(S, n, over)`（流星雨：星星按主角当时的位置落在前方 35–80 米，飘着等吃，一颗 +`STAR_PTS` = 3，16 米内自动飘进嘴）。主程序在 sim 外调它们，用 `simNow()` 把新事件当帧处理。新事件：`zap {x,y,z,r,n}`、`stars {n}`、`starLand {x,y,z,water}`、`star {x,y,z,pts}`。
+- `view/spectacle.js`：闪电（朝镜头的折线带子，宽度随距离）、天上的流星、落下来的星星（发光贴片 + 拖尾）。
+- `view/ambient.js`：远处的生命（鲸、海豚、候鸟、魔鬼鱼、海龟、夜里水下发光水母），纯画面，读 `ctx.env`。
+- 调试：`?tod=0.75`（定住时间）、`?weather=rain|mist|bow`；`window.__env`（`fixed`、`f`、`setWeather(w, 秒)`、`onLightning()`、`onMeteor()`）。截图：`tools/scenarios/env_shots.js`（`tods=…&ws=…&tp=x,y,z&yaw=`）、`spectacle_check.js`、`region_check.js`。
+
 ## 调试钩子
 
 `window.__dg = { S, step(n), input, setStage(stage), give(pts), teleport(x,y,z), render(), ready }`，`?debug` 显示 fps / 绘制调用 / 三角面，`?rec` 打开 preserveDrawingBuffer，`?seed=`、`?kind=fire|sea`、`?stage=0|1|2`、`?autostart`（跳过标题直接开局）。

@@ -32,7 +32,7 @@ const STAR_MAX = 40, STAR_BIG = 4;                // 头顶的晕星同屏最多
 export function createCreatures(ctx) {
   const { scene, camera, renderer, GRAD, outlineMat } = ctx;
   const root = new THREE.Group(); root.name = 'creatures'; scene.add(root);
-  const uT = { value: 0 }, uPx = { value: 0 }, uFar = { value: OUT_FAR };    // 所有物种共用：时间、描边最细（世界单位 / 米深度）、描边收没的距离
+  const uT = { value: 0 }, uPx = { value: 0 }, uFar = { value: OUT_FAR }, uNightK = { value: 0 };    // 所有物种共用：时间、描边最细（世界单位 / 米深度）、描边收没的距离、夜里的自发光
   const B = {};
   for (const sp of SPECIES_IDS) {
     const cfg = SPECIES[sp], m = MODELS[sp](cfg.colors), geo = m.geo;
@@ -40,7 +40,7 @@ export function createCreatures(ctx) {
       uK: { value: new THREE.Vector4(m.kind, m.eyeType || 0, m.eyeFront ? (m.mouth ? 2 : 1) : 0, m.blush || 0) },
       uP: { value: new THREE.Vector4(...m.P) }, uQ: { value: new THREE.Vector4(...m.Q) },
       uEye: { value: new THREE.Vector4(...(m.eye || [0, 0, 0, 0])) },
-      uT, uPx, uFar,
+      uT, uPx, uFar, uNightK,
     };
     const mat = bodyMat(GRAD, U, { emissive: m.emis || 0 });
     const oc = outlineColor(cfg.colors.body), ow = outlineW(cfg.len);
@@ -421,7 +421,7 @@ export function createCreatures(ctx) {
     res();
   }, 0));
 
-  const api = { update, setUnderwater, portrait, visScale, prewarm, prewarmPortraits, stats, ready, root, species: B, fx, cullMedium: true, get underwater() { return uw; } };
+  const api = { update, setUnderwater, setNight(k) { uNightK.value = k; }, portrait, visScale, prewarm, prewarmPortraits, stats, ready, root, species: B, fx, cullMedium: true, get underwater() { return uw; } };
   root.userData.api = api;                         // 调试脚本用：scene.getObjectByName('creatures').userData.api
   return api;
 }

@@ -1,12 +1,15 @@
 // 小龙大胃王 · 主程序：启动、状态机（标题 / 游戏 / 暂停 / 结算）、主循环（sim 固定步长 1/60 + 渲染插值）、把各模块接起来。
 import * as THREE from 'three';
-import { createSim, step, DT, setStage, goalTarget, nearestEdible, cookableNow } from './sim/sim.js';
+import { createSim, step, DT, setStage, goalTarget, nearestEdible, cookableNow, zap, spawnStars, STAR_PTS } from './sim/sim.js';
 import { DRAGONS, STAGE_PTS, STAGE_NAMES, ABILITIES } from './config/dragons.js';
 import { SPECIES, SPECIES_IDS } from './config/species.js';
 import { waveH, zoneAt } from './sim/world.js';
 import { GRAD, outlineMat, toonMat, setOutlineMode } from './view/toon.js';
 import { createSky } from './view/sky.js';
 import { applyLook } from './view/look.js';
+import { createEnv } from './view/env.js';
+import { createSpectacle } from './view/spectacle.js';
+import { createLandmarks } from './view/landmarks.js';
 import { createIslands } from './view/islands.js';
 import { createClouds } from './view/clouds.js';
 import { createHuntView } from './view/hunts.js';
@@ -33,12 +36,14 @@ renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure
 wrap.prepend(renderer.domElement);
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(62, .5, .3, 3000);
-const ctx = { THREE, scene, camera, renderer, GRAD, outlineMat, toonMat };
+// env：昼夜 / 天气 / 区域的当前状态（view/env.js 每帧写），给远景生物等模块读
+const ctx = { THREE, scene, camera, renderer, GRAD, outlineMat, toonMat, env: { night: 0, dusk: 0, rain: 0, zone: 'green', under: 0 } };
 const sky = createSky(ctx); ctx.sky = sky.sky;
 applyLook(Q.get('look') || 'a', { renderer, sky });   // 用户选了 A 明亮卡通
 if (Q.get('outline')) setOutlineMode(Q.get('outline'));
 const isl = createIslands(ctx);
 const clouds = createClouds(ctx);
+const landmarks = createLandmarks(ctx);   // 地标（拱门、沉船、古龙骸骨、浮空岛）：后台下载，不挡开局
 const hunts = createHuntView(scene);
 const P = createParticles(ctx);
 const speedFx = createSpeedFx(ctx);
@@ -60,15 +65,49 @@ async function opt(path, name, fb) {
   try { const m = await import(path); if (typeof m[name] === 'function') return m[name]; } catch (e) { console.warn('模块加载失败，用备用实现：', path, e && e.message); }
   return fb;
 }
-const [mkCreatures, mkSea, mkUI, mkAudio] = await Promise.all([
+const [mkCreatures, mkSea, mkUI, mkAudio, mkAmbient] = await Promise.all([
   opt('./view/creatures.js', 'createCreatures', fallbackCreatures),
   opt('./view/sea.js', 'createSea', fallbackSea),
   opt('./ui/ui.js', 'createUI', fallbackUI),
   opt('./sys/audio.js', 'createAudio', fallbackAudio),
+  opt('./view/ambient.js', 'createAmbient', () => ({ update() { } })),   // 远处的生命：鲸、海豚、鸟群（纯画面）
 ]);
 const creatures = mkCreatures(ctx);
 const sea = mkSea(ctx);
 const audio = mkAudio();
+const ambient = mkAmbient(ctx);
+// 昼夜 / 天气 / 区域（改天空、雾、灯光、海、云的颜色）
+const env = createEnv(ctx, { sky, sea });
+env.E.onRegion = (zn, R) => { if (state === 'play' && ui.region) ui.region(R.zh, R.en); };
+// 大场面：雷劈（下大雨时）、流星雨（每天夜里一次）
+const spec = createSpectacle(ctx);
+// sim 外面直接改了 S（雷劈 / 下星星）：新事件马上处理，也交给这一帧的界面
+function simNow(fn) { const n0 = S.events.length; fn(); const evs = S.events.splice(n0); handleEvents(evs); for (const e of evs) frameEvents.push(e); }
+env.E.onLightning = () => {
+  if (!S || state !== 'play') return;
+  const h = S.hero, fx = Math.sin(h.yaw), fz = Math.cos(h.yaw), water = h.medium === 'water';
+  // 劈在前方猎物最多的地方（20~90 米）；没有就劈在前方空地
+  let best = null, bestN = 0;
+  for (const c of S.creatures) {
+    const dx = c.x - h.x, dz = c.z - h.z, d = Math.hypot(dx, dz);
+    if (c.dying || d < 35 || d > 90 || (dx * fx + dz * fz) / d < .5 || (water ? c.y > 0 : c.y < 0)) continue;
+    let n = 0; for (const o of S.creatures) if (Math.hypot(o.x - c.x, o.y - c.y, o.z - c.z) < 16) n++;
+    if (n > bestN) { bestN = n; best = c; }
+  }
+  const tx = best ? best.x : h.x + fx * 70, tz = best ? best.z : h.z + fz * 70;
+  const sy = waveH(tx, tz, S.t), ty = best ? Math.max(best.y, sy) : sy;
+  // 起点在目标再往前一点：整道闪电都在镜头前方
+  spec.strike(tx + fx * 30 + (Math.random() - .5) * 40, Math.max(h.y, ty) + 140, tz + fz * 30 + (Math.random() - .5) * 40, tx, water ? sy : ty, tz);
+  P.burst('spark', tx, ty, tz, 30, 12, .6, .8, { grow: 1.5 });
+  if (water || !best) P.burst('splash', tx, sy + .3, tz, 30, 9, .8, .5, { grav: 14, up: 1.6, drag: 1, grow: 1.2, alpha: .85 });
+  simNow(() => zap(S, tx, best ? best.y : (water ? -6 : ty), tz, water ? 22 : 16));
+};
+env.E.onMeteor = () => {
+  if (!S || state !== 'play') return;
+  spec.shower(20);
+  ui.region && ui.region('流星雨', `吃星星 每颗 +${STAR_PTS}`);
+  simNow(() => spawnStars(S, 12, 16));
+};
 // 模块可以返回 ready（Promise）：例如岛的精模要先下载完
 await Promise.all([isl, sky, sea, creatures, clouds].map(m => m && m.ready ? m.ready.catch(e => console.warn('模块准备失败', e && e.message)) : null));
 
@@ -127,7 +166,7 @@ async function startGame(k) {
   kind = k; save.pick = k; writeSave(save);
   const sv = save[k];
   const seed = +(Q.get('seed') || 1) + (sv.playSec | 0);
-  S = createSim({ kind: k, seed, stage: sv.stage | 0, pts: sv.pts | 0, goalIdx: sv.goal | 0, codex: save.codex, discoveries: save.discoveries });
+  S = createSim({ kind: k, seed, stage: sv.stage | 0, pts: sv.pts | 0, goalIdx: sv.goal | 0, codex: save.codex, discoveries: save.discoveries, landmarks: sv.landmarks });
   eatenBase = sv.eaten | 0;
   if (Q.has('stage')) setStage(S, +Q.get('stage'));
   ui.hideTitle(); ui.setLoading && ui.setLoading(0, '');
@@ -155,6 +194,7 @@ function persist() {
   sv.playSec = (sv.playSec || 0) + playSecAcc; playSecAcc = 0;
   save.codex = S.codex;
   save.discoveries = S.discoveries;
+  sv.landmarks = Object.assign(sv.landmarks || {}, S.landmarks);
   writeSave(save);
   const n = SPECIES_IDS.filter(id => save.codex[id] && save.codex[id].n).length;
   reportProgress(`${DRAGONS[S.kind].zh}·${STAGE_NAMES[S.stage]} · 吃了 ${totalEaten()} 只 · 图鉴 ${n}/12`);
@@ -189,6 +229,8 @@ function handleEvents(evs) {
       case 'splash': { const sy = waveH(e.x, e.z, S.t); P.burst('splash', e.x, sy + .2, e.z, Math.round(6 + 10 * e.size), 3 + 4 * e.size, .5, .16 + .22 * e.size, { grav: 12, up: 1.4, drag: 1, grow: 1.2, alpha: .85 }); break; }
       case 'bite': P.burst('spark', e.x, e.y, e.z, 14, 6, .5, .5); flashT = .35; break;
       case 'orb': P.burst('orb', e.x, e.y, e.z, 6, 3, .4, .5); break;
+      case 'star': P.burst('gold', e.x, e.y, e.z, 18, 7, .8, .7); P.burst('spark', e.x, e.y, e.z, 10, 5, .5, .5); break;
+      case 'starLand': if (e.water) P.burst('splash', e.x, waveH(e.x, e.z, S.t) + .3, e.z, 16, 6, .6, .35, { grav: 14, up: 1.6, drag: 1, grow: 1.2, alpha: .85 }); else P.burst('gold', e.x, e.y, e.z, 10, 5, .6, .5); break;
       case 'evolve': startEvolve(e.stage); break;
       // 'unlock'（新能力卡）和 'blocked'（长大后学会）界面自己处理（ui.update 里读事件）
       case 'lunge': dragon.bite = .2; break;
@@ -202,6 +244,12 @@ function handleEvents(evs) {
         }
         break;
       }
+      case 'landmark':
+        // 地标：第一次发现给成长（界面飘字），每次靠近都报名字
+        if (ui.region) ui.region(e.zh, e.first ? `发现 · 成长 +${e.pts}` : e.en);
+        if (e.first) { P.burst('gold', h.x, h.y, h.z, 24, 8, 1, .7); persist(); }
+        break;
+      case 'archPass': P.burst('gold', e.x, e.y, e.z, 30, 10, .9, .8); P.burst('spark', e.x, e.y, e.z, 20, 8, .6, .6); dragon.roar = .5; break;
       case 'huntDiscover':
         // Keep the new discovery even if the player leaves before the hunt finishes.
         persist();
@@ -309,9 +357,11 @@ function advance(dtReal) {
     if (flashT > 0) { flashT -= dtReal; }
     const blink = h.invuln > 0 ? (Math.sin(T * Math.PI * 6) > 0 ? .12 : 0) : 0;
     if (!evo) dragon.flash.value = blink;
+    if (dragon.nrim) dragon.nrim.value = ctx.env.night * (1 - ctx.env.under * .5);
     dragon.update(h, S, dtReal * (state === 'play' ? 1 : 0), T);
     cam.update(h, S, dtReal, waveT);
     // 速度感：空气里的线从镜头旁掠过；火龙快的时候翼尖拉出白色尾迹
+    speedFx.setDim && speedFx.setDim(1 - .6 * ctx.env.night);
     speedFx.update(camera, h, cam.sf || 0, camera.position.y < waveH(camera.position.x, camera.position.z, waveT), dtReal);
     {
       // 翼尖尾迹（连续细带）：火龙在空中、速度快的时候才有
@@ -339,7 +389,7 @@ function advance(dtReal) {
     if (S.kind === 'sea' && h.dashT > 0 && h.medium === 'water' && Math.random() < .6) P.emit('bubble', h.x - _f.x * h.len * .45 + (Math.random() - .5) * h.len * .2, h.y + (Math.random() - .5) * h.len * .1, h.z - _f.z * h.len * .45, (Math.random() - .5) * 1.5, 1, (Math.random() - .5) * 1.5, .7, .07 + .05 * Math.random(), { rise: 4, grow: .6, alpha: .7 });
     // 烤熟的猎物冒烟、光点
     for (const c of S.creatures) if (c.roast > 0 && Math.random() < .25) P.emit('smoke', c.x, c.y, c.z, 0, 1.5, 0, 1, c.size * .5, { rise: 1 });
-    for (const o of S.orbs) P.emit('orb', o.x, o.y, o.z, 0, 0, 0, .06, 1.1, { grow: 0 });
+    for (const o of S.orbs) if (!o.star) P.emit('orb', o.x, o.y, o.z, 0, 0, 0, .06, 1.1, { grow: 0 });
     // 护盾
     shield.visible = h.shield > 0; if (shield.visible) { shield.position.set(h.x, h.y, h.z); shield.scale.setScalar(h.len * .75); shieldMat.opacity = .18 + .05 * Math.sin(T * 3); }
   } else if (!S || state === 'title') {
@@ -348,15 +398,20 @@ function advance(dtReal) {
   }
   if (S) creatures.update(S, alpha, dtReal, T);
   hunts.update(state === 'title' ? null : S, dtReal);
+  spec.update(state === 'title' ? null : S, dtReal);
+  env.update(dtReal, S && state !== 'title' ? S : null, state === 'play');
   sea.update(S || { creatures: [], spots: [], hero: { x: 0, y: 60, z: 0, len: 10 }, t: T, kind: 'fire' }, alpha, dtReal, T, camera);
   const under = sea.underwater || 0;
   creatures.setUnderwater && creatures.setUnderwater(under);
+  creatures.setNight && creatures.setNight(ctx.env.night);
   isl.update(camera, T, dtReal, waveT);
+  landmarks.update(camera, T);
   clouds.update(camera, T, dtReal, isl.smokePoints());
+  ambient.update(S && state !== 'title' ? S : null, camera, dtReal, T, ctx.env);
   sky.update(camera, T);
   P.update(dtReal);
   if (S && (state === 'play' || state === 'pause')) ui.update(S, dtReal, frameEvents);
-  audio.update(S || null, dtReal, frameEvents, under);
+  audio.update(S || null, dtReal, frameEvents, under, ctx.env.rain);
 }
 
 function showResult() {

@@ -593,3 +593,13 @@
 /* 大字提示可以两行（猎场结束：第二行是成长奖励，小一号） */
 .dui .d-toast{ white-space:pre-line; }
 .dui .d-toast::first-line{ font-size:60px; }
+
+/* 区域名（飞进新海域时）：上方居中，大字 + 两边细线 + 一行小英文 */
+.dui .d-region{ position:absolute; left:0; right:0; top:calc(var(--st) + 236px * var(--s)); padding:10px 0 12px; text-align:center; pointer-events:none; color:#fff; z-index:6;
+  text-shadow:0 0 2px rgba(12,28,52,.9), 0 2px 4px rgba(12,28,52,.8), 0 0 14px rgba(12,28,52,.55);
+  background:radial-gradient(ellipse 60% 50% at 50% 50%, rgba(12,28,52,.32), rgba(12,28,52,0)); }
+.dui .d-region b{ display:inline-block; font:800 30px/36px var(--fT); letter-spacing:inherit; padding:0 22px; position:relative; }
+.dui .d-region b::before, .dui .d-region b::after{ content:''; position:absolute; top:50%; width:34px; height:2px; background:linear-gradient(90deg, transparent, rgba(255,255,255,.85)); }
+.dui .d-region b::before{ right:100%; }
+.dui .d-region b::after{ left:100%; transform:scaleX(-1); }
+.dui .d-region i{ display:block; margin-top:2px; font:500 12px/16px var(--fP); font-style:normal; letter-spacing:3px; opacity:.85; text-transform:uppercase; }

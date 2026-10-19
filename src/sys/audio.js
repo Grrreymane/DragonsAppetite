@@ -305,6 +305,23 @@ export function buildEngine(ac) {
       tone(v, 'sine', f, 0, t, .003, .16, .13); tone(v, 'sine', f * 1.5, 0, t + .035, .003, .14, .08);
       fin(v);
     },
+    zap(t) {             // 雷：一声脆的「咔」+ 晚 0.25 秒的低沉隆隆（2.5 秒）
+      const v = V(t, 1, .4);
+      noise(v, t, .002, .35, .55, 'highpass', 2200, 1200, 0, CRACK);
+      noise(v, t, .004, .25, .4, 'bandpass', 1800, 500, .8);
+      noise(v, t + .25, .3, 2.4, .5, 'lowpass', 260, 90, .8, BROWN, .3);
+      fin(v);
+    },
+    star(t) {            // 吃到星星：亮晶晶的三连铃
+      const v = V(t, 1, .4, cue);
+      [91, 96, 100].forEach((m, i) => bell(v, mtof(m), t + i * .05, .8, .1));
+      fin(v);
+    },
+    stars(t) {           // 流星雨开始：一串往下飘的铃（五声音阶）
+      const v = V(t, 1, .5, cue);
+      [100, 98, 96, 91, 88, 84].forEach((m, i) => bell(v, mtof(m), t + i * .11, 1, .07));
+      fin(v);
+    },
     goal(t) {            // 小目标完成：四声上行的铃
       const v = V(t, 1, .35, cue);
       [79, 84, 88, 91].forEach((m, i) => bell(v, mtof(m), t + i * .09, 1.1, .17));
@@ -471,6 +488,9 @@ export function buildEngine(ac) {
   const fireDown = (f, t) => { for (const p of f.parts) { p[0].onended = () => { for (const n of p) try { n.disconnect(); } catch (e) {} }; p[0].stop(t); } };
   const ambG = G(0, sfx), ambMod = G(.7, ambG), ambLp = BQ('lowpass', 380, 2, ambMod);
   loop(BROWN, ambLp);
+  // 雨声：白噪声高通 + 一点中频（L.rain 0..1）
+  const rainG = G(0, sfx), rainHp = BQ('highpass', 1400, .5, rainG), rainBp = BQ('bandpass', 700, .6, G(.5, rainG));
+  const rsrc = loop(WHITE, rainHp); rsrc.connect(rainBp);
   const ambLfo = ac.createOscillator(); ambLfo.frequency.value = .12; ambLfo.connect(G(.3, ambMod.gain)); ambLfo.start(0);
   // L = { wind 0..1, windK 音量系数（0 = 没有风声）, water 在水里（风换成水流）, gust 阵风 0..1, fire 0/1, fireK 火大小, flick 闪烁 0..1, amb 水下底噪 0..1 }
   E.setLoops = (L, t) => {
@@ -484,6 +504,7 @@ export function buildEngine(ac) {
     else if (fire) { if (fire.off < 0) fire.off = t; else if (t - fire.off > 2) { fireDown(fire, t); fire = null; } }
     set(fireG.gain, .4 * fk, t, fk ? .05 : .12);
     set(ambG.gain, .2 * clamp(L.amb || 0, 0, 1), t, .3);
+    set(rainG.gain, .09 * clamp(L.rain || 0, 0, 1), t, .5);
   };
   E.fireOn = () => !!fire;                                                          // 测试用：喷火那串节点在不在
   E.levels = () => ({ wind: windG.gain.value + windG2.gain.value, fire: fireG.gain.value, amb: ambG.gain.value });   // 测试用：循环声现在的增益
@@ -708,7 +729,7 @@ export function createAudio(opt = {}) {
   }
 
   // 每帧调用：S 可以是 null（标题页，只放音乐）；events = 这一帧攒下的事件；under = 镜头在水下的程度
-  function update(S, dt, events, under = 0) {
+  function update(S, dt, events, under = 0, rain = 0) {
     if (!E || ac.state !== 'running') return;   // 没解锁 / 静音 / 后台：事件直接丢掉，不攒
     dt = clamp(dt || 0, 0, .1); st.time += dt;
     const now = ac.currentTime, u = clamp(under || 0, 0, 1);
@@ -727,7 +748,7 @@ export function createAudio(opt = {}) {
     E.setMix(st.mix, st.tgt, now);
     E.stage = S ? clamp(S.stage | 0, 0, 2) : 1;   // 曲子的编配跟着年纪走（排程提前 0.6 秒，所以最多晚 0.6 秒换）
     const h = live && S.hero, c = live && S.cfg || {}, L = st.L;
-    L.wind = 0; L.fire = 0; L.amb = u; L.windK = 0; L.water = false;
+    L.wind = 0; L.fire = 0; L.amb = u; L.windK = 0; L.water = false; L.rain = rain * (1 - u * .7);
     if (h) {
       const base = c.level || c.cruise || 20, top = c.dive || c.dash || 45;
       const tm = st.time;

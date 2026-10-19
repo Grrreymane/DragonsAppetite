@@ -34,7 +34,7 @@ export const hasModel = name => fetch(new URL(`models/${name}.json`, BASE), { me
 export function createDragonView({ scene }) {
   const root = new THREE.Group(); scene.add(root);
   const D = { root, model: null, mixer: null, act: {}, bones: {}, man: null, kind: 'fire', scale: 1, saved: new Map(), boneScale: null,
-    toonMats: [], hulls: [], glow: { value: 0 }, flash: { value: 0 }, rim: { value: 0 }, bite: 0, gulp: 0, roar: 0, name: null };
+    toonMats: [], hulls: [], glow: { value: 0 }, flash: { value: 0 }, rim: { value: 0 }, nrim: { value: 0 }, bite: 0, gulp: 0, roar: 0, name: null };
   const _q = new THREE.Quaternion(), _q2 = new THREE.Quaternion(), _ax = V(), U = V(), F = V(), Lf = V();
 
   D.build = (loaded, desiredLen, boneScale) => {
@@ -56,15 +56,17 @@ export function createDragonView({ scene }) {
       const std = o.material;
       const toon = new THREE.MeshToonMaterial({ map: std.map, gradientMap: GRAD, color: 0xffffff, side: std.side });   // 翼膜 / 鳍是单片，跟原材质一样双面
       toon.onBeforeCompile = sh => {
-        sh.uniforms.uGlow = D.glow; sh.uniforms.uFlash = D.flash; sh.uniforms.uRim = D.rim;
-        sh.fragmentShader = 'uniform float uGlow; uniform float uFlash; uniform float uRim;\n' + sh.fragmentShader.replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+        sh.uniforms.uGlow = D.glow; sh.uniforms.uFlash = D.flash; sh.uniforms.uRim = D.rim; sh.uniforms.uNRim = D.nrim;
+        sh.fragmentShader = 'uniform float uGlow; uniform float uFlash; uniform float uRim; uniform float uNRim;\n' + sh.fragmentShader.replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
           { vec3 tc = diffuseColor.rgb; float mx = max(tc.r, max(tc.g, tc.b)), mn = min(tc.r, min(tc.g, tc.b));
             float sat = (mx - mn) / max(mx, 1e-3);
             float cyan = smoothstep(.35, .6, sat) * smoothstep(.05, .2, tc.g - tc.r) * smoothstep(-.05, .08, tc.b - tc.g * .8) * smoothstep(.25, .45, mx);
             totalEmissiveRadiance += tc * cyan * uGlow * 1.6 + vec3(uFlash);
             // 进化时的金色轮廓光（只亮边缘，不把整条龙刷白）
             float rimF = pow(1.0 - abs(dot(normalize(normal), normalize(vViewPosition))), 2.2);
-            totalEmissiveRadiance += vec3(1.0, .72, .28) * uRim * (rimF * .9 + .04); }`);
+            totalEmissiveRadiance += vec3(1.0, .72, .28) * uRim * (rimF * .9 + .04);
+            // 夜里：一圈淡蓝的月光轮廓（暗处也看得清龙的形状）
+            totalEmissiveRadiance += vec3(.42, .58, 1.0) * uNRim * rimF * .28 + tc * uNRim * .34; }`);   // 主角夜里自己亮着（玩家要一直看得清自己）
       };
       toon.customProgramCacheKey = () => 'heroToon';
       o.material = toon; D.toonMats.push(toon);

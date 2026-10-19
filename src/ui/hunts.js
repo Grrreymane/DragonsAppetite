@@ -29,6 +29,9 @@ export function createHuntHUD(parent) {
       // 事件：每抓一只飘「+1」，达成时飘大字「+10」
       if (events && project) for (const e of events) {
         if (e.type === 'huntCatch') { const p = project(e.x, e.y, e.z); if (p && p.visible) floatAt(p.x, p.y, `+${e.bonus}`); }
+        else if (e.type === 'archPass') { const p = project(e.x, e.y, e.z); if (p && p.visible) floatAt(p.x, p.y, `穿过拱门 +${e.pts}`, true); }
+        else if (e.type === 'star') { const p = project(e.x, e.y, e.z); if (p && p.visible) floatAt(p.x, p.y, `+${e.pts}`); }   // 流星雨的星星
+        else if (e.type === 'zap' && e.n > 0) { const p = project(e.x, e.y, e.z); if (p && p.visible) floatAt(p.x, p.y, S.kind === 'sea' ? `电晕 ${e.n} 只` : `烤熟 ${e.n} 只`, true); }   // 雷劈
         else if (e.type === 'huntGoal') {
           goalFlash = performance.now() + 2200; key = '';
           const r = el.getBoundingClientRect(), pr = parent.getBoundingClientRect();

@@ -72,6 +72,18 @@ export function createUI(root, api = {}) {
   const hintEl = h('div', 'd-hint'); hintEl.hidden = true; root.appendChild(hintEl);
   const toastEl = h('div', 'd-toast'); root.appendChild(toastEl);
   const abEl = h('div', 'd-abil'); abEl.hidden = true; root.appendChild(abEl);
+  // 区域名：飞进新的海域时在上方淡入淡出（大字 + 一行小英文），别的大字 / 新能力卡在放时等它们放完
+  const regionEl = h('div', 'd-region'); regionEl.hidden = true; root.appendChild(regionEl);
+  let regionT = 0;
+  const region = (zh, en) => {
+    clearTimeout(regionT);
+    if (quiet()) { regionT = setTimeout(() => region(zh, en), 600); return; }
+    regionEl.innerHTML = `<b>${zh}</b><i>${en || ''}</i>`; regionEl.hidden = false;
+    if (regionEl.animate) {
+      regionEl.getAnimations && regionEl.getAnimations().forEach(a => a.cancel());
+      regionEl.animate([{ opacity: 0, letterSpacing: '2px' }, { opacity: 1, letterSpacing: '8px', offset: .18 }, { opacity: 1, letterSpacing: '9px', offset: .78 }, { opacity: 0, letterSpacing: '10px' }], { duration: 3200, easing: 'ease-out' }).onfinish = () => { regionEl.hidden = true; };
+    } else regionT = setTimeout(() => { regionEl.hidden = true; }, 3000);
+  };
   // 新能力卡的下沿（px，0 = 没有卡）：hud.js 的头顶箭头 / 「!」/ 小牌不画到卡片上。ResizeObserver 在排版之后给，update 里不读布局
   G.abBot = 0;
   if (typeof ResizeObserver === 'function') new ResizeObserver(() => { G.abBot = abEl.hidden ? 0 : abEl.offsetTop + abEl.offsetHeight + 8; }).observe(abEl);
@@ -260,7 +272,7 @@ export function createUI(root, api = {}) {
     showTitle(save) { save = save || (api.getSave && api.getSave()) || {}; if (save.mute != null) this.setMute(!!save.mute); if (save.left != null) this.setLeft(!!save.left); loading.set(1); title.show(save); },
     hideTitle() { title.hide(); },
     showHUD(k) { kind = k === 'sea' ? 'sea' : 'fire'; root.classList.toggle('d-sea', kind === 'sea'); hud.show(kind); },
-    hideHUD() { hud.hide(); baseHint = null; wantHint = null; abil = null; abLast = { key: '', t: -1e9 }; clearTemp(); clearTimeout(hideT); hideT = 0; clearTimeout(quietT); clearTimeout(toastSafe); toastOn = false; render(null, true); abQ.length = 0; stopAbility(); },
+    hideHUD() { hud.hide(); baseHint = null; wantHint = null; abil = null; abLast = { key: '', t: -1e9 }; clearTemp(); clearTimeout(hideT); hideT = 0; clearTimeout(quietT); clearTimeout(toastSafe); toastOn = false; clearTimeout(regionT); regionEl.hidden = true; render(null, true); abQ.length = 0; stopAbility(); },
     update(S, dt, events) { hud.update(S, dt, events); if (S && !hud.el.hidden) watch(S, events); },
     showPause() { menu.show(kind); },
     hidePause() { menu.hide(); },
@@ -271,6 +283,7 @@ export function createUI(root, api = {}) {
     showAbility,
     get abilityLeft() { return abilityLeft(); },
     toast,
+    region,
     hint,
     setLoading(p, text) { loading.set(p, text); },
     setTemp(on) { hud.setTemp(!!on); },

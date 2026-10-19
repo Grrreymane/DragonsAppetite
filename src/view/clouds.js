@@ -12,6 +12,7 @@ import { SKY_FOG_GLSL, SKY } from './sky.js';
 // 雾色离空气的雾色很远 = 镜头在水下
 const waterFog = c => Math.abs(c.r - SKY.mid.r) + Math.abs(c.g - SKY.mid.g) + Math.abs(c.b - SKY.mid.b) > .25;
 
+export const CLOUD_TINT = { value: new THREE.Color(1, 1, 1), under: null };   // 所有云 / 烟共用（env.js 改）
 const MAX = 240;
 const BAND_D = 1300;          // 地平线云带离镜头的距离（在天空球 1400 以内）
 // iSize = (宽, 高, 转角 / 云带的雾量, 模式)；模式 0 云和烟 / 1 镜头前的薄雾 / 2 地平线云带
@@ -33,7 +34,7 @@ void main(){
   gl_Position = projectionMatrix * mvPosition;
   #include <fog_vertex>
 }`;
-const FRAG = `uniform sampler2D map;
+const FRAG = `uniform sampler2D map; uniform vec3 uTint;
 varying vec2 vUv; varying vec4 vC; varying vec3 vDir; varying float vHaze;
 #include <fog_pars_fragment>
 #ifndef USE_FOG
@@ -41,7 +42,7 @@ ${SKY_FOG_GLSL}
 #endif
 void main(){
   vec4 t = texture2D(map, vUv);
-  gl_FragColor = vec4(t.rgb * vC.rgb, t.a * vC.a);
+  gl_FragColor = vec4(t.rgb * vC.rgb * uTint, t.a * vC.a);   // uTint：昼夜 / 天气（env.js）
   if (gl_FragColor.a < 0.004) discard;
   #include <colorspace_fragment>
   #ifdef USE_FOG
@@ -63,7 +64,7 @@ function billboards(max) {
   geo.instanceCount = 0;
   const mat = new THREE.ShaderMaterial({
     transparent: true, depthWrite: false, fog: true,
-    uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, { map: { value: null } }]),
+    uniforms: { ...THREE.UniformsUtils.merge([THREE.UniformsLib.fog, { map: { value: null } }]), uTint: CLOUD_TINT },
     vertexShader: VERT, fragmentShader: FRAG,
   });
   const mesh = new THREE.Mesh(geo, mat); mesh.frustumCulled = false; mesh.name = 'clouds'; mesh.renderOrder = 2;
@@ -141,7 +142,7 @@ export function createClouds({ scene }) {
     update(camera, time, dt, smokePoints = []) {
       if (!ok) return;
       const cam = camera.position, cx = cam.x, cz = cam.z;
-      bb.mesh.visible = !(scene.fog && waterFog(scene.fog.color));   // 水下（雾是水的颜色）：天上的东西都看不到
+      bb.mesh.visible = CLOUD_TINT.under != null ? !CLOUD_TINT.under : !(scene.fog && waterFog(scene.fog.color));   // 水下看不到天上的东西（under 由 env.js 按海的判断写；夜里雾色和水下雾色太接近，不能靠雾色猜）
       if (!bb.mesh.visible) return;
       bb.begin();
       // 地平线云带（镜头在水下时看不到天，不画）

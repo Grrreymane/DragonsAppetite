@@ -8,11 +8,12 @@ import { stepCreatures, spawnInitial, manageSpawns, rescueSpawn, makeGroup } fro
 import { updateLock, assistSteer, targetable } from './assist.js';
 import { seabedY, groundAt } from './world.js';
 import { initHunts, stepHunts, recordHuntEat } from './hunts.js';
+import { stepLandmarks, pushOutOfLandmarks } from './landmarks.js';
 
 export const DT = 1 / 60;
 const TIER_PTS = [0, 1, 4, 10];
 
-export function createSim({ kind = 'fire', seed = 1, stage = 0, pts, goalIdx = 0, codex = {}, discoveries = {}, x = 0, z = 0, yaw = 0 } = {}) {
+export function createSim({ kind = 'fire', seed = 1, stage = 0, pts, goalIdx = 0, codex = {}, discoveries = {}, landmarks = {}, x = 0, z = 0, yaw = 0 } = {}) {
   const cfg = DRAGONS[kind].stages[stage];
   const S = {
     t: 0, kind, stage, cfg, seed, rng: makeRng(seed),
@@ -22,6 +23,7 @@ export function createSim({ kind = 'fire', seed = 1, stage = 0, pts, goalIdx = 0
     stats: { eaten: 0, time: 0, bites: 0, cross: 0, maxNoEat: 0 }, lastEat: 0, bitesT: [],
     slowmo: 1, evolving: 0, spawnT: 0, fireCone: [], autoAimT: 0,
     abilities: [], nextAbilities: [],
+    landmarks: Object.fromEntries(Object.keys(landmarks || {}).filter(k => landmarks[k]).map(k => [k, 1])),   // 发现过的地标
   };
   S.stats.passes = 0; S.stats.misses = 0; S.stats.skills = 0;
   S.hero.x = x; S.hero.z = z; S.hero.yaw = yaw; S.hero.px = x; S.hero.pz = z;
@@ -232,10 +234,57 @@ function bite(S, c) {
   for (const o of S.creatures) if (o.sp === c.sp && o !== c && o.st === 'chase') { o.st = 'retreat'; o.stT = 6; }
 }
 
+// ---------- 大场面：雷劈、流星雨（画面那边按天气 / 时间触发，这里只管效果） ----------
+// 雷劈在 (x,y,z)：半径 r 里的猎物——火龙那边烤熟（要烤熟才能吃的也能直接吃了），海龙那边电晕（4 秒不动）
+export function zap(S, x, y, z, r) {
+  const fire = S.kind === 'fire'; let n = 0;
+  for (const c of S.creatures) {
+    if (c.dying || Math.hypot(c.x - x, c.y - y, c.z - z) > r) continue;
+    if (fire) { if (!c.roast && (c.edibleCooked || c.edible)) { c.cooked = 1; c.roast = 4; c.vx *= .2; c.vz *= .2; S.events.push({ type: 'cook', id: c.id, sp: c.sp }); n++; } }
+    else if (!(c.stun > 0)) { c.stun = 4; if (c.edibleCooked) c.cooked = 1; S.events.push({ type: 'stun', id: c.id, sp: c.sp }); n++; }
+  }
+  S.events.push({ type: 'zap', x, y, z, r, n });
+  return n;
+}
+// 流星雨：n 颗星星从天上落到主角前方（火龙：主角附近的高度；海龙：浅水里），飘着等主角来吃，一颗 +STAR_PTS
+export const STAR_PTS = 3;
+export function spawnStars(S, n = 12, over = 16) {
+  for (let i = 0; i < n; i++) S.orbs.push({ star: 1, x: 0, y: -999, z: 0, ty: 0, t: 30, wait: .4 + i * over / n, fall: 0, vx: 0, vy: 0, vz: 0 });
+  S.events.push({ type: 'stars', n });
+}
+// 一颗星开始落：落点按主角「现在」的位置和朝向定（前方 35~80 米），从前上方斜着落过来，在镜头里看得见
+function dropStar(S, o) {
+  const h = S.hero, r = S.rng, water = S.kind === 'sea' && h.medium === 'water';
+  const a = h.yaw + r.range(-.55, .55), d = r.range(35, 80), fx = Math.sin(h.yaw), fz = Math.cos(h.yaw);
+  const x = h.x + Math.sin(a) * d, z = h.z + Math.cos(a) * d;
+  o.ty = water ? r.range(-12, -3) : Math.max(groundAt(x, z) + 10, Math.max(12, h.y + r.range(-10, 10)));
+  o.fall = 1.4; o.vx = -fx * 50 / 1.4; o.vz = -fz * 50 / 1.4; o.vy = -(water ? 55 : 45) / 1.4;
+  o.x = x - o.vx * o.fall; o.y = o.ty - o.vy * o.fall; o.z = z - o.vz * o.fall;
+  o.t = 28;
+}
+
 function stepOrbs(S, dt) {
   const h = S.hero;
   for (let i = S.orbs.length - 1; i >= 0; i--) {
     const o = S.orbs[i]; o.t -= dt;
+    if (o.star) {
+      if (o.wait > 0) { o.wait -= dt; if (o.wait <= 0) dropStar(S, o); continue; }
+      if (o.fall > 0) {                                   // 斜着落下来（1.6 秒），落到位以后慢慢上下飘
+        o.fall -= dt; o.x += o.vx * dt; o.y += o.vy * dt; o.z += o.vz * dt;
+        if (o.fall <= 0) { o.y = o.ty; S.events.push({ type: 'starLand', x: o.x, y: o.y, z: o.z, water: o.y < 0 }); }
+      } else {
+        o.y = o.ty + Math.sin(S.t * 1.8 + i) * .8;
+        // 靠近了自己往嘴边飘（不用撞得很准）
+        const dx = h.x - o.x, dy = h.y - o.y, dz = h.z - o.z, d = Math.hypot(dx, dy, dz);
+        if (d < 16 && d > .1) { const k = Math.min(1, dt * 2.5); o.x += dx * k; o.ty += dy * k; o.z += dz * k; }
+      }
+      if (o.fall <= 0 && Math.hypot(o.x - h.x, o.y - h.y, o.z - h.z) < h.len * .6 + 4.5) {
+        S.pts += STAR_PTS; S.stats.stars = (S.stats.stars || 0) + 1;
+        S.events.push({ type: 'star', x: o.x, y: o.y, z: o.z, pts: STAR_PTS }); S.orbs.splice(i, 1); continue;
+      }
+      if (o.t <= 0) S.orbs.splice(i, 1);
+      continue;
+    }
     o.vx *= Math.exp(-dt); o.vy *= Math.exp(-dt); o.vz *= Math.exp(-dt);
     o.x += o.vx * dt; o.y += o.vy * dt + Math.sin(S.t * 2 + i) * .3 * dt; o.z += o.vz * dt;
     if (Math.hypot(o.x - h.x, o.y - h.y, o.z - h.z) < h.len * .6 + 2.5) {
@@ -271,6 +320,8 @@ export function step(S, inp) {
   h.lockUnder = tgt ? tgt.y < waveH(tgt.x, tgt.z, S.t) - .3 : false;
   const as = assistSteer(S, inp, tgt);
   if (S.kind === 'fire') stepFire(S, inp, dt, as); else stepSea(S, inp, dt, as);
+  if (pushOutOfLandmarks(h, Math.max(2, h.len * .4)) > .5 && h.bumpT <= 0) { h.bumpT = 1; S.events.push({ type: 'bump', x: h.x, y: h.y, z: h.z }); }
+  stepLandmarks(S, dt);
   stepSkill(S, inp, dt);
   // 卡住 / NaN 保护
   if (!Number.isFinite(h.x + h.y + h.z + h.yaw + h.pitch)) { h.x = h.px || 0; h.y = S.kind === 'fire' ? 60 : -6; h.z = h.pz || 0; h.pitch = 0; h.speed = 15; h.yawRate = 0; S.stats.nan = (S.stats.nan || 0) + 1; }

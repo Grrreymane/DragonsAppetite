@@ -108,6 +108,7 @@ const FRAG = `uniform float uT, uUnder, uDepth;
 uniform vec3 uCam, deepC, shallowC, deepV, shallowV, deepO, shallowO, farC, aquaC, aquaC2, foamC, sunD, sunC, shC;
 uniform vec3 skyUp, skyWarm, skyCool;
 uniform vec3 sunW, uwWin, uwTir, uwSun, uwShC;
+uniform vec3 uEnv, uEnvU; uniform float uNight;
 uniform vec4 uHole;
 uniform sampler2D uShore, uNoise; uniform vec4 uShoreR;
 uniform vec4 uShA[${MAXSH}], uShB[${MAXSH}]; uniform int uShN;
@@ -245,6 +246,7 @@ void main(){
     // 3) 岛边：两档浅水色（宽距离场 G）
     c = mix(c, aquaC, stepW(0.05, sf.g + wob, sgW * 0.7 + 1e-4) * 0.6);
     c = mix(c, aquaC2, stepW(0.17, sf.g + wob, sgW * 0.7 + 1e-4) * 0.62);
+    c *= uEnv;                                                         // 昼夜 / 天气（env.js）：海的底色跟着天变
     // 4) 天光反射：近处按视线角分两档（边随浪起伏），远处换成平滑的（两档在远处会变成一条条横纹）；
     //    远处只反射地平线的颜色（加上天顶的蓝会和青、暖雾混成发灰的颜色）
     //    两档的边只跟着短浪抖（跟着长浪会变成一两大块滑来滑去的硬边）
@@ -276,6 +278,7 @@ void main(){
       float star = 1.0 - smoothstep(0.6, 1.0, min(q.x * 3.0 + q.y, q.x + q.y * 3.0));   // 四角小星
       float laneB = pow(max(dot(normalize(N + vec3(0.0, 1.5, 0.0)), Hs), 0.0), 200.0);
       c += vec3(1.0, 0.97, 0.88) * star * smoothstep(0.75, 0.95, tw) * smoothstep(0.15, 0.55, laneB) * 1.3 * (1.0 - smoothstep(70.0, 160.0, dist));
+      c += vec3(0.3, 0.95, 1.0) * star * smoothstep(0.55, 0.95, tw) * uNight * 1.1 * (1.0 - smoothstep(60.0, 150.0, dist));   // 夜里：海里的荧光点
     }
     #endif
     // 7) 浪尖白沫：一截截顺着浪尖的白线 = 短浪高度的等高线（宽度按米算，粗细均匀），断成一截截、两头尖，跟着浪走；
@@ -311,7 +314,7 @@ void main(){
     c = mix(c, mix(c, aquaC2, 0.6), sp.y * 0.6);
     c = mix(c, shC, shadowAt(p, false, nM.b) * 0.55 * smoothstep(0.15, 0.4, V.y));   // 贴着水面斜着看时不画影子（会像一个黑洞）
     float foam = max(max(crest, shore), sp.x);
-    c = mix(c, foamC, foam);
+    c = mix(c, mix(foamC * mix(uEnv, vec3(1.0), 0.45), vec3(0.4, 1.0, 1.0), uNight * 0.55), foam);   // 夜里浪尖发青色荧光
   } else {
     vec3 R = normalize(vW - cameraPosition);
     float cu = dot(R, N);
@@ -327,6 +330,7 @@ void main(){
     c += uwSun * (pow(sg, 8.0) * 0.45 + smoothstep(0.965, 0.98, sg) * 0.5) * (0.35 + 0.65 * win);
     c = mix(c, uwShC, shadowAt(p, true, nM.b));
     c = mix(c, foamC, sp.x * 0.55 * smoothstep(0.05, 0.25, R.y));       // 远处斜着看的白沫也压成线，淡掉
+    c *= uEnvU;
   }
   gl_FragColor = vec4(c, 1.0);
   #include <colorspace_fragment>
@@ -352,6 +356,7 @@ export function createSea(ctx) {
     aquaC: { value: C(0x2fb4bc) }, aquaC2: { value: C(0x6ad8cc) },      // 岛边浅水：两档
     foamC: { value: C(0xf6fcfc) }, sunD: { value: SUN }, sunC: { value: C(0xfff0d0) }, shC: { value: C(0x0a3348) },
     skyUp: { value: SKY.upper }, skyWarm: { value: SKY.warm }, skyCool: { value: SKY.cool },
+    uEnv: { value: new THREE.Color(1, 1, 1) }, uEnvU: { value: new THREE.Color(1, 1, 1) }, uNight: { value: 0 },
     sunW: { value: sunW }, uwWin: { value: C(0x86dde8) }, uwTir: { value: C(0x2a8a9c) }, uwSun: { value: C(0xfffbe6) }, uwShC: { value: C(0x0b3a48) },
     uShore: { value: shore ? shore.tex : null }, uShoreR: { value: shore ? shore.region : new THREE.Vector4() }, uNoise: { value: seaNoise() },
     uShA: { value: shA }, uShB: { value: shB }, uShN: { value: 0 }, uSpot: { value: spots }, uSpotN: { value: 0 },
@@ -388,7 +393,13 @@ export function createSea(ctx) {
 
   const _d = new THREE.Vector3(), lastCam = new THREE.Vector3();
   const api = {
-    group, bed, shore, underwater: 0, waveT: 0, depth: 0, fogColor: uwC,
+    group, bed, shore, underwater: 0, waveT: 0, depth: 0, fogColor: uwC, U, shaftK: 1,
+    // 太阳（光）的方向变了（昼夜）：海面高光、水下看太阳的方向（折射后）跟着改
+    setSun(dir) {
+      U.sunD.value.copy(dir).normalize();
+      const D = U.sunD.value, el = Math.max(.05, D.y), hz = Math.hypot(D.x, D.z) || 1, sw = Math.sqrt(1 - el * el) / 1.33;
+      sunW.set(D.x / hz * sw, Math.sqrt(1 - sw * sw), D.z / hz * sw);
+    },
     surfaceAt: (x, z, t = api.waveT) => waveH(x, z, t),
     update(S, alpha = 1, dt = 1 / 60, time = 0) {
       const cam = camera.position;
@@ -410,7 +421,7 @@ export function createSea(ctx) {
       api.depth = Math.max(0, surf - cam.y);
       U.uUnder.value = under ? 1 : 0; U.uDepth.value = api.depth;
       const dk = sstep(2, 80, api.depth);
-      uwC.copy(UW_SHALLOW).lerp(UW_DEEP, dk);
+      uwC.copy(UW_SHALLOW).lerp(UW_DEEP, dk).multiply(U.uEnvU.value);
 
       let fog = scene.fog;
       if (fog && fog !== ownFog && 'near' in fog) {
@@ -436,7 +447,7 @@ export function createSea(ctx) {
       if (shore && !under) { camera.getWorldDirection(_d); shore.update(cam, time, _d); }
       writeShadows(S, alpha, wt);
       bed.update(S, cam, wt, k, under, uwC, dt);
-      shafts.update(cam, wt, under ? k : 0, api.depth);
+      shafts.update(cam, wt, under ? k * api.shaftK : 0, api.depth);
     },
     // 画质：0 低档（海面不画小星点和浪尖细线、海底的石头 / 海藻不画描边），1 以上正常
     setQuality(q) {

@@ -117,7 +117,7 @@ export const FOG = /* glsl */`
 // 眼睛状态（vFx.x）：1 害怕（大眼白 + 小瞳孔）/ 2 晕（转圈的螺旋）/ 3 烤熟（× 眼）
 const FRAG_PARS = /* glsl */`
 uniform vec4 uK, uEye;
-uniform float uT;
+uniform float uT, uNightK;
 varying vec3 vLoc;
 varying float vGlow;
 varying vec4 vFx;
@@ -200,6 +200,8 @@ if (uEye.w > 0.0) {
   totalEmissiveRadiance += vec3(0.95) * max(h1, h2 * 0.8) * hl * e;
   if (pred && crState < 0.5) totalEmissiveRadiance += vec3(0.45, 0.04, 0.0) * smoothstep(0.42, 0.6, ad) * e;
 }
+// 夜里：猎物自己亮一点（暗处也看得见要吃的东西）
+totalEmissiveRadiance += diffuseColor.rgb * uNightK * 0.35;
 `;
 
 // 本体材质：所有生物同一个着色器程序（参数走 uniform），省编译时间

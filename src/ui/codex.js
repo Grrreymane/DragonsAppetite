@@ -1,4 +1,5 @@
 // 图鉴：12 格。吃过 = 彩色 + 次数（吃到过金色个体加金星）；没吃过 = 剪影 + 需要的阶段 + 哪条龙能吃
+import { LANDMARKS } from '../config/landmarks.js';
 import { SPECIES, SPECIES_IDS } from '../config/species.js';
 import { icon } from './icons.js';
 import { h, button, blocker, show } from './dom.js';
@@ -44,6 +45,9 @@ export function createCodex(root, api, pic) {
       const entry = discoveries[id] || {}, found = !!entry.found;
       const best = Math.min(1000000, Math.max(0, Math.floor(Number(entry.best) || 0)));
       return `<div class="d-explore-entry ${id}${found ? ' found' : ''}"><span class="d-explore-stamp">${icon(found ? ic : 'lock')}</span><div><b>${name}</b><span>${found ? '最好 ×' + best : '尚未发现'}</span></div>${found ? icon('check', 'd-explore-check') : ''}</div>`;
+    }).join('') + LANDMARKS.map(L => {   // 地标：哪条龙发现过都算
+      const found = !!((save.fire && save.fire.landmarks || {})[L.id] || (save.sea && save.sea.landmarks || {})[L.id]);
+      return `<div class="d-explore-entry lm${found ? ' found' : ''}"><span class="d-explore-stamp">${icon(found ? 'star' : 'lock')}</span><div><b>${found ? L.zh : '？？？'}</b><span>${found ? '已发现' : '在' + L.hint}</span></div>${found ? icon('check', 'd-explore-check') : ''}</div>`;
     }).join('');
     // 生物小图还没准备好（creatures 模块还没渲染）→ 1 秒后再试一次
     clearTimeout(retry); if (pic.miss) retry = setTimeout(() => { if (!el.hidden) fill(save); }, 1000);
