@@ -1,5 +1,6 @@
 // 界面总入口（DOM）：createUI(root, api) → 各界面的开关 + 每帧 update。接口见 docs/ARCH.md「ui 接口」「v2 新增」
 // root = #ui（在 #wrap 里，和画布一样大）。样式在 ui/style.css（index.html 引入）
+import { createMap } from './map.js';
 import { SPECIES } from '../config/species.js';
 import { ABILITIES } from '../config/dragons.js';
 import { icon, onSheet, SHEET } from './icons.js';
@@ -70,8 +71,11 @@ export function createUI(root, api = {}) {
 
   const hud = createHUD(root, api, G, pic);
   const hintEl = h('div', 'd-hint'); hintEl.hidden = true; root.appendChild(hintEl);
+  // 点一下提示就关掉（以后不再出这条）：主程序记进存档（用户：中间的提示有时候太久，玩家要能关）
+  hintEl.addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); const n = shownHint; if (!n) return; if (api.onHintDismiss) api.onHintDismiss(n); clearTemp(); baseHint = null; wantHint = null; clearTimeout(hideT); hideT = 0; render(null); });
   const toastEl = h('div', 'd-toast'); root.appendChild(toastEl);
   const abEl = h('div', 'd-abil'); abEl.hidden = true; root.appendChild(abEl);
+  abEl.addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); if (abDone) abDone(); });
   // 区域名：飞进新的海域时在上方淡入淡出（大字 + 一行小英文），别的大字 / 新能力卡在放时等它们放完
   const regionEl = h('div', 'd-region'); regionEl.hidden = true; root.appendChild(regionEl);
   let regionT = 0;
@@ -90,6 +94,7 @@ export function createUI(root, api = {}) {
   const menu = createMenu(root, api);
   const title = createTitle(root, api);
   const codex = createCodex(root, api, pic);
+  const map = createMap(root, api);
   const result = createResult(root, api);
   const loading = createLoading(root);
   let kind = 'fire', mute = false, left = false;
@@ -103,8 +108,8 @@ export function createUI(root, api = {}) {
     drag: ['d-hc', HAND, '按住拖动'],
     plunge: ['d-hc', icon('down'), ab('plunge', '扎水')],
     breach: ['d-hc', icon('up'), ab('breach', '跃出')],
-    fire: ['d-ha', HAND, '按住喷火'],
-    dash: ['d-ha', HAND, '点击冲刺'],
+    fire: ['d-ha', HAND, '按住喷火<small>烤熟分数×2</small>'],
+    dash: ['d-ha', HAND, '点击冲刺<small>撞晕分数×2</small>'],
     skill: ['d-ha d-hs', HAND, '点一下'],
     // 能力图标垫奶油色圆片（直接放在海面上会像场景里的东西）+ 右下角小锁
     blocked_plunge: ['d-hc d-hb', `<span class="d-hdisc">${icon('plunge')}</span><i class="d-hlk">${icon('lock')}</i>`, '长大后学会'],
@@ -188,6 +193,7 @@ export function createUI(root, api = {}) {
   // 阶段名大字放完（完全淡出后 50ms）才出，两个不叠；同一组能力 8 秒内只弹一次（主程序调 showAbility 和 'unlock' 事件谁先到都行）。
   // HUD 没开（标题页）就不弹；结算卡开着时排队，点「继续」后再弹（被结算卡打断的那张也重放）。
   // 卡片的下沿写进 G.abBot（hud.js 的屏幕标记躲开它）
+  let abDone = null;   // 点一下新能力卡：马上收起
   const abQ = []; let abBusy = false, abLast = { key: '', t: -1e9 }, abTimer = 0, abCur = null, abEnd = 0, resOpen = false;
   const norm = list => (Array.isArray(list) ? list : [list]).map(a => {
     if (typeof a === 'string') a = { id: a };
@@ -222,7 +228,8 @@ export function createUI(root, api = {}) {
     abEl.hidden = false; root.classList.add('d-abon');   // 卡片在的时候小目标卡和连吃先让开（不叠在一起），放完再滑回来
     G.abBot = G.st + 6 + 38 + 44 * G.s + (L.length > 1 ? 150 : 132) * G.s;   // 先估一个，ResizeObserver 排版后给准的
     const dur = abDur(L); abEnd = performance.now() + dur;
-    const done = () => { abEl.hidden = true; abEl.innerHTML = ''; abBusy = false; abCur = null; G.abBot = 0; root.classList.remove('d-abon'); nextAbility(); sync(); };
+    const done = () => { abDone = null; abEl.hidden = true; abEl.innerHTML = ''; abBusy = false; abCur = null; G.abBot = 0; root.classList.remove('d-abon'); nextAbility(); sync(); };
+    abDone = () => { abEl.getAnimations && abEl.getAnimations().forEach(a => { a.onfinish = null; a.cancel(); }); clearTimeout(abEl._t); done(); };
     if (abEl.animate) {
       abEl.animate([{ opacity: 0, transform: 'translateY(-14px) scale(.7)' }, { opacity: 1, transform: 'translateY(0) scale(1.06)', offset: .1 },
         { opacity: 1, transform: 'scale(1)', offset: .16 }, { opacity: 1, transform: 'scale(1)', offset: .88 }, { opacity: 0, transform: 'translateY(-10px) scale(.96)' }],
@@ -277,7 +284,8 @@ export function createUI(root, api = {}) {
     update(S, dt, events) { hud.update(S, dt, events); if (S && !hud.el.hidden) watch(S, events); },
     showPause() { menu.show(kind); },
     hidePause() { menu.hide(); },
-    showCodex(save) { codex.show(save); },
+    showCodex(save, onClose) { codex.show(save, onClose); },
+    showMap(S, save, onClose) { map.show(S, save, onClose); },
     hideCodex() { codex.hide(); },
     showResult,
     hideResult() { result.hide(); if (resOpen) { resOpen = false; setTimeout(nextAbility, 350); } },

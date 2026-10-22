@@ -141,6 +141,16 @@ const ui = mkUI(document.getElementById('ui'), {
   onResume: () => resume(),
   onSwitch: () => toTitle(),
   onCodex: () => ui.showCodex(save),
+  // HUD 上点图鉴进度条：暂停，看完接着玩
+  onCodexHud: () => { if (state !== 'play') return; persist(); state = 'pause'; input.reset(); ui.showCodex(save, () => { if (state === 'pause') { state = 'play'; last = performance.now(); } }); },
+  // 大地图：游戏里打开 = 暂停、关掉接着玩；从暂停菜单打开 = 关掉回菜单
+  onMap: () => {
+    if (!S || !ui.showMap) return;
+    if (state === 'play') { state = 'pause'; input.reset(); ui.showMap(S, save, () => { if (state === 'pause') { state = 'play'; last = performance.now(); } }); }
+    else ui.showMap(S, save);
+  },
+  // 点掉首次提示：这条以后不再出
+  onHintDismiss: name => { const k = { drag: 'drag', plunge: 'plunge', breach: 'breach', fire: 'fire', dash: 'dash' }[name]; if (k && save.tut) { save.tut[k] = 1; writeSave(save); } hintState.cur = null; },
   onToggleMute: () => { save.mute = !save.mute; audio.setMute(save.mute); ui.setMute(save.mute); writeSave(save); },
   onToggleLeft: () => { save.left = !save.left; ui.setLeft(save.left); writeSave(save); },
   getSave: () => save,
@@ -291,6 +301,9 @@ function handleEvents(evs) {
       case 'goal': saveT = 0; break;
       case 'complete': if (!save[S.kind].adultShown) resultTimer = 1.6; break;
       case 'codex': break;
+      case 'codexComplete':   // 这条龙能吃的全吃到了：庆祝 + 再弹一次结算（「图鉴大师」）
+        if (!save[S.kind].codexDone) { save[S.kind].codexDone = 1; persist(); P.burst('gold', S.hero.x, S.hero.y, S.hero.z, 40, 10, 1.2, .8); resultTimer = 0; setTimeout(() => showResult('图鉴大师'), 1400); }
+        break;
       case 'shield': break;
     }
   }
@@ -473,10 +486,11 @@ function advance(dtReal) {
   audio.update(S || null, dtReal, frameEvents, under, ctx.env.rain);
 }
 
-function showResult() {
-  const sv = save[S.kind]; sv.adultShown = 1; persist();
+function showResult(title) {
+  const sv = save[S.kind]; if (!title) sv.adultShown = 1; persist();
+  if (state !== 'play') return;
   state = 'pause'; input.reset();
-  ui.showResult({ kind: S.kind, timeSec: Math.round((sv.playSec || 0)), eaten: totalEaten(), codexN: SPECIES_IDS.filter(id => save.codex[id] && save.codex[id].n).length, codexMax: SPECIES_IDS.length, stageName: '大胃王' }, () => { state = 'play'; last = performance.now(); });
+  ui.showResult({ kind: S.kind, timeSec: Math.round((sv.playSec || 0)), eaten: totalEaten(), codexN: SPECIES_IDS.filter(id => SPECIES[id].who.includes(S.kind) && save.codex[id] && save.codex[id].n).length, codexMax: SPECIES_IDS.filter(id => SPECIES[id].who.includes(S.kind)).length, stageName: title || '大胃王' }, () => { state = 'play'; last = performance.now(); });
 }
 
 // ---------- 尺寸 / 画质 ----------

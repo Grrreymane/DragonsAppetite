@@ -182,6 +182,13 @@ ui 新接口：`api.onSkill()`（第二技能按钮按下）；`ui.showAbility(l
 - 天敌抢食（`sim/hunts.js`）：`hunt.rival = { planned, at, id, eaten }`、`hunt.stolen`；天敌生物带 `c.rivalOf = hunt.id`、`c.rivalMotion`（creatures.js 不推，`stepHuntRival` 推）；吃掉它走 `recordRivalEat`（+`RIVAL_PTS`）。新事件：`huntRival {kind, sp}`、`rivalEat {x,y,z}`、`huntRivalEaten {x,y,z,pts,sp}`；`huntEnd` 多了 `stolen`、`rivalEaten`。截图：`tools/scenarios/rival_check.js`。
 - 测试：`tools/test-leaders.mjs`（在 `npm test` 里）；截图：`tools/scenarios/leader_check.js`（`?trait=ember` 预先学会并在前方放一只烤熟的看热浪）。
 
+## 界面补充（2026-10-22）
+
+- 首次提示（`ui.hint`）和新能力卡都能点掉：点提示 → `api.onHintDismiss(name)`，主程序把 `save.tut[name]` 记成 1，以后不再出。喷火 / 冲刺的提示第二行写「烤熟 / 撞晕分数×2」，吃到烤熟的飘「×2」。
+- 成龙的图鉴进度条可以点：`api.onCodexHud()` 暂停，`ui.showCodex(save, onClose)` 关掉接着玩。
+- 图鉴集齐（这条龙能吃的种类都吃到过）：sim 发 `codexComplete`，主程序记 `save[龙].codexDone`，再弹一次结算（标题「图鉴大师」）。结算卡上的图鉴数按「这条龙能吃的」算。
+- 大地图 `ui/map.js`：HUD 左上「地图」按钮 / 暂停菜单「地图」→ `api.onMap()`；以主角为中心画一整份世界（海域底色、岛、地标〔没发现是「？？？」〕、正在进行的猎场 / 领头、主角箭头，屏幕上方 = +z）。截图：`tools/scenarios/ui_round_check.js`。
+
 ## 调试钩子
 
 `window.__dg = { S, step(n), input, setStage(stage), give(pts), teleport(x,y,z), render(), ready }`，`?debug` 显示 fps / 绘制调用 / 三角面，`?rec` 打开 preserveDrawingBuffer，`?seed=`、`?kind=fire|sea`、`?stage=0|1|2`、`?autostart`（跳过标题直接开局）。

@@ -33,6 +33,7 @@ export function createHUD(root, api, G, pic) {
   // ---------- 顶部：菜单 / 声音 ----------
   const bMenu = button('menu', '菜单', 'd-sbtn d-menu', () => api.onPause && api.onPause());
   const bSound = button('sound', '声音', 'd-sbtn d-sound', () => api.onToggleMute && api.onToggleMute());
+  const bMap = button('map', '地图', 'd-sbtn d-mapb', () => api.onMap && api.onMap());   // 大地图（菜单下面）
 
   // ---------- 成长条（三个阶段头像 + 两段进度）；成龙以后换成图鉴进度条 ----------
   const node = i => `<i class="d-node" data-i="${i}"><span class="d-nh"></span><em>${STAGE_CH[i]}</em></i>`;
@@ -41,6 +42,8 @@ export function createHUD(root, api, G, pic) {
     <div class="d-cbar"><span class="d-cbic">${icon('book')}</span><b class="d-seg"><u></u></b><span class="d-ctxt">0/${SPECIES_IDS.length}</span><em class="d-hurt"></em></div>
     <div class="d-next"><span class="d-nab"></span><span class="d-nsp"></span></div>`);
   const gbar = grow.querySelector('.d-gbar'), cbar = grow.querySelector('.d-cbar');
+  // 图鉴进度条（成龙时显示）：点一下打开图鉴
+  cbar.addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); if (api.onCodexHud) api.onCodexHud(); });
   const nodes = [...grow.querySelectorAll('.d-gbar .d-node')], heads = nodes.map(n => n.querySelector('.d-nh'));
   const fills = [...grow.querySelectorAll('.d-gbar u')];
   const cFill = grow.querySelector('.d-cbar u'), cTxt = grow.querySelector('.d-ctxt');
@@ -131,7 +134,7 @@ export function createHUD(root, api, G, pic) {
 
   const temp = h('div', 'd-temp', '临时'); temp.hidden = true;
 
-  el.append(marks, grow, combo, goal, newsp, temp, skill, act, bMenu, bSound);
+  el.append(marks, grow, combo, goal, newsp, temp, skill, act, bMenu, bSound, bMap);
 
   // ---------- 缓存（只写变了的值） ----------
   let C = {};

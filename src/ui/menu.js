@@ -9,11 +9,12 @@ export function createMenu(root, api) {
   const bGo = button('playw', '继续', 'd-btn d-main', () => { show(el, false); api.onResume && api.onResume(); });
   const bSw = button('dragon', '换龙', 'd-btn', call('onSwitch'));
   const bCx = button('book', '图鉴', 'd-btn', call('onCodex'));
+  const bMap = button('map', '地图', 'd-btn', call('onMap'));
   const bSnd = button('sound', '声音', 'd-btn d-tog', call('onToggleMute'));
   const bLeft = button('hand', '左手', 'd-btn d-tog', call('onToggleLeft'));
   bSnd.insertAdjacentHTML('beforeend', `<i class="d-sw"></i>`);
   bLeft.insertAdjacentHTML('beforeend', `<i class="d-sw"></i>`);
-  panel.append(h('div', 'd-ribbon', '<span>暂停</span>'), bGo, bSw, bCx, bSnd, bLeft);
+  panel.append(h('div', 'd-ribbon', '<span>暂停</span>'), bGo, bSw, bCx, bMap, bSnd, bLeft);
   el.appendChild(panel); root.appendChild(el);
   return {
     el,

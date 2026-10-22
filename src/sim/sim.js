@@ -136,7 +136,10 @@ function eat(S, c, cross, extra) {
   const cx = S.codex[c.sp], first = !cx.n; cx.n++; if (c.gold) cx.gold++;
   const e = { type: 'eat', sp: c.sp, x: c.x, y: c.y, z: c.z, pts, combo: S.combo.n, gold: c.gold, cross, cooked, size: c.size, skill: !!c.skillHit, extra: !!extra };
   S.events.push(e);
-  if (first) S.events.push({ type: 'codex', sp: c.sp });
+  if (first) {
+    S.events.push({ type: 'codex', sp: c.sp });
+    if (SPECIES_IDS.every(id => !SPECIES[id].who.includes(S.kind) || S.codex[id].n > 0)) S.events.push({ type: 'codexComplete' });   // 这条龙能吃的全吃到了
+  }
   goalProgress(S, e);
   recordHuntEat(S, c);
   if (cooked) heatWave(S, c);           // 特性：余烬热浪

@@ -675,3 +675,27 @@
 .dui .d-hunt.rival{ border-color:#e04a32; box-shadow:0 0 0 2px rgba(224,74,50,.35); }
 .dui .d-hunt.rival .d-hunt-hint{ color:#c0321e; font-weight:800; }
 .dui .d-hfloat.bad{ color:#ff6a50; }
+
+/* 首次提示：第二行小字（×2）；提示和新能力卡都能点掉 */
+.dui .d-hint .d-pill small{ display:block; font:800 11px/1.3 var(--fP); color:#c0582a; margin-top:1px; }
+.dui .d-hint{ pointer-events:auto; }
+.dui .d-abil{ pointer-events:auto; }
+.dui .d-cbar{ pointer-events:auto; cursor:pointer; }
+.dui .d-hfloat.x2{ color:#ffd24a; font-size:22px; }
+
+/* 大地图按钮（菜单按钮下面）和地图面板 */
+.dui .d-mapb{ left:calc(var(--sl) + 8px); top:calc(var(--st) + 6px + 64px * var(--s)); }
+.dui.d-drag .d-hud .d-mapb{ opacity:.4; }
+.dui .d-map{ z-index:17; display:flex; align-items:center; justify-content:center; }
+.dui .d-mapbox{ position:relative; width:calc(100% - 24px); max-width:420px; padding:26px 10px 12px; border-radius:22px; background:var(--paper); border:3px solid var(--ink); box-shadow:0 5px 0 var(--ink), 0 10px 24px rgba(0,0,0,.35);
+  display:flex; flex-direction:column; align-items:center; gap:8px; }
+.dui .d-mapbox > .d-ribbon{ position:absolute; top:-18px; left:50%; transform:translateX(-50%); }
+.dui .d-mapbox canvas{ width:100%; aspect-ratio:1; border-radius:14px; border:2.5px solid var(--ink); display:block; background:#2a6a90; }
+.dui .d-maphere{ font:800 14px/1.2 var(--fT); color:var(--txt); }
+.dui .d-mapbot .d-btn{ min-width:140px; }
+
+.dui .d-maplegend{ display:flex; align-items:center; gap:4px; font:500 11px/1 var(--fP); color:var(--txt2); }
+.dui .d-maplegend i{ display:inline-block; width:11px; height:11px; border-radius:3px; border:1.5px solid var(--ink); margin-left:6px; }
+.dui .d-maplegend b{ color:#e0a020; margin-left:8px; font-size:13px; }
+/* 连吃挪到地图按钮下面 */
+.dui .d-combo{ top:calc(var(--st) + 136px * var(--s)); }

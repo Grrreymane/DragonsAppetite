@@ -21,6 +21,7 @@ export function createHuntHUD(parent) {
       { opacity: 1, transform: 'translate(-50%,-120%) scale(1)', offset: .7 }, { opacity: 0, transform: 'translate(-50%,-170%) scale(1)' }], { duration: big ? 1500 : 900, easing: 'ease-out' }).onfinish = () => { f.hidden = true; };
     else setTimeout(() => { f.hidden = true; }, 900);
   };
+  let lastX2 = 0;
   let key = '', lastCount = '', progress = -1, tutorial = null, goalFlash = 0;
   const actions = { cloud: '龙吼', tide: '漩涡' };
   return {
@@ -33,6 +34,7 @@ export function createHuntHUD(parent) {
         else if (e.type === 'archPass') { const p = project(e.x, e.y, e.z); if (p && p.visible) floatAt(p.x, p.y, `穿过拱门 +${e.pts}`, true); }
         else if (e.type === 'rivalEat') { const p = project(e.x, e.y, e.z); if (p && p.visible) floatAt(p.x, p.y, '被抢！', false, 'bad'); }   // 天敌抢走一只
         else if (e.type === 'huntRivalEaten') { const p = project(e.x, e.y, e.z); if (p && p.visible) floatAt(p.x, p.y, `吃掉${e.sp === 'roc' ? '大鹏' : '鲨鱼'} +${e.pts}`, true); }
+        else if (e.type === 'eat' && e.cooked && performance.now() - lastX2 > 350) { lastX2 = performance.now(); const p = project(e.x, e.y, e.z); if (p && p.visible) floatAt(p.x, p.y - 18, '×2', false, 'x2'); }   // 烤熟 / 撞晕的分数翻倍：吃到时飘一下
         else if (e.type === 'star') { const p = project(e.x, e.y, e.z); if (p && p.visible) floatAt(p.x, p.y, `+${e.pts}`); }   // 流星雨的星星
         else if (e.type === 'zap' && e.n > 0) { const p = project(e.x, e.y, e.z); if (p && p.visible) floatAt(p.x, p.y, S.kind === 'sea' ? `电晕 ${e.n} 只` : `烤熟 ${e.n} 只`, true); }   // 雷劈
         else if (e.type === 'huntGoal') {

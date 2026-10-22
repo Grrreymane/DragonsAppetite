@@ -12,7 +12,8 @@ export function createCodex(root, api, pic) {
     <div class="d-ribbon">${icon('book')}<span>图鉴</span><b class="d-cxn">0/${SPECIES_IDS.length}</b></div>
     <div class="d-cxscroll"><div class="d-grid"></div><div class="d-explore-title">发现的猎场</div><div class="d-explore"></div></div><div class="d-cxbot"></div></div>`;
   const grid = el.querySelector('.d-grid'), num = el.querySelector('.d-cxn'), explore = el.querySelector('.d-explore');
-  el.querySelector('.d-cxbot').appendChild(button('back', '返回', 'd-btn', () => show(el, false)));
+  let onClose = null;   // 从游戏里打开的：关掉时接着玩
+  el.querySelector('.d-cxbot').appendChild(button('back', '返回', 'd-btn', () => { show(el, false); const f = onClose; onClose = null; f && f(); }));
   root.appendChild(el);
   // 游戏根节点禁用了原生触摸滚动；图鉴内容用自己的拖动，不触发背后的摇杆。
   const scroll = el.querySelector('.d-cxscroll');
@@ -54,7 +55,7 @@ export function createCodex(root, api, pic) {
   };
   return {
     el,
-    show(save) { drag = null; fill(save || (api.getSave && api.getSave())); show(el, true); },
+    show(save, close) { drag = null; onClose = close || null; fill(save || (api.getSave && api.getSave())); show(el, true); },
     hide() { drag = null; show(el, false); },
   };
 }
