@@ -53,6 +53,18 @@ export function createHUD(root, api, G, pic) {
   // ---------- 小目标卡 ----------
   const goal = h('div', 'd-goal', `<div class="d-gpic"></div><div class="d-gnum"><b>0</b><i>/0</i></div><div class="d-gchk">${icon('check')}</div><div class="d-gcap"></div>`);
   const gCap = goal.querySelector('.d-gcap'), gPic = goal.querySelector('.d-gpic'), gHave = goal.querySelector('.d-gnum b'), gN = goal.querySelector('.d-gnum i'), gChk = goal.querySelector('.d-gchk');
+  // 点小目标卡：下面弹一个小说明（做什么、怎么做、做完有什么），3.5 秒自己收起（用户：说明点开再看，不放在卡片外面）
+  const gTip = h('div', 'd-gtip'); gTip.hidden = true;
+  let tipT = 0, tipS = null;
+  goal.appendChild(gTip);
+  goal.addEventListener('pointerdown', e => {
+    e.preventDefault(); e.stopPropagation();   // 不让主程序在卡片下面出摇杆
+    if (!gTip.hidden) { gTip.hidden = true; return; }
+    const S = tipS; if (!S || !S.goal) return;
+    gTip.innerHTML = goalTip(S.goal, kindOf(S), S); gTip.hidden = false;
+    clearTimeout(tipT); tipT = setTimeout(() => { gTip.hidden = true; }, 3500);
+  });
+  const kindOf = S => S.kind === 'sea' ? 'sea' : 'fire';
   // 小目标卡的宽度（屏幕边上的箭头 / 「!」要躲开它）：ResizeObserver 在排版之后给，update 里不用读布局
   let goalW = 0;
   if (typeof ResizeObserver === 'function') new ResizeObserver(es => { const e = es[es.length - 1]; goalW = e.borderBoxSize && e.borderBoxSize[0] ? e.borderBoxSize[0].inlineSize : e.contentRect.width + 22; }).observe(goal);
@@ -246,13 +258,14 @@ export function createHUD(root, api, G, pic) {
     // 小目标卡
     // 「长大」（这一阶段的小目标和图鉴推荐都做完了）：画下一阶段的头像 + 绿色上箭头，不写「0/1」；成龙没有下一阶段，整张卡不显示
     const g = S.goal && !(S.goal.type === 'grow' && st >= 2) ? S.goal : null;
+    tipS = S;
     if (!g) { if (!goal.hidden) goal.hidden = true; }
     else {
       if (goal.hidden) goal.hidden = false;
       const key = g.type + '|' + (g.sp || '') + '|' + g.n + '|' + g.icon + '|' + kind + '|' + st;
       if (key !== C.gkey || C.gRetry > 0 && (C.gRetry -= dt) <= 0) {
         const fresh = key !== C.gkey; C.gkey = key; pic.miss = false;
-        gPic.innerHTML = goalPic(g, kind, st); gCap.textContent = goalCap(g, kind, S); gCap.hidden = !gCap.textContent; C.gRetry = pic.miss ? .4 : 0;
+        gPic.innerHTML = goalPic(g, kind, st); gCap.hidden = true; gTip.hidden = true; C.gRetry = pic.miss ? .4 : 0;
         gN.textContent = '/' + g.n; C.ghave = -1;
         const gr = g.type === 'grow'; if (gr !== C.gGrow) { C.gGrow = gr; goal.classList.toggle('grow', gr); }
         // 换目标时从右边滑进来；新能力卡在的时候卡片本来就滑走了（d-abon），不放（卡片走了以后 CSS 过渡会把它滑回来）
@@ -263,7 +276,7 @@ export function createHUD(root, api, G, pic) {
       const done = !!g.done;
       if (done !== C.gdone) {
         C.gdone = done; goal.classList.toggle('done', done);
-        if (done) { pop(gChk, 1.8, 420); pop(goal, 1.12, 360); const r = !g.extra && GOAL_REWARD[st]; if (r) { gCap.textContent = `成长 +${r}`; gCap.hidden = false; pop(gCap, 1.4, 360); } }
+        if (done) { pop(gChk, 1.8, 420); pop(goal, 1.12, 360); const r = !g.extra && GOAL_REWARD[st]; if (r) { gCap.textContent = `+${r}`; gCap.hidden = false; pop(gCap, 1.4, 360); clearTimeout(C.capT); C.capT = setTimeout(() => { gCap.hidden = true; }, 1600); } }   // 做完：卡片下面闪一下「+N」
       }
     }
 
@@ -433,14 +446,22 @@ export function createHUD(root, api, G, pic) {
   }
 
   // 不是「吃某种生物」的小目标，图标看不懂：卡片下面加一行短字（用户问「这个是啥意思」）
-  // 再加上做完有什么：幼 / 少年「成长 +N」，成龙「大胃王 i/n」（做完成龙的几个小目标 = 大胃王结算）（用户问「吃满有啥用」）
-  function goalCap(g, kind, S) {
-    const fire = kind !== 'sea';
-    const what = ({ skill: fire ? '龙吼后吃' : '漩涡里吃', cooked: fire ? '烤熟再吃' : '撞晕再吃', cross: fire ? '扎水抓鱼' : '跃出抓鸟', combo: '连着吃' })[g.type] || '';
-    if (g.extra || g.type === 'grow' || !S) return what;
+  // 点开的说明：第一行做什么，第二行怎么做，第三行做完有什么（幼 / 少年：成长 +N；成龙：做完全部 = 大胃王）
+  function goalTip(g, kind, S) {
+    const fire = kind !== 'sea', n = g.n, sp = SPECIES[g.sp];
+    let what = '', how = '';
+    if (g.type === 'eat' && sp) {
+      what = `吃 ${n} 只${sp.zh}`;
+      const raw = sp.tier <= ((S.cfg && S.cfg.eatTier) || 1);
+      how = g.extra ? '图鉴里还没有它' : raw ? '靠近它就会自动咬' : fire ? '先喷火烤熟，再吃' : '先冲刺撞晕，再吃';
+    } else if (g.type === 'cooked') { what = fire ? `烤熟再吃 ${n} 只` : `撞晕再吃 ${n} 只`; how = fire ? '按住喷火，烤熟的分数翻倍' : '冲刺撞上去，撞晕的分数翻倍'; }
+    else if (g.type === 'cross') { what = fire ? `扎进水里抓 ${n} 只` : `跃出水面抓 ${n} 只`; how = fire ? '往下拖，俯冲进海里' : '往上拖，冲出水面'; }
+    else if (g.type === 'skill') { what = fire ? `龙吼后吃 ${n} 只` : `漩涡里吃 ${n} 只`; how = fire ? '按龙吼，吼晕的猎物吃掉才算' : '按漩涡，卷进来的鱼吃掉才算'; }
+    else if (g.type === 'combo') { what = `连着吃 ${n} 只`; how = '一口接一口，别停太久'; }
+    else if (g.type === 'grow') { what = '长大'; how = '成长条满了就会进化'; }
     const st = S.stage | 0, list = GOALS[S.kind] && GOALS[S.kind][st];
-    const prize = st < 2 ? `成长 +${GOAL_REWARD[st]}` : list ? `大胃王 ${Math.min(list.length, (S.goalIdx | 0) + 1)}/${list.length}` : '';
-    return what ? `${what} · ${prize}` : prize;
+    const prize = g.extra || g.type === 'grow' ? '' : st < 2 ? `做完：成长 +${GOAL_REWARD[st]}` : list ? `成年目标 ${Math.min(list.length, (S.goalIdx | 0) + 1)}/${list.length} · 全做完 = 大胃王` : '';
+    return `<b>${what}</b><span>${how}</span>${prize ? `<em>${prize}</em>` : ''}`;
   }
   function goalPic(g, kind, st) {
     if (g.type === 'grow') return `<span class="d-ggrow">${icon(`head_${kind === 'sea' ? 'sea' : 'fire'}${Math.min(2, (st || 0) + 1)}`)}<i>${icon('grow')}</i></span>`;

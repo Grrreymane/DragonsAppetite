@@ -613,3 +613,56 @@
 /* 小一号的大字（猎场结束的汇总） */
 .dui .d-toast.small{ font-size:24px; top:34%; }
 .dui .d-toast.small::first-line{ font-size:32px; }
+
+/* 小目标卡（2026-10-22 缩小一号，点开看说明） */
+.dui .d-goal{ height:calc(44px * var(--s)); padding:3px 9px 3px 4px; gap:4px; border-radius:14px; pointer-events:auto; cursor:pointer; }
+.dui .d-goal .d-gpic{ width:calc(34px * var(--s)); height:calc(34px * var(--s)); border-radius:10px; }
+.dui .d-goal .d-gpic .ic{ font-size:calc(26px * var(--s)); }
+.dui .d-goal .d-gnum{ font-size:18px; line-height:20px; }
+.dui .d-goal .d-gchk{ width:22px; height:22px; top:-8px; right:-5px; }
+.dui .d-goal .d-gchk .ic{ font-size:14px; }
+.dui .d-goal .d-gcap{ font-size:14px; font-weight:800; color:#ffe58a; }
+.dui .d-gtip{ position:absolute; top:calc(100% + 8px); right:0; width:max-content; max-width:210px; white-space:normal; padding:8px 11px; border-radius:12px; background:var(--paper); border:2px solid var(--ink); box-shadow:0 3px 0 var(--ink), 0 5px 10px rgba(0,0,0,.25); color:var(--txt); text-align:left; z-index:7; }
+.dui .d-gtip[hidden]{ display:none; }
+.dui.d-left .d-gtip{ right:auto; left:0; }
+.dui .d-gtip b{ display:block; font:800 15px/1.3 var(--fT); }
+.dui .d-gtip span{ display:block; font:500 12px/1.4 var(--fP); color:var(--txt2); margin-top:2px; }
+.dui .d-gtip em{ display:block; font:800 12px/1.4 var(--fP); font-style:normal; color:#c0582a; margin-top:4px; }
+
+/* ---- 结算画面 v2（2026-10-22）：整屏 CG + 上标题 + 下数据栏 ---- */
+.dui .d-result.d-r2{ background:#140c18; display:block; }
+.dui .d-r2 .d-rshot{ position:absolute; inset:0; width:auto; aspect-ratio:auto; border:0; border-radius:0; background:#140c18; overflow:hidden; }
+.dui .d-r2 .d-rshot::after{ display:none; }
+.dui .d-r2 .d-rshot img{ width:100%; height:100%; object-fit:cover; object-position:50% 30%; transform-origin:50% 35%; }
+.dui .d-r2 .d-rshade{ position:absolute; inset:0; pointer-events:none;
+  background:linear-gradient(180deg, rgba(10,8,20,.62) 0%, rgba(10,8,20,0) 30%, rgba(10,8,20,0) 52%, rgba(10,8,20,.62) 72%, rgba(10,8,20,.9) 100%); }
+.dui .d-r2 .d-rtop{ position:absolute; left:0; right:0; top:calc(var(--st) + 10px); display:flex; flex-direction:column; align-items:center; text-align:center; pointer-events:none; }
+.dui .d-r2 .d-rlogo{ width:min(42%, 170px); filter:drop-shadow(0 3px 0 rgba(20,10,10,.5)); }
+.dui .d-r2 .d-rtitle{ margin:2px 0 0; font:800 64px/1.05 var(--fT); color:#ffe7a0; letter-spacing:2px; text-shadow:var(--o3), 0 0 26px rgba(255,150,50,.85); }
+.dui .d-result.d-r2.sea .d-rtitle{ color:#c9fff6; text-shadow:var(--o3), 0 0 26px rgba(80,240,220,.85); }
+.dui .d-r2 .d-rsub{ margin-top:4px; font:800 16px/1.3 var(--fT); color:#fff; letter-spacing:3px; text-shadow:0 2px 3px rgba(0,0,0,.7); }
+.dui .d-r2 .d-rbot{ position:absolute; left:0; right:0; bottom:calc(var(--sb, 0px) + 18px); padding:0 18px; display:flex; flex-direction:column; gap:14px; }
+.dui .d-r2 .d-rstats{ display:flex; gap:10px; justify-content:center; }
+.dui .d-r2 .d-rstats > div{ flex:1; max-width:110px; padding:10px 4px 9px; border-radius:16px; background:rgba(255,255,255,.12); border:1.5px solid rgba(255,255,255,.3);
+  backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px); color:#fff; gap:5px; font:500 12px/1 var(--fP); }
+.dui .d-r2 .d-rstats .ic{ font-size:32px; color:#fff; }
+.dui .d-r2 .d-rstats b{ font:800 22px/1 var(--fT); color:#fff; text-shadow:0 2px 3px rgba(0,0,0,.5); }
+.dui .d-r2 .d-rbtns{ max-width:360px; margin:0 auto; width:100%; }
+/* 入场：CG 慢慢推近，标题弹出，数据栏、按钮依次浮上来 */
+.dui .d-r2.d-rplay .d-rshot img{ animation:dRken 7s ease-out both; }
+.dui .d-r2.d-rplay .d-rtitle{ animation:dRpop .6s .25s cubic-bezier(.2,1.6,.4,1) both; }
+.dui .d-r2.d-rplay .d-rlogo, .dui .d-r2.d-rplay .d-rsub{ animation:dRup .5s .1s ease-out both; }
+.dui .d-r2.d-rplay .d-rstats > div{ animation:dRup .45s ease-out both; }
+.dui .d-r2.d-rplay .d-rstats > div:nth-child(1){ animation-delay:.6s; }
+.dui .d-r2.d-rplay .d-rstats > div:nth-child(2){ animation-delay:.72s; }
+.dui .d-r2.d-rplay .d-rstats > div:nth-child(3){ animation-delay:.84s; }
+.dui .d-r2.d-rplay .d-rbtns{ animation:dRup .45s 1s ease-out both; }
+@keyframes dRken{ from{ transform:scale(1.14); } to{ transform:scale(1); } }
+@keyframes dRpop{ from{ opacity:0; transform:scale(.5); } to{ opacity:1; transform:scale(1); } }
+@keyframes dRup{ from{ opacity:0; transform:translateY(16px); } to{ opacity:1; transform:none; } }
+
+/* 标题挪到下面（用户：大胃王挡住了龙头） */
+.dui .d-r2 .d-rshade{ background:linear-gradient(180deg, rgba(10,8,20,.45) 0%, rgba(10,8,20,0) 16%, rgba(10,8,20,0) 50%, rgba(10,8,20,.66) 66%, rgba(10,8,20,.92) 100%); }
+.dui .d-r2 .d-rlogo{ width:min(34%, 140px); }
+.dui .d-r2 .d-rhead{ display:flex; flex-direction:column; align-items:center; text-align:center; margin-bottom:-2px; pointer-events:none; }
+.dui .d-r2 .d-rtitle{ font-size:56px; }

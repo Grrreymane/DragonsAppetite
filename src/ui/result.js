@@ -1,4 +1,5 @@
-// 结算卡（成龙！）：一帧截图 + 用时 / 吃了 / 图鉴，按钮「分享」「继续」。分享 = 画一张 720×1280 的竖版卡片
+// 结算画面（大胃王！）：整屏铺满成龙 CG（缓慢推近）+ 上方小 logo + 下方大标题（不挡龙头）和半透明数据栏（用时 / 吃了 / 图鉴）+「分享」「继续」。
+// 分享 = 画一张同样版式的 720×1280 竖版卡片。2026-10-22 重做（用户：结算画面再设计一下，CG 按参考图的动作重画）
 import { icon, iconSVG, DRAGON_ART, drawPainted, sheetReady } from './icons.js';
 import { h, button, blocker, show, setIcon } from './dom.js';
 import { SPECIES_IDS } from '../config/species.js';
@@ -16,17 +17,20 @@ const svgURL = s => 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(s);
 export function createResult(root, api) {
   const el = blocker(h('div', 'd-result d-full d-dim'));
   el.hidden = true;
-  el.innerHTML = `<div class="d-panel d-rin">
-    <h2 class="d-rtitle"></h2>
-    <div class="d-rshot"></div>
-    <div class="d-rstats">
-      <div>${icon('clock')}<span>用时</span><b class="t"></b></div>
-      <div>${icon('gulp')}<span>吃了</span><b class="e"></b></div>
-      <div>${icon('book')}<span>图鉴</span><b class="c"></b></div>
-    </div>
-    <div class="d-rbtns"></div></div>`;
+  el.innerHTML = `<div class="d-rshot"></div><div class="d-rshade"></div>
+    <div class="d-rtop"><img class="d-rlogo" src="${LOGO}" alt=""></div>
+    <div class="d-rbot">
+      <div class="d-rhead"><h2 class="d-rtitle"></h2><div class="d-rsub"></div></div>
+      <div class="d-rstats">
+        <div>${icon('clock')}<span>用时</span><b class="t"></b></div>
+        <div>${icon('gulp')}<span>吃了</span><b class="e"></b></div>
+        <div>${icon('book')}<span>图鉴</span><b class="c"></b></div>
+      </div>
+      <div class="d-rbtns"></div>
+    </div>`;
+  el.classList.add('d-r2');
   const q = s => el.querySelector(s);
-  const title = q('.d-rtitle'), shotBox = q('.d-rshot'), btns = q('.d-rbtns');
+  const title = q('.d-rtitle'), shotBox = q('.d-rshot'), btns = q('.d-rbtns'), sub = q('.d-rsub');
   let info = {}, shot = null, onGo = null, busy = false;
   const bShare = button('share', '分享', 'd-btn', () => share());
   const bGo = button('playw', '继续', 'd-btn d-main', () => { show(el, false); const f = onGo; onGo = null; f && f(); });
@@ -71,6 +75,8 @@ export function createResult(root, api) {
       el.classList.toggle('sea', kind === 'sea');
       setIcon(q('.d-rstats > div:nth-child(2)'), kind === 'sea' ? 'gulp_sea' : 'gulp');
       title.textContent = (info.stageName || '成龙') + '！';
+      sub.textContent = (kind === 'sea' ? '海龙' : '火龙') + ' · 成龙';
+      el.classList.remove('d-rplay'); void el.offsetWidth; el.classList.add('d-rplay');   // 重新播入场动画
       q('.t').textContent = mmss(info.timeSec); q('.e').textContent = info.eaten | 0;
       q('.c').textContent = (info.codexN | 0) + '/' + (info.codexMax || SPECIES_IDS.length);
       shot = WIN[kind];
@@ -83,16 +89,19 @@ export function createResult(root, api) {
   };
 }
 
-// 竖版分享卡 720×1280
+// 竖版分享卡 720×1280：和结算画面同一个版式——CG 铺满、上下压暗、logo + 大标题、底部三项数字
 async function drawCard(info, shot) {
   const W = 720, H = 1280, sea = info.kind === 'sea';
-  try { await sheetReady; await Promise.all([document.fonts.load(`800 96px ${FT}`, '小龙大胃王成少年！'), document.fonts.load(`500 48px ${FP}`, '用时吃了图鉴0123456789:/')]); } catch (_) { /* 字体没好就用系统字 */ }
+  try { await sheetReady; await Promise.all([document.fonts.load(`800 96px ${FT}`, '小龙大胃王成少年！海火龙·'), document.fonts.load(`500 48px ${FP}`, '用时吃了图鉴0123456789:/')]); } catch (_) { /* 字体没好就用系统字 */ }
   const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
   const x = cv.getContext('2d');
-  const g = x.createLinearGradient(0, 0, 0, H);
-  if (sea) { g.addColorStop(0, '#62d8d0'); g.addColorStop(.5, '#1f7f9e'); g.addColorStop(1, '#0c2848'); }
-  else { g.addColorStop(0, '#ffc066'); g.addColorStop(.5, '#e0502c'); g.addColorStop(1, '#3c1426'); }
-  x.fillStyle = g; x.fillRect(0, 0, W, H);
+  x.fillStyle = sea ? '#0c2848' : '#3c1426'; x.fillRect(0, 0, W, H);
+  const im = shot ? await loadImg(shot) : null;
+  if (im) { const s = Math.max(W / im.width, H / im.height); x.drawImage(im, (W - im.width * s) / 2, (H - im.height * s) * .3, im.width * s, im.height * s); }
+  else { const a = await loadImg(svgURL(DRAGON_ART[sea ? 'sea' : 'fire'])); if (a) x.drawImage(a, 60, 260, 600, 600); }
+  // 上下压暗（字压在上面看得清）
+  let g = x.createLinearGradient(0, 0, 0, 220); g.addColorStop(0, 'rgba(10,8,20,.5)'); g.addColorStop(1, 'rgba(10,8,20,0)'); x.fillStyle = g; x.fillRect(0, 0, W, 220);
+  g = x.createLinearGradient(0, H - 560, 0, H); g.addColorStop(0, 'rgba(10,8,20,0)'); g.addColorStop(.4, 'rgba(10,8,20,.66)'); g.addColorStop(1, 'rgba(10,8,20,.9)'); x.fillStyle = g; x.fillRect(0, H - 560, W, 560);
   // 字：绕圈叠印描边（WORKFLOW §3：不用 strokeText）
   const txt = (s, X, Y, font, fill, ol = INK, r = 5) => {
     x.font = font; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillStyle = ol;
@@ -100,27 +109,21 @@ async function drawCard(info, shot) {
     x.fillText(s, X, Y + r + 3); x.fillStyle = fill; x.fillText(s, X, Y);
   };
   const logo = await loadImg(LOGO);
-  if (logo) { const lw = 520, lh = logo.height * lw / logo.width; x.drawImage(logo, (W - lw) / 2, 16, lw, lh); }
-  else txt('小龙大胃王', W / 2, 112, `800 96px ${FT}`, '#fff');
-  // 照片框
-  const fx = 60, fy = 262, fw = 600, fh = 590, rr = 36;
-  const rrect = () => { x.beginPath(); x.moveTo(fx + rr, fy); x.arcTo(fx + fw, fy, fx + fw, fy + fh, rr); x.arcTo(fx + fw, fy + fh, fx, fy + fh, rr); x.arcTo(fx, fy + fh, fx, fy, rr); x.arcTo(fx, fy, fx + fw, fy, rr); x.closePath(); };
-  x.save(); rrect(); x.fillStyle = sea ? '#bfeef0' : '#ffe2b8'; x.fill(); x.clip();
-  const im = shot ? await loadImg(shot) : null;
-  if (im) { const s = Math.max(fw / im.width, fh / im.height); x.drawImage(im, fx + (fw - im.width * s) / 2, fy + (fh - im.height * s) / 2, im.width * s, im.height * s); }
-  else { const a = await loadImg(svgURL(DRAGON_ART[sea ? 'sea' : 'fire'])); if (a) x.drawImage(a, fx + 20, fy + 40, fw - 40, fw - 40); }
-  x.restore();
-  rrect(); x.lineWidth = 10; x.strokeStyle = INK; x.stroke(); x.lineWidth = 4; x.strokeStyle = '#f2bd3e'; x.stroke();
-  txt((info.stageName || '成龙') + '！', W / 2, 936, `800 120px ${FT}`, sea ? '#c9fff6' : '#ffeaa0', INK, 7);
-  // 三项数字
+  if (logo) { const lw = 260, lh = logo.height * lw / logo.width; x.drawImage(logo, (W - lw) / 2, 24, lw, lh); }
+  x.save(); x.shadowColor = sea ? 'rgba(80,240,220,.8)' : 'rgba(255,160,60,.8)'; x.shadowBlur = 40;
+  txt((info.stageName || '成龙') + '！', W / 2, 850, `800 120px ${FT}`, sea ? '#c9fff6' : '#ffe7a0', INK, 7); x.restore();
+  txt((sea ? '海龙' : '火龙') + ' · 成龙', W / 2, 936, `800 34px ${FT}`, '#ffffff', INK, 3);
+  // 三项数字（半透明小卡）
   const cols = [['clock', '用时', mmss(info.timeSec)], [sea ? 'gulp_sea' : 'gulp', '吃了', String(info.eaten | 0)], ['book', '图鉴', (info.codexN | 0) + '/' + (info.codexMax || SPECIES_IDS.length)]];
   for (let i = 0; i < 3; i++) {
-    const cx = 130 + i * 230;
-    if (!drawPainted(x, cols[i][0], cx - 36, 1028, 72)) { const ic = await loadImg(svgURL(iconSVG(cols[i][0]))); if (ic) x.drawImage(ic, cx - 28, 1040, 56, 56); }
-    txt(cols[i][1], cx, 1122, `500 24px ${FP}`, '#fff', INK, 3);
-    txt(cols[i][2], cx, 1170, `500 48px ${FP}`, '#fff', INK, 4);
+    const cx = 130 + i * 230, by = 1010;
+    x.fillStyle = 'rgba(255,255,255,.14)'; x.strokeStyle = 'rgba(255,255,255,.35)'; x.lineWidth = 2;
+    x.beginPath(); if (x.roundRect) x.roundRect(cx - 98, by - 6, 196, 196, 26); else x.rect(cx - 98, by - 6, 196, 196); x.fill(); x.stroke();
+    if (!drawPainted(x, cols[i][0], cx - 34, by + 8, 68)) { const ic = await loadImg(svgURL(iconSVG(cols[i][0]))); if (ic) x.drawImage(ic, cx - 28, by + 14, 56, 56); }
+    txt(cols[i][1], cx, by + 102, `500 24px ${FP}`, '#fff', INK, 3);
+    txt(cols[i][2], cx, by + 150, `800 46px ${FT}`, '#fff', INK, 4);
   }
   const url = (location.origin + location.pathname).replace(/^https?:\/\//, '').replace(/index\.html$/, '');
-  txt(url.length > 46 ? url.slice(0, 46) : url, W / 2, 1240, `500 24px ${FP}`, '#ffffffcc', INK, 2);
+  txt(url.length > 46 ? url.slice(0, 46) : url, W / 2, 1244, `500 24px ${FP}`, '#ffffffcc', INK, 2);
   return cv;
 }

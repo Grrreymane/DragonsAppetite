@@ -248,7 +248,7 @@ function handleEvents(evs) {
           sfx.ring(h.x, h.y, h.z, e.r * 1.2, 0xffa040, .8); sfx.ring(h.x, h.y, h.z, e.r * .8, 0xffe0a0, .7, .12);
           for (let i = 0; i < 48; i++) { const a = i / 48 * Math.PI * 2; P.emit('spark', h.x, h.y, h.z, Math.cos(a) * e.r * 1.4, (Math.random() - .5) * 4, Math.sin(a) * e.r * 1.4, .7, 1.2, { drag: 1.2, grow: 1.5, alpha: .7 }); }
         } else {
-          sfx.ring(h.x, h.y, h.z, e.r, 0x7ff8ff, .8); sfx.ring(h.x, h.y, h.z, e.r * .6, 0xbffcff, .6, .15);
+          sfx.shock(h.x, h.y, h.z, Math.min(e.r, camera.position.distanceTo(_m.set(h.x, h.y, h.z)) * .8), 0x7ff8ff, .5);
           for (let i = 0; i < 60; i++) { const a = Math.random() * Math.PI * 2, r = e.r * (.3 + Math.random() * .7); P.emit('bubble', h.x + Math.cos(a) * r, h.y + (Math.random() - .5) * 6, h.z + Math.sin(a) * r, -Math.sin(a) * 12 - Math.cos(a) * 6, 1, Math.cos(a) * 12 - Math.sin(a) * 6, 1.2, .18, { rise: 2, grow: .6, alpha: .8, drag: .4 }); }
         }
         break;
