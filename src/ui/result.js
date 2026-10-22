@@ -74,7 +74,7 @@ export function createResult(root, api) {
       const kind = info.kind === 'sea' ? 'sea' : 'fire';
       el.classList.toggle('sea', kind === 'sea');
       setIcon(q('.d-rstats > div:nth-child(2)'), kind === 'sea' ? 'gulp_sea' : 'gulp');
-      title.textContent = (info.stageName || '成龙') + '！';
+      title.innerHTML = `${info.stageName || '成龙'}<i>!</i>`;   // 「大胃王」三个字居中，感叹号挂在右边不占位
       sub.textContent = (kind === 'sea' ? '海龙' : '火龙') + ' · 成龙';
       el.classList.remove('d-rplay'); void el.offsetWidth; el.classList.add('d-rplay');   // 重新播入场动画
       q('.t').textContent = mmss(info.timeSec); q('.e').textContent = info.eaten | 0;
@@ -111,7 +111,9 @@ async function drawCard(info, shot) {
   const logo = await loadImg(LOGO);
   if (logo) { const lw = 260, lh = logo.height * lw / logo.width; x.drawImage(logo, (W - lw) / 2, 24, lw, lh); }
   x.save(); x.shadowColor = sea ? 'rgba(80,240,220,.8)' : 'rgba(255,160,60,.8)'; x.shadowBlur = 40;
-  txt((info.stageName || '成龙') + '！', W / 2, 850, `800 120px ${FT}`, sea ? '#c9fff6' : '#ffe7a0', INK, 7); x.restore();
+  const tt = info.stageName || '成龙'; x.font = `800 120px ${FT}`; const tw = x.measureText(tt).width;
+  txt(tt, W / 2, 850, `800 120px ${FT}`, sea ? '#c9fff6' : '#ffe7a0', INK, 7);
+  txt('!', W / 2 + tw / 2 + 26, 850, `800 120px ${FT}`, sea ? '#c9fff6' : '#ffe7a0', INK, 7); x.restore();   // 三个字居中，感叹号挂在右边
   txt((sea ? '海龙' : '火龙') + ' · 成龙', W / 2, 936, `800 34px ${FT}`, '#ffffff', INK, 3);
   // 三项数字（半透明小卡）
   const cols = [['clock', '用时', mmss(info.timeSec)], [sea ? 'gulp_sea' : 'gulp', '吃了', String(info.eaten | 0)], ['book', '图鉴', (info.codexN | 0) + '/' + (info.codexMax || SPECIES_IDS.length)]];
