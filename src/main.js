@@ -277,6 +277,8 @@ function handleEvents(evs) {
         for (let i = 0; i < 24; i++) P.emit('bubble', h.x, h.y, h.z, -_f.x * 10 + (Math.random() - .5) * 8, (Math.random() - .5) * 6, -_f.z * 10 + (Math.random() - .5) * 8, .8, .1 + Math.random() * .12, { rise: 3, grow: .6, alpha: .8, drag: 1 });
         break;
       }
+      case 'rivalEat': P.burst(S.kind === 'sea' ? 'bubble' : 'spark', e.x, e.y, e.z, 12, 5, .6, .3, { grow: .6 }); break;
+      case 'huntRivalEaten': P.burst('gold', e.x, e.y, e.z, 26, 9, 1, .7); P.burst('spark', e.x, e.y, e.z, 16, 7, .6, .5); break;
       case 'archPass': P.burst('gold', e.x, e.y, e.z, 30, 10, .9, .8); P.burst('spark', e.x, e.y, e.z, 20, 8, .6, .6); dragon.roar = .5; break;
       case 'huntDiscover':
         // Keep the new discovery even if the player leaves before the hunt finishes.

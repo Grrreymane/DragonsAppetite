@@ -31,15 +31,15 @@ export const DRAGONS = {
     stages: [
       { model: 'fire_baby', fallback: { model: 'fire_adult', bones: { head: 1.4, neck1: 1.05, 'wing1.L': .62, 'wing1.R': .62, tail1: .8 } },
         unlock: ['bite', 'flame'], canCross: false, bites: 1, assist: { range: 38, cone: 42 }, fear: 0,
-        flapHz: 1.333, len: 4.3, level: 18, dive: 34, climb: 13, turn: 1.4, pitchK: .70, fireRange: 11, cookTime: .35, waterTime: 2.0, plungeDepth: 8, mouthR: 1.9, eatTier: 1, cookTier: 2 },
+        flapHz: 1.333, len: 4.3, level: 18, dive: 34, climb: 13, turn: 1.4, pitchK: .70, fireRange: 14, cookTime: .35, waterTime: 2.0, plungeDepth: 8, mouthR: 1.9, eatTier: 1, cookTier: 2 },
       { model: 'fire_teen', fallback: { model: 'fire_adult', bones: { head: 1.15, 'wing1.L': .82, 'wing1.R': .82 } },
         unlock: ['plunge', 'roar'], canCross: true, bites: 2, assist: { range: 46, cone: 46 }, fear: 10,
         skill: { id: 'roar', cd: 12, r: 26, t: 3 },
-        len: 5.5, level: 22, dive: 40, climb: 16, turn: 1.2, pitchK: .66, fireRange: 17, cookTime: .25, waterTime: 2.6, plungeDepth: 12, mouthR: 2.6, eatTier: 2, cookTier: 3 },
+        len: 5.5, level: 22, dive: 40, climb: 16, turn: 1.2, pitchK: .66, fireRange: 20, cookTime: .25, waterTime: 2.6, plungeDepth: 12, mouthR: 2.6, eatTier: 2, cookTier: 3 },
       { model: 'fire_adult',
         unlock: ['roar_up', 'gulp'], canCross: true, bites: 4, assist: { range: 54, cone: 50 }, fear: 22,
         skill: { id: 'roar', cd: 8, r: 44, t: 4 },
-        len: 10.3, level: 27, dive: 48, climb: 19, turn: 1.05, pitchK: .62, fireRange: 24, cookTime: .15, waterTime: 3.2, plungeDepth: 16, mouthR: 3.4, eatTier: 3, cookTier: 3 },
+        len: 10.3, level: 27, dive: 48, climb: 19, turn: 1.05, pitchK: .62, fireRange: 27, cookTime: .15, waterTime: 3.2, plungeDepth: 16, mouthR: 3.4, eatTier: 3, cookTier: 3 },
     ],
   },
   sea: {

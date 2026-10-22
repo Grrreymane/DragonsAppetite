@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { createSim, step } from '../src/sim/sim.js';
 import { makeBot, TIERS } from '../src/sim/bot.js';
 import { TRAITS, LEADER_PTS, heatWave } from '../src/sim/leaders.js';
+import { createHunt, RIVAL_PTS } from '../src/sim/hunts.js';
 
 let checks = 0;
 function test(name, fn) { fn(); checks++; console.log(`ok ${checks} - ${name}`); }
@@ -50,5 +51,25 @@ test('ember heat wave cooks at most 6 and heat-cooked prey do not chain', () => 
   const n = S.creatures.filter(o => o.heat).length; assert.ok(n > 0 && n <= 6, `cooked ${n}`);
   const o = S.creatures.find(o => o.heat); S.events.length = 0; heatWave(S, o);
   assert.equal(S.events.length, 0, 'heat-cooked prey start no new wave');
+});
+// 天敌抢食（猎场升级版）
+test('first hunt of a kind never brings a rival; later ones may', () => {
+  const S = createSim({ kind: 'sea', seed: 3 }); step(S, { jx: 0, jy: 0 });
+  const h1 = createHunt(S); assert.ok(h1); assert.equal(h1.rival.planned, false);
+});
+test('a rival steals hunt prey, and eating it pays RIVAL_PTS exactly once', () => {
+  const S = createSim({ kind: 'sea', seed: 3, stage: 2, discoveries: { tide: { found: 1, best: 0, completed: 0 } } }); step(S, { jx: 0, jy: 0 });
+  S.leaderNext = 1e9; S.stats.eaten = 2;
+  const hu = createHunt(S); assert.ok(hu); hu.rival.planned = true; hu.rival.at = 0;
+  let stolen = 0, paid = 0, n = 0;
+  for (let i = 0; i < 60 * 30 && S.hunt; i++) {
+    if (S.hunt.phase === 'cue') Object.assign(S.hero, { x: S.hunt.x, y: S.hunt.y, z: S.hunt.z });
+    step(S, { jx: 0, jy: 0 });
+    for (const e of S.events) { if (e.type === 'rivalEat') stolen++; if (e.type === 'huntRivalEaten') { paid += e.pts; n++; } }
+    const rv = S.hunt && S.hunt.rival.id > 0 && S.creatures.find(c => c.id === S.hunt.rival.id);
+    if (rv && i > 240 && i % 30 === 0) Object.assign(S.hero, { x: rv.x, y: rv.y, z: rv.z - 2, px: rv.x, py: rv.y, pz: rv.z - 2 });   // 成龙去吃它
+  }
+  assert.ok(stolen >= 1, 'rival stole at least one');
+  assert.ok(n <= 1 && paid === n * RIVAL_PTS, `paid ${paid} over ${n} events`);
 });
 console.log(`Leader / trait regression: ${checks} checks passed.`);

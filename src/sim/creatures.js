@@ -249,7 +249,7 @@ export function stepCreatures(S, dt) {
 
     // 烤熟：往下掉 4 秒；撞晕：翻肚皮 4 秒（都还能吃，多吃一档）
     if (c.roast > 0) {
-      c.roast -= dt; c.vy = lerp(c.vy, -4, damp(2, dt)); c.vx *= .98; c.vz *= .98; move(c, dt);
+      c.roast -= dt; c.vy = lerp(c.vy, -.8, damp(2, dt)); c.vx *= .95; c.vz *= .95; move(c, dt);   // 烤熟的慢慢往下飘（不再掉得飞快，追得上）
       c.phase += dt * 2; c.flap = .1; c.roll = lerp(c.roll, .6, damp(2, dt));
       if (c.roast <= 0) { c.cooked = 0; c.cookT = 0; }
       if (d.hab === 'air' && c.y < waveH(c.x, c.z, t) + .5) c.dying = c.dying || .001;
@@ -270,7 +270,7 @@ export function stepCreatures(S, dt) {
       if (c.daze <= 0) { if (!c.roast && !c.stun) { c.cooked = 0; c.cookT = 0; } c.skillHit = 0; }
       continue;
     }
-    if (c.leadMotion) continue;   // 领头本身由 leaders.js 推（烤熟 / 撞晕 / 吼晕还是上面照常处理）
+    if (c.leadMotion || c.rivalMotion) continue;   // 领头由 leaders.js 推、来抢食的天敌由 hunts.js 推（烤熟 / 撞晕 / 吼晕还是上面照常处理）
     c.roll = c.st === 'flip' ? c.roll : lerp(c.roll, 0, damp(3, dt));
     c.flee = false;
 

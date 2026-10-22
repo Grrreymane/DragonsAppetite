@@ -721,7 +721,9 @@ export function createAudio(opt = {}) {
       case 'orb': st.orbN = t - st.orbT < .7 ? st.orbN + 1 : 0; st.orbT = t; E.play('orb', { n: st.orbN }); break;
       case 'goal': case 'codex': { const at = Math.max(t + .14, st.cueT + .4); st.cueT = at; E.play(e.type, e, at); break; }   // 晚一点，别和「咔」叠在一起；同一口里两个铃错开 0.4 秒
       case 'huntDiscover': if (e.first) E.play('codex', {}, t + .18); break;
-      case 'leaderCue': E.play('stars', {}); break;                                   // 领头出现：一串往下飘的铃
+      case 'leaderCue': E.play('stars', {}); break;
+      case 'huntRival': E.play('alert', {}); break;                                   // 天敌冲进猎场
+      case 'huntRivalEaten': E.play('goal', {}, t + .1); break;                                   // 领头出现：一串往下飘的铃
       case 'trait': E.play('unlock', { stage: 1, kind: S && S.kind }, t + .2); break;  // 学会特性：和新能力同一个号角
       case 'heatwave': E.play('heatwave', {}); break;
       case 'eddy': E.play('eddy', {}); break;

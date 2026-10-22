@@ -2,10 +2,14 @@
 import { makeRng, clamp, lerp, damp } from './rng.js';
 import { groundAt, seabedY } from './world.js';
 import { makeGroup } from './creatures.js';
+import { SPECIES } from '../config/species.js';
 
 const CHASE = 18, DURATION = 26, CUE_TIME = 35;
 // 奖励（当场给，界面上看得见）：猎场里每吃一只 +1 成长；吃满 success 只再 +10；收尾的金色猎物本身就是 3 倍分
 export const HUNT_PER = 1, HUNT_GOAL_BONUS = 10;
+// 天敌抢食（GDD §19.3 B，做成猎场的升级版）：追猎开始几秒后，大鹏（云海）/ 鲨鱼（浅海）冲进来抢猎物。吃掉它 +RIVAL_PTS
+export const RIVAL_PTS = 10;
+const RIVAL_SP = { cloud: 'roc', tide: 'shark' };
 const SETTINGS = {
   cloud: { sp: 'sparrow', count: 5, finale: 6, radius: 66, ahead: 76, reach: 26, success: 5, far: 430 },
   tide: { sp: 'sardine', count: 7, finale: 9, radius: 45, ahead: 54, reach: 20, success: 7, far: 260 },
@@ -71,6 +75,8 @@ export function createHunt(S) {
       id: `hunt-${++S.huntSerial}`, kind, phase: 'cue', x, y, z, yaw, route,
       elapsed: 0, duration: DURATION, caught: 0, total: cfg.count * 3 + cfg.finale, goal: cfg.success, bonus: 0, goalHit: false,
       first: !S.discoveries[kind], groups: [], away: 0, waveCount: 0, emptyFor: 0,
+      // 天敌抢食：第一次发现的猎场不安排（先学会玩法）；之后七成的猎场会来，追猎开始后 6~9 秒到
+      rival: { planned: !!S.discoveries[kind] && r() < .7, at: r.range(6, 9), id: 0, eaten: false }, stolen: 0,
     };
     return S.hunt;
   }
@@ -120,11 +126,13 @@ function endHunt(S, hunt) {
     rec.best = Math.max(rec.best, hunt.caught);
     if (completed) rec.completed++;
   }
+  // 天敌：回到平常的样子（巡逻 / 逃），过一会儿被回收
+  for (const c of S.creatures) if (c.rivalOf === hunt.id) { delete c.rivalMotion; c.g.huntRetire = S.t + 25; }
   // 恢复普通群体，不瞬间抹掉玩家正在追的猎物；已回收的群体仍按原规则消失。
   for (const g of hunt.groups) { g.huntRetire = S.t + 45; delete g.huntId; delete g.huntMotion; delete g.huntPhase; delete g.huntIndex; delete g.huntStart; delete g.huntProgress; }
   for (const c of S.creatures) if (c.huntId === hunt.id) { delete c.huntId; delete c.huntSlot; delete c.huntCounted; }
   // 奖励已经在抓的时候当场给了（recordHuntEat），这里只汇总；best 用结束前的旧纪录判断是不是新纪录
-  if (active) S.events.push({ type: 'huntEnd', kind: hunt.kind, caught: hunt.caught, total: hunt.total, completed, bonus: hunt.bonus, record: hunt.caught > 0 && hunt.caught > (hunt.prevBest || 0) });
+  if (active) S.events.push({ type: 'huntEnd', kind: hunt.kind, caught: hunt.caught, total: hunt.total, completed, bonus: hunt.bonus, record: hunt.caught > 0 && hunt.caught > (hunt.prevBest || 0), stolen: hunt.stolen || 0, rivalEaten: !!(hunt.rival && hunt.rival.eaten) });
   S.hunt = null;
   S.huntNext = S.t + (active ? 35 : 20);
 }
@@ -151,6 +159,7 @@ export function stepHunts(S, dt) {
   const live = S.creatures.some(c => c.huntId === hunt.id && !c.dying);
   hunt.emptyFor = live ? 0 : hunt.emptyFor + dt;
   if (hunt.elapsed >= hunt.duration || hunt.away > 3 || (hunt.phase === 'finale' && !live)) { endHunt(S, hunt); return; }
+  if (hunt.rival && hunt.rival.planned && !hunt.rival.id && hunt.phase !== 'cue' && hunt.elapsed >= hunt.rival.at) spawnRival(S, hunt);
   if (hunt.phase === 'chase') {
     // 分批穿过云缝 / 浅海；抓得快就提前接上下一波，最多只留三秒看路线。
     if (hunt.waveCount < 3 && (hunt.elapsed >= hunt.waveCount * 6 || hunt.emptyFor >= 3)) releaseWave(S, hunt);
@@ -173,6 +182,56 @@ export function stepHunts(S, dt) {
   }
   const focus = closest || routePoint(hunt.route, hunt.waveCount < 3 ? waveProgress(hunt.waveCount) : 1);
   hunt.x = focus.x; hunt.y = focus.y; hunt.z = focus.z;
+}
+
+// 天敌从猎群后侧 45 米冲进来
+function spawnRival(S, hunt) {
+  const sp = RIVAL_SP[hunt.kind], r = S.huntRng, a = (hunt.yaw || 0) + Math.PI + r.range(-.8, .8);
+  const x = hunt.x + Math.sin(a) * 45, z = hunt.z + Math.cos(a) * 45, y = hunt.kind === 'cloud' ? hunt.y + 6 : Math.min(-6, hunt.y - 3);
+  const world = S.rng; let g;
+  try { S.rng = S.huntRng; g = makeGroup(S, sp, x, y, z, 1, { huntRival: hunt.id }); } finally { S.rng = world; }
+  const c = S.creatures.find(o => o.g === g);
+  hunt.rival.id = -1; if (!c) return;
+  c.rivalOf = hunt.id; c.rivalMotion = true; c.biteCd = 0; c.age = 1; c.size = c.baseSize;
+  hunt.rival.id = c.id;
+  S.events.push({ type: 'huntRival', kind: hunt.kind, sp, x, y, z });
+}
+// 天敌：冲向最近的猎场猎物，一口吞掉（被抢走）；幼龙离太近会被咬一口。烤熟 / 撞晕 / 吼晕时 creatures.js 照常处理
+export function stepHuntRival(S, dt) {
+  const hunt = S.hunt; if (!hunt || !hunt.rival || !(hunt.rival.id > 0)) return;
+  const c = S.creatures.find(o => o.id === hunt.rival.id);
+  if (!c || c.dying) { hunt.rival.id = -2; return; }
+  if (c.roast > 0 || c.stun > 0 || c.daze > 0) return;
+  const h = S.hero, d = SPECIES[c.sp];
+  let best = null, bd = 1e9;
+  for (const o of S.creatures) {
+    if (o.huntId !== hunt.id || o.dying || o.rivalOf) continue;
+    const q = Math.hypot(o.x - c.x, o.y - c.y, o.z - c.z); if (q < bd) { bd = q; best = o; }
+  }
+  const tx = best ? best.x : hunt.x, ty = best ? best.y : hunt.y, tz = best ? best.z : hunt.z;
+  const dx = tx - c.x, dy = ty - c.y, dz = tz - c.z, dd = Math.hypot(dx, dy, dz) || 1, v = d.speed * (best ? .95 : .5), k = damp(2.5, dt);
+  c.vx += (dx / dd * v - c.vx) * k; c.vy += (dy / dd * v - c.vy) * k; c.vz += (dz / dd * v - c.vz) * k;
+  c.x += c.vx * dt; c.y += c.vy * dt; c.z += c.vz * dt;
+  if (d.hab === 'air') c.y = Math.max(c.y, groundAt(c.x, c.z) + 8, 4);
+  else c.y = clamp(c.y, seabedY(c.x, c.z) + 2, -1.5);
+  const hs = Math.hypot(c.vx, c.vz); if (hs > .3) { const ny = Math.atan2(c.vx, c.vz); c.yaw += Math.atan2(Math.sin(ny - c.yaw), Math.cos(ny - c.yaw)) * damp(6, dt); }
+  c.pitch = lerp(c.pitch, clamp(Math.atan2(c.vy, Math.max(.5, hs)), -1, 1), damp(5, dt));
+  c.flap = d.hab === 'air' ? .9 : 1; c.phase += dt * (d.hab === 'air' ? 8 : 7);
+  c.biteCd = Math.max(0, c.biteCd - dt);
+  // 抢：嘴边的猎物被吞掉
+  if (best && bd < c.size * .6 + 1.8 && c.biteCd <= 0) {
+    best.dying = best.dying || .001; c.biteCd = 1.1; hunt.stolen++;
+    S.events.push({ type: 'rivalEat', kind: hunt.kind, x: best.x, y: best.y, z: best.z, sp: c.sp });
+  }
+  // 幼龙凑得太近：被咬一口（掉光点）——小时候只能从边上偷吃
+  if (S.stage === 0 && S.bite && h.invuln <= 0 && Math.hypot(h.x - c.x, h.y - c.y, h.z - c.z) < c.size * .6 + h.len * .45) S.bite(c);
+}
+// 吃掉了天敌（sim.js 的 eat 里调）
+export function recordRivalEat(S, c) {
+  const hunt = S.hunt; if (!c.rivalOf) return;
+  S.pts += RIVAL_PTS;
+  if (hunt && hunt.rival && hunt.id === c.rivalOf) hunt.rival.eaten = true;
+  S.events.push({ type: 'huntRivalEaten', x: c.x, y: c.y, z: c.z, pts: RIVAL_PTS, sp: c.sp });
 }
 
 export function recordHuntEat(S, c) {

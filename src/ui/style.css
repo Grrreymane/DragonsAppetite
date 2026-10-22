@@ -670,3 +670,8 @@
 /* 「大胃王」三个字居中，感叹号挂在右边（不参与居中） */
 .dui .d-r2 .d-rtitle{ position:relative; }
 .dui .d-r2 .d-rtitle i{ position:absolute; left:100%; top:0; font-style:normal; margin-left:4px; }
+
+/* 天敌抢食：横幅变红边、提示字变红；「被抢！」飘字是红的 */
+.dui .d-hunt.rival{ border-color:#e04a32; box-shadow:0 0 0 2px rgba(224,74,50,.35); }
+.dui .d-hunt.rival .d-hunt-hint{ color:#c0321e; font-weight:800; }
+.dui .d-hfloat.bad{ color:#ff6a50; }

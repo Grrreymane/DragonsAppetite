@@ -179,6 +179,7 @@ ui 新接口：`api.onSkill()`（第二技能按钮按下）；`ui.showAbility(l
 - 和猎场互斥：`S.leader` 在场时 `stepHunts` 不开新猎场；`S.hunt` 在场时不出领头。
 - 新事件：`leaderCue {trait, first}`、`leaderChase`、`leaderTired`、`leaderEnd {caught, trait, first?, pts?}`、`trait {id, zh, desc, icon}`（第一次学会）、`heatwave {x,y,z,r,n}`、`eddy {x,y,z,r}`。
 - 画面：`view/spectacle.js` 画领头光柱；`view/creatures.js` 用 `SPECIAL_C` 给领头上色；主程序拖火星 / 泡泡尾迹。界面：`ui/hunts.js` 的横幅（没有猎场时显示领头）、`ui.showAbility([{ …, rib: '新特性' }])`。
+- 天敌抢食（`sim/hunts.js`）：`hunt.rival = { planned, at, id, eaten }`、`hunt.stolen`；天敌生物带 `c.rivalOf = hunt.id`、`c.rivalMotion`（creatures.js 不推，`stepHuntRival` 推）；吃掉它走 `recordRivalEat`（+`RIVAL_PTS`）。新事件：`huntRival {kind, sp}`、`rivalEat {x,y,z}`、`huntRivalEaten {x,y,z,pts,sp}`；`huntEnd` 多了 `stolen`、`rivalEaten`。截图：`tools/scenarios/rival_check.js`。
 - 测试：`tools/test-leaders.mjs`（在 `npm test` 里）；截图：`tools/scenarios/leader_check.js`（`?trait=ember` 预先学会并在前方放一只烤熟的看热浪）。
 
 ## 调试钩子

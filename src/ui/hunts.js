@@ -13,9 +13,9 @@ export function createHuntHUD(parent) {
   // 飘字池（+1 / +10）
   const floats = Array.from({ length: 10 }, () => { const f = h('div', 'd-hfloat'); f.hidden = true; parent.appendChild(f); return f; });
   let fi = 0;
-  const floatAt = (x, y, text, big) => {
+  const floatAt = (x, y, text, big, cls) => {
     const f = floats[fi++ % floats.length];
-    f.textContent = text; f.className = 'd-hfloat' + (big ? ' big' : ''); f.hidden = false;
+    f.textContent = text; f.className = 'd-hfloat' + (big ? ' big' : '') + (cls ? ' ' + cls : ''); f.hidden = false;
     f.style.left = x + 'px'; f.style.top = y + 'px';
     if (f.animate) f.animate([{ opacity: 0, transform: 'translate(-50%,-30%) scale(.7)' }, { opacity: 1, transform: 'translate(-50%,-80%) scale(1.1)', offset: .2 },
       { opacity: 1, transform: 'translate(-50%,-120%) scale(1)', offset: .7 }, { opacity: 0, transform: 'translate(-50%,-170%) scale(1)' }], { duration: big ? 1500 : 900, easing: 'ease-out' }).onfinish = () => { f.hidden = true; };
@@ -31,6 +31,8 @@ export function createHuntHUD(parent) {
       if (events && project) for (const e of events) {
         if (e.type === 'huntCatch') { const p = project(e.x, e.y, e.z); if (p && p.visible) floatAt(p.x, p.y, `+${e.bonus}`); }
         else if (e.type === 'archPass') { const p = project(e.x, e.y, e.z); if (p && p.visible) floatAt(p.x, p.y, `穿过拱门 +${e.pts}`, true); }
+        else if (e.type === 'rivalEat') { const p = project(e.x, e.y, e.z); if (p && p.visible) floatAt(p.x, p.y, '被抢！', false, 'bad'); }   // 天敌抢走一只
+        else if (e.type === 'huntRivalEaten') { const p = project(e.x, e.y, e.z); if (p && p.visible) floatAt(p.x, p.y, `吃掉${e.sp === 'roc' ? '大鹏' : '鲨鱼'} +${e.pts}`, true); }
         else if (e.type === 'star') { const p = project(e.x, e.y, e.z); if (p && p.visible) floatAt(p.x, p.y, `+${e.pts}`); }   // 流星雨的星星
         else if (e.type === 'zap' && e.n > 0) { const p = project(e.x, e.y, e.z); if (p && p.visible) floatAt(p.x, p.y, S.kind === 'sea' ? `电晕 ${e.n} 只` : `烤熟 ${e.n} 只`, true); }   // 雷劈
         else if (e.type === 'huntGoal') {
@@ -66,13 +68,17 @@ export function createHuntHUD(parent) {
       const action = ready ? actions[hu.kind] : sea ? '冲刺' : '喷火';
       const waiting = !cue && !finale && !(S.creatures || []).some(c => c.huntId === hu.id && !c.dying);
       const flashing = goalFlash > performance.now();
-      const nextKey = `${hu.kind}|${hu.phase}|${action}|${waiting}|${flashing}|${hu.goalHit}`;
+      // 天敌抢食：天敌在场时提示换成「怎么对付它」（幼：抢着吃、小心被咬；少：先撞晕 / 烤熟；成：直接吃掉 +10）
+      const rv = hu.rival && hu.rival.id > 0 ? (S.creatures || []).find(c => c.id === hu.rival.id && !c.dying) : null, rvName = sea ? '鲨鱼' : '大鹏';
+      const rvHint = rv ? (S.stage === 0 ? `${rvName}来抢食 · 快吃，别被咬` : S.stage === 1 ? `${rvName}来抢食 · ${sea ? '撞晕' : '烤熟'}它再吃 +10` : `${rvName}来抢食 · 吃掉它 +10`) : '';
+      const nextKey = `${hu.kind}|${hu.phase}|${action}|${waiting}|${flashing}|${hu.goalHit}|${rvHint}`;
       if (nextKey !== key) {
         key = nextKey; el.classList.toggle('sea', sea); el.classList.toggle('cue', cue); el.classList.toggle('finale', finale); el.classList.toggle('won', !!hu.goalHit);
         symbol.innerHTML = icon(sea ? 'fish' : 'bird');
         title.textContent = cue ? (sea ? '海面翻涌' : '云隙金光') : sea ? '浅海鱼潮' : '云海追猎';
         const goal = hu.goal || 5;
-        hint.textContent = cue ? `每只 +1 · 吃满 ${goal} 只再 +10`
+        el.classList.toggle('rival', !!rv);
+        hint.textContent = rvHint && !cue && !flashing ? rvHint : cue ? `每只 +1 · 吃满 ${goal} 只再 +10`
           : flashing ? `达成！成长 +10`
           : waiting ? (sea ? '鱼群正在靠近' : '鸟群正在靠近')
           : finale ? `金色猎物出现 · ${action}`

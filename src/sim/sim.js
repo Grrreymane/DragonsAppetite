@@ -7,7 +7,7 @@ import { makeHero, stepFire, stepSea, heroMouth } from './hero.js';
 import { stepCreatures, spawnInitial, manageSpawns, rescueSpawn, makeGroup } from './creatures.js';
 import { updateLock, assistSteer, targetable } from './assist.js';
 import { seabedY, groundAt } from './world.js';
-import { initHunts, stepHunts, recordHuntEat } from './hunts.js';
+import { initHunts, stepHunts, recordHuntEat, stepHuntRival, recordRivalEat } from './hunts.js';
 import { stepLandmarks, pushOutOfLandmarks } from './landmarks.js';
 import { initLeaders, stepLeaders, leaderCaught, heatWave, eddyCheck } from './leaders.js';
 
@@ -141,6 +141,7 @@ function eat(S, c, cross, extra) {
   recordHuntEat(S, c);
   if (cooked) heatWave(S, c);           // 特性：余烬热浪
   if (c.special) leaderCaught(S, c);    // 吃到领头
+  if (c.rivalOf) recordRivalEat(S, c);  // 吃掉来抢食的天敌
   S.noEat = 0;
   c.dying = 1; c.size = 0; c.g.members--;
   const i = S.creatures.indexOf(c); if (i >= 0) { S.creatures[i] = S.creatures[S.creatures.length - 1]; S.creatures.pop(); }
@@ -168,10 +169,12 @@ function interact(S, dt) {
     const c = S.creatures[i]; if (!c || c.dying || c.size < .05) continue;   // 一口吞几只时数组会变短
     const dx = c.x - m.x, dy = c.y - m.y, dz = c.z - m.z, d = Math.hypot(dx, dy, dz);
     const canEat = c.edible || (c.cooked >= 1 && c.edibleCooked);
-    const eatR = mR * 1.35 + c.size * .7;   // v2.1：用户觉得还是难吃到，判定再放大
+    // 烤熟的（喷火烤熟 / 热浪 / 雷劈）：吃的判定大一圈、吸附范围大一倍多（2026-10-22 用户觉得喷火鸡肋：先烤一片，飞过去一口气吸光）
+    const roasted = c.roast > 0;
+    const eatR = (mR * 1.35 + c.size * .7) * (roasted ? 1.4 : 1);   // v2.1：用户觉得还是难吃到，判定再放大
     if (canEat && targetable(S, c)) {
       const ahead = (dx * f.x + dy * f.y + dz * f.z) / (d || 1);
-      const magR = eatR * (h.medium === 'air' && !fire ? 3.4 : 3.1);
+      const magR = eatR * (h.medium === 'air' && !fire ? 3.4 : 3.1) * (roasted ? 1.6 : 1);
       // 嚼一下：两口之间要停一会儿（幼 0.35 / 少 0.2 / 成 0.1 秒），不然一口气吸光整个鱼群
       if (d < eatR && h.chewT <= 0) { eat(S, c, crossNow); h.chewT = [.35, .2, .1][S.stage]; continue; }
       // 扑咬（v2）：锁定的猎物进了扑咬距离、在前方 50° 以内 → 头往前一探，0.15 秒内吸进嘴里
@@ -179,7 +182,7 @@ function interact(S, dt) {
       if (c.id === h.lock && d < lungeR && ahead > .5) {
         if (!c.lunged) { c.lunged = 1; S.events.push({ type: 'lunge', id: c.id }); }
         const k = Math.min(1, dt / .15); c.x -= dx * k; c.y -= dy * k; c.z -= dz * k;
-      } else if (d < magR && ahead > .6) {                 // 吸附：0.12 秒内吸进嘴里
+      } else if (d < magR && ahead > (roasted ? .25 : .6)) {   // 吸附：0.12 秒内吸进嘴里（烤熟的在侧前方也吸）
         const k = Math.min(1, dt / .12); c.x -= dx * k; c.y -= dy * k; c.z -= dz * k;
       }
       // 擦肩统计（只算玩家正瞄着的那只）：锁定的猎物进了扑咬距离算一次「靠近」，没吃到又离开（> 2 倍）算一次「擦肩」
@@ -192,7 +195,7 @@ function interact(S, dt) {
       if (along > 0 && along / (d || 1) > coneCos - c.size / Math.max(4, d) * .5) {
         const cookable = c.edibleCooked && !c.edible;
         if (h.firing && c.edibleCooked) {
-          c.cookT += dt;
+          c.cookT += dt * (SPECIES[c.sp].tier <= 1 ? 2 : 1);   // 小猎物一燎就熟
           if (c.cookT >= (S.cfg.cookTime || .4) && c.cooked < 1) { c.cooked = 1; c.roast = 4; c.vx *= .3; c.vz *= .3; S.events.push({ type: 'cook', id: c.id, sp: c.sp }); }
         }
         if (cookable && c.cooked < 1) autoAim = true;
@@ -336,6 +339,7 @@ export function step(S, inp) {
   heroMouth(h);
   stepHunts(S, dt);
   stepCreatures(S, dt);
+  stepHuntRival(S, dt);
   stepLeaders(S, dt);
   interact(S, dt);
   stepOrbs(S, dt);
