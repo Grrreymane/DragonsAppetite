@@ -6,7 +6,7 @@ const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
 const damp = (k, dt) => 1 - Math.exp(-k * dt);
 
 export function createCamera(camera) {
-  const C = { pos: V(0, 70, -30), look: V(0, 60, 20), span: 11, first: true, under: 0 };
+  const C = { pos: V(0, 70, -30), look: V(0, 60, 20), span: 11, first: true, under: 0, pitch: 0, camUnder: null, flipT: 0 };
   const want = V(), lk = V(), back = V(), fwd = V(), _hp = V();
   // h：插值后的主角；S：sim；dt：渲染帧时间
   C.update = (h, S, dt, time) => {
@@ -22,11 +22,19 @@ export function createCamera(camera) {
     C.sf = sf;
     const dist = (span * .46 / hTan + 3 * span / 11) * (1 + .14 * sf);
     back.set(Math.sin(h.yaw), 0, Math.cos(h.yaw));
-    const cp = Math.cos(h.pitch);
-    fwd.set(Math.sin(h.yaw) * cp, Math.sin(h.pitch), Math.cos(h.yaw) * cp);
-    const underHero = h.y < waveH(h.x, h.z, time) - .5;
-    let up = dist * .22 - h.pitch * dist * .3;
-    if (underHero) up = dist * .32 - h.pitch * dist * .2;      // 水下：镜头略高、往下压，看得到背上的斑点
+    // 俯仰：镜头只跟一个平滑过、限过幅的俯仰（海龙连续跃出时龙一会儿抬头一会儿扎下，镜头跟着甩会晕）
+    const pMax = fire ? .9 : .3;
+    C.pitch += (Math.max(-pMax, Math.min(pMax, h.pitch)) - C.pitch) * damp(fire ? 6 : 2.2, dt);
+    const pitch = C.pitch, cp = Math.cos(pitch);
+    fwd.set(Math.sin(h.yaw) * cp, Math.sin(pitch), Math.cos(h.yaw) * cp);
+    // 镜头在水上还是水下：海龙加迟滞——出水要在空中待 0.35 秒、入水要在水里待 0.6 秒才换（连续跃出时镜头不在水面上下来回切）
+    const heroUnder = h.y < waveH(h.x, h.z, time) - .5;
+    if (C.camUnder === null || C.first || fire) { C.camUnder = heroUnder; C.flipT = 0; }
+    else if (heroUnder !== C.camUnder) { C.flipT += dt; if (C.flipT > (heroUnder ? .6 : .35)) { C.camUnder = heroUnder; C.flipT = 0; } }
+    else C.flipT = 0;
+    const underHero = C.camUnder;
+    let up = dist * .22 - pitch * dist * .3;
+    if (underHero) up = dist * .32 - pitch * dist * .2;      // 水下：镜头略高、往下压，看得到背上的斑点
     want.set(h.x, h.y, h.z).addScaledVector(back, -dist); want.y += up;
     // 镜头不停在水线带上：要么在水上，要么在水下，跨过去就直接跨
     const w = waveH(want.x, want.z, time);
@@ -43,7 +51,9 @@ export function createCamera(camera) {
       if (!underHero) want.y += span * .25;
     }
     if (C.first) { C.pos.copy(want); C.first = false; }
-    C.pos.lerp(want, damp(3.2, dt));
+    // 海龙：竖直方向跟得慢一点（跃出 / 落水时不上下猛甩）
+    const ky = fire ? damp(3.2, dt) : damp(1.8, dt), kh = damp(3.2, dt);
+    C.pos.x += (want.x - C.pos.x) * kh; C.pos.z += (want.z - C.pos.z) * kh; C.pos.y += (want.y - C.pos.y) * ky;
     const wc = waveH(C.pos.x, C.pos.z, time);
     if (!underHero && C.pos.y < wc + 1) C.pos.y = wc + 1;
     if (underHero && C.pos.y > wc - .9) C.pos.y = wc - .9;
@@ -52,7 +62,8 @@ export function createCamera(camera) {
     camera.position.copy(C.pos);
     lk.set(h.x, h.y, h.z).addScaledVector(fwd, dist * .4); lk.y += span * .12 - (underHero ? span * .15 : 0);
     if (C.lookFirst !== false) { C.look.copy(lk); C.lookFirst = false; }
-    C.look.lerp(lk, damp(6, dt));
+    if (fire) C.look.lerp(lk, damp(6, dt));
+    else { const kl = damp(4, dt), kly = damp(2, dt); C.look.x += (lk.x - C.look.x) * kl; C.look.z += (lk.z - C.look.z) * kl; C.look.y += (lk.y - C.look.y) * kly; }   // 海龙：视线的上下跟得更慢
     camera.lookAt(C.look);
     const fov = 60 + sf * 20 - (h.speed < lv ? (lv - h.speed) * .3 : 0);
     camera.fov += (Math.max(52, Math.min(84, fov)) - camera.fov) * damp(sf > .3 ? 3 : 2, dt);

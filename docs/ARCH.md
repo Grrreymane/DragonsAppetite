@@ -166,6 +166,8 @@ ui 新接口：`api.onSkill()`（第二技能按钮按下）；`ui.showAbility(l
   - 主角 / 猎物夜里自发光（用户要求「主角要保持一定的亮度」）：`dragon.nrim`（淡蓝轮廓 + 自身颜色）、`creatures.setNight(k)`。
   - 海：`sea.U.uEnv / uEnvU`（水上 / 水下乘数）、`uNight`（夜里浪尖和小星点发青色荧光）、`sea.setSun(dir)`、`sea.shaftK`。云：`clouds.js` 的 `CLOUD_TINT`。
 - `sim/sim.js`：`zap(S, x, y, z, r)`（雷劈：火龙那边烤熟、海龙那边电晕）、`spawnStars(S, n, over)`（流星雨：星星按主角当时的位置落在前方 35–80 米，飘着等吃，一颗 +`STAR_PTS` = 3，16 米内自动飘进嘴）。主程序在 sim 外调它们，用 `simNow()` 把新事件当帧处理。新事件：`zap {x,y,z,r,n}`、`stars {n}`、`starLand {x,y,z,water}`、`star {x,y,z,pts}`。
+- `view/skillfx.js`：技能特效——漩涡（跟着海龙的漏斗形旋转水墙 + 螺旋盘，画出来不超过镜头距离的 0.45 倍）、残留漩涡、冲击波球壳 `shock()`（鼓到镜头那么大前淡掉）、水平冲击环 `ring()`（龙吼 / 漩涡）、冲刺的破水罩；主程序另有冲刺水流尾迹（第二个 `createTrails`）和漩涡里往里卷的泡泡。
+- 镜头（`view/camera.js`）：海龙的俯仰只跟平滑过、限 ±0.3 的值，竖直方向和视线上下跟得慢；水上 / 水下切换有迟滞（出水 0.35 秒、入水 0.6 秒），连续跃出时不来回切（`tools/scenarios/cam_measure.js` 量过：切换 19 → 4 次）。
 - `view/spectacle.js`：闪电（朝镜头的折线带子，宽度随距离）、天上的流星、落下来的星星（发光贴片 + 拖尾）。
 - `view/ambient.js`：远处的生命（鲸、海豚、候鸟、魔鬼鱼、海龟、夜里水下发光水母），纯画面，读 `ctx.env`。
 - 调试：`?tod=0.75`（定住时间）、`?weather=rain|mist|bow`；`window.__env`（`fixed`、`f`、`setWeather(w, 秒)`、`onLightning()`、`onMeteor()`）。截图：`tools/scenarios/env_shots.js`（`tods=…&ws=…&tp=x,y,z&yaw=`）、`spectacle_check.js`、`region_check.js`。

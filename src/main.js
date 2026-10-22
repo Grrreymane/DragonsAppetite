@@ -9,6 +9,7 @@ import { createSky } from './view/sky.js';
 import { applyLook } from './view/look.js';
 import { createEnv } from './view/env.js';
 import { createSpectacle } from './view/spectacle.js';
+import { createSkillFx } from './view/skillfx.js';
 import { createLandmarks } from './view/landmarks.js';
 import { createIslands } from './view/islands.js';
 import { createClouds } from './view/clouds.js';
@@ -48,6 +49,9 @@ const hunts = createHuntView(scene);
 const P = createParticles(ctx);
 const speedFx = createSpeedFx(ctx);
 const trails = createTrails(ctx);
+const dashTrails = createTrails(ctx);   // 海龙冲刺：身体两侧拖出两条水流
+const sfx = createSkillFx(ctx);         // 技能特效：漩涡、冲击波、冲刺的破水罩
+const _dt2 = [{ x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 0 }];
 const _tips = [{ x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 0 }];
 const dragon = createDragonView(ctx);
 const cam = createCamera(camera);
@@ -240,8 +244,11 @@ function handleEvents(evs) {
         const h = S.hero;
         if (e.id === 'roar') {
           dragon.roar = .9;
+          sfx.shock(h.x, h.y, h.z, Math.min(e.r, camera.position.distanceTo(_m.set(h.x, h.y, h.z)) * .8), 0xffb060, .5);
+          sfx.ring(h.x, h.y, h.z, e.r * 1.2, 0xffa040, .8); sfx.ring(h.x, h.y, h.z, e.r * .8, 0xffe0a0, .7, .12);
           for (let i = 0; i < 48; i++) { const a = i / 48 * Math.PI * 2; P.emit('spark', h.x, h.y, h.z, Math.cos(a) * e.r * 1.4, (Math.random() - .5) * 4, Math.sin(a) * e.r * 1.4, .7, 1.2, { drag: 1.2, grow: 1.5, alpha: .7 }); }
         } else {
+          sfx.ring(h.x, h.y, h.z, e.r, 0x7ff8ff, .8); sfx.ring(h.x, h.y, h.z, e.r * .6, 0xbffcff, .6, .15);
           for (let i = 0; i < 60; i++) { const a = Math.random() * Math.PI * 2, r = e.r * (.3 + Math.random() * .7); P.emit('bubble', h.x + Math.cos(a) * r, h.y + (Math.random() - .5) * 6, h.z + Math.sin(a) * r, -Math.sin(a) * 12 - Math.cos(a) * 6, 1, Math.cos(a) * 12 - Math.sin(a) * 6, 1.2, .18, { rise: 2, grow: .6, alpha: .8, drag: .4 }); }
         }
         break;
@@ -260,9 +267,16 @@ function handleEvents(evs) {
         if (e.caught) { P.burst('gold', e.x, e.y, e.z, 14, 7, .8, .45); P.burst('spark', e.x, e.y, e.z, 12, 6, .5, .4); persist(); }
         break;
       case 'heatwave':
+        sfx.shock(e.x, e.y, e.z, e.r, 0xff7a30, .45);
         for (let i = 0; i < 36; i++) { const a = i / 36 * Math.PI * 2; P.emit('fire', e.x, e.y, e.z, Math.cos(a) * e.r * 1.6, (Math.random() - .3) * 3, Math.sin(a) * e.r * 1.6, .55, 1.6, { drag: 1.5, grow: 1.2, alpha: .75 }); }
         break;
-      case 'eddy': P.burst('bubble', e.x, e.y, e.z, 20, 4, .8, .15, { rise: 2, grow: .6, alpha: .8 }); break;
+      case 'eddy': P.burst('bubble', e.x, e.y, e.z, 20, 4, .8, .15, { rise: 2, grow: .6, alpha: .8 }); sfx.shock(e.x, e.y, e.z, e.r, 0x9ffcff, .5); break;
+      case 'dash': {   // 冲刺起步：一圈冲击波 + 往后喷一团泡泡
+        const h = S.hero; dragon.forward(_f);
+        sfx.shock(h.x + _f.x * h.len * .3, h.y + _f.y * h.len * .3, h.z + _f.z * h.len * .3, h.len * 1.1, 0xbff8ff, .4);
+        for (let i = 0; i < 24; i++) P.emit('bubble', h.x, h.y, h.z, -_f.x * 10 + (Math.random() - .5) * 8, (Math.random() - .5) * 6, -_f.z * 10 + (Math.random() - .5) * 8, .8, .1 + Math.random() * .12, { rise: 3, grow: .6, alpha: .8, drag: 1 });
+        break;
+      }
       case 'archPass': P.burst('gold', e.x, e.y, e.z, 30, 10, .9, .8); P.burst('spark', e.x, e.y, e.z, 20, 8, .6, .6); dragon.roar = .5; break;
       case 'huntDiscover':
         // Keep the new discovery even if the player leaves before the hunt finishes.
@@ -375,7 +389,7 @@ function advance(dtReal) {
     dragon.update(h, S, dtReal * (state === 'play' ? 1 : 0), T);
     cam.update(h, S, dtReal, waveT);
     // 速度感：空气里的线从镜头旁掠过；火龙快的时候翼尖拉出白色尾迹
-    speedFx.setDim && speedFx.setDim(1 - .6 * ctx.env.night);
+    speedFx.setDim && speedFx.setDim((1 - .6 * ctx.env.night) * (S.kind === 'sea' && h.medium !== 'water' ? .35 : 1));   // 海龙跃出水面时风线淡一点（连续跃出不晃眼）
     speedFx.update(camera, h, cam.sf || 0, camera.position.y < waveH(camera.position.x, camera.position.z, waveT), dtReal);
     {
       // 翼尖尾迹（连续细带）：火龙在空中、速度快的时候才有
@@ -397,6 +411,22 @@ function advance(dtReal) {
         const vx = (_f.x + (Math.random() - .5) * .28) * sp + (h.x - h.px) / DT, vy = (_f.y + (Math.random() - .6) * .24) * sp + (h.y - h.py) / DT, vz = (_f.z + (Math.random() - .5) * .28) * sp + (h.z - h.pz) / DT;
         P.emit('fire', _m.x, _m.y, _m.z, vx, vy, vz, .55 + Math.random() * .3, (1.6 + Math.random()) * Math.max(.6, sc), { rise: 5, alpha: .8 });
       }
+    }
+    sfx.update(S, h, _f, dtReal, T);
+    // 漩涡技能放着的时候：一圈圈往里卷的泡泡（没有鱼也看得到水在转）
+    if (h.skill && h.skill.id === 'vortex' && h.skill.t > 0) {
+      const R = Math.min(h.skill.r, camera.position.distanceTo(_m.set(h.x, h.y, h.z)) * .8);
+      for (let i = 0; i < 12; i++) {
+        const a = Math.random() * Math.PI * 2, r = R * (.25 + Math.random() * .75), y = h.y + (Math.random() - .5) * R * .9;
+        P.emit('bubble', h.x + Math.cos(a) * r, y, h.z + Math.sin(a) * r, -Math.sin(a) * r * 1.6 - Math.cos(a) * r * .7, 1, Math.cos(a) * r * 1.6 - Math.sin(a) * r * .7, .8, .18 + Math.random() * .14, { rise: 1, grow: .6, alpha: .9, drag: .3 });
+      }
+    }
+    {
+      // 海龙冲刺：身体两侧两条水流尾迹
+      const rx = Math.cos(h.yaw), rz = -Math.sin(h.yaw), w = h.len * .14, on = S.kind === 'sea' && h.dashT > 0 && h.medium === 'water' ? 1 : 0;
+      _dt2[0].x = h.x + rx * w; _dt2[0].y = h.y; _dt2[0].z = h.z + rz * w;
+      _dt2[1].x = h.x - rx * w; _dt2[1].y = h.y; _dt2[1].z = h.z - rz * w;
+      dashTrails.update(_dt2, on * .6, .07 * Math.max(1, h.len / 6), dtReal);
     }
     if (h.firing && h.medium === 'water') P.emit('steam', _m.x, _m.y, _m.z, 0, 2, 0, .6, .5, { rise: 3 });
     if (dripT > 0) { dripT -= dtReal; if (Math.random() < .5) P.emit('splash', h.x + (Math.random() - .5) * h.len * .8, h.y, h.z + (Math.random() - .5) * h.len * .8, 0, -2, 0, .7, .25, { grav: 10 }); }
