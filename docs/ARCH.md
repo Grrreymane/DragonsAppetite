@@ -8,7 +8,7 @@
 index.html            入口：DOM 外壳、importmap（"three" → ./lib/three.module.min.js）、报错面板、字体块
 src/
   main.js             启动、状态机（标题 / 游戏 / 暂停）、主循环（sim 固定步长 1/60 + 渲染插值）   ← 主程序（orchestrator 写）
-  config/species.js   12 种生物的数值表（sim 和 view 共用）
+  config/species.js   20 种生物的数值表（sim 和 view 共用）
   config/dragons.js   两条龙 × 三阶段数值、小目标链
   sim/                纯逻辑：不碰 DOM / WebGL / three，Node 里能直接 import 跑机器人
     rng.js world.js   随机数、海浪 waveH、区域、岛、海底

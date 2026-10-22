@@ -149,7 +149,7 @@ export function createCreatures(ctx) {
     _m.compose(_p, _q, _s).toArray(b.body.instanceMatrix.array, i * 16);
     // 动画：相位 + 力度（晕了 / 烤熟了基本不动，吓呆了动得小）
     let ph = c.phase ?? (time * ANIM_HZ[b.sp] * TAU + h * TAU), fl = c.flap ?? 1;
-    if (b.sp === 'squid' && c.phase !== undefined) ph += Math.PI / 2;     // sim 的喷射在 phase = 0（整圈处）：对到外套膜收得最紧
+    if (b.m.kind === KIND.squid && c.phase !== undefined) ph += Math.PI / 2;     // sim 的喷射在 phase = 0（整圈处）：对到外套膜收得最紧
     if (c.stun > 0 || c.roast > 0) fl *= .12;
     fl *= 1 - .45 * st.fear;
     ph %= WRAP; if (ph < 0) ph += WRAP;

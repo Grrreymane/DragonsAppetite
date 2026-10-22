@@ -203,7 +203,7 @@ function persist() {
   sv.traits = Object.assign(sv.traits || {}, S.traits);
   writeSave(save);
   const n = SPECIES_IDS.filter(id => save.codex[id] && save.codex[id].n).length;
-  reportProgress(`${DRAGONS[S.kind].zh}·${STAGE_NAMES[S.stage]} · 吃了 ${totalEaten()} 只 · 图鉴 ${n}/12`);
+  reportProgress(`${DRAGONS[S.kind].zh}·${STAGE_NAMES[S.stage]} · 吃了 ${totalEaten()} 只 · 图鉴 ${n}/${SPECIES_IDS.length}`);
 }
 function totalEaten() { return SPECIES_IDS.reduce((a, id) => a + ((save.codex[id] && save.codex[id].n) || 0), 0); }
 
@@ -474,7 +474,7 @@ function advance(dtReal) {
 function showResult() {
   const sv = save[S.kind]; sv.adultShown = 1; persist();
   state = 'pause'; input.reset();
-  ui.showResult({ kind: S.kind, timeSec: Math.round((sv.playSec || 0)), eaten: totalEaten(), codexN: SPECIES_IDS.filter(id => save.codex[id] && save.codex[id].n).length, codexMax: 12, stageName: '大胃王' }, () => { state = 'play'; last = performance.now(); });
+  ui.showResult({ kind: S.kind, timeSec: Math.round((sv.playSec || 0)), eaten: totalEaten(), codexN: SPECIES_IDS.filter(id => save.codex[id] && save.codex[id].n).length, codexMax: SPECIES_IDS.length, stageName: '大胃王' }, () => { state = 'play'; last = performance.now(); });
 }
 
 // ---------- 尺寸 / 画质 ----------

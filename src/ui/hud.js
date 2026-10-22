@@ -38,7 +38,7 @@ export function createHUD(root, api, G, pic) {
   const node = i => `<i class="d-node" data-i="${i}"><span class="d-nh"></span><em>${STAGE_CH[i]}</em></i>`;
   const grow = h('div', 'd-grow', `
     <div class="d-gbar">${node(0)}<b class="d-seg"><u></u></b>${node(1)}<b class="d-seg"><u></u></b>${node(2)}<em class="d-hurt"></em></div>
-    <div class="d-cbar"><span class="d-cbic">${icon('book')}</span><b class="d-seg"><u></u></b><span class="d-ctxt">0/12</span><em class="d-hurt"></em></div>
+    <div class="d-cbar"><span class="d-cbic">${icon('book')}</span><b class="d-seg"><u></u></b><span class="d-ctxt">0/${SPECIES_IDS.length}</span><em class="d-hurt"></em></div>
     <div class="d-next"><span class="d-nab"></span><span class="d-nsp"></span></div>`);
   const gbar = grow.querySelector('.d-gbar'), cbar = grow.querySelector('.d-cbar');
   const nodes = [...grow.querySelectorAll('.d-gbar .d-node')], heads = nodes.map(n => n.querySelector('.d-nh'));

@@ -87,5 +87,7 @@ export function assistSteer(S, inp, tgt) {
   const d = Math.hypot(dx, dy, dz), near = clamp(1 - d / S.cfg.assist.range, 0, 1);
   const w = opp ? 0 : clamp(.8 + near * .2, 0, 1) * (1 - Math.min(.35, Math.abs(inp.jx) * .35));
   const wp = Math.abs(inp.jy) > .5 && Math.sign(-inp.jy) !== Math.sign(pitch) ? 0 : w;
-  return { yawRate, pitch, w, wp };
+  // 猎物在转弯圈里面（离得近、又偏在侧面）：照原速永远绕着它转圈 → 减速收紧转弯（brake = 0..1）
+  const turnR = h.speed / (turn * 1.4), brake = opp ? 0 : clamp((turnR * 1.3 - dh) / (turnR * .5), 0, 1) * clamp((Math.abs(yawErr) - .5) / .4, 0, 1);
+  return { yawRate: yawRate * (1 + brake * .5), pitch, w, wp, brake };
 }

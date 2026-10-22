@@ -1,6 +1,7 @@
 // 结算卡（成龙！）：一帧截图 + 用时 / 吃了 / 图鉴，按钮「分享」「继续」。分享 = 画一张 720×1280 的竖版卡片
 import { icon, iconSVG, DRAGON_ART, drawPainted, sheetReady } from './icons.js';
 import { h, button, blocker, show, setIcon } from './dom.js';
+import { SPECIES_IDS } from '../config/species.js';
 
 const FT = '"Source Han Sans SC","Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif';
 const FP = FT;
@@ -71,7 +72,7 @@ export function createResult(root, api) {
       setIcon(q('.d-rstats > div:nth-child(2)'), kind === 'sea' ? 'gulp_sea' : 'gulp');
       title.textContent = (info.stageName || '成龙') + '！';
       q('.t').textContent = mmss(info.timeSec); q('.e').textContent = info.eaten | 0;
-      q('.c').textContent = (info.codexN | 0) + '/' + (info.codexMax || 12);
+      q('.c').textContent = (info.codexN | 0) + '/' + (info.codexMax || SPECIES_IDS.length);
       shot = WIN[kind];
       shotBox.innerHTML = shot ? `<img src="${shot}" alt="">` : `<div class="d-cart">${DRAGON_ART[kind]}</div>`;
       shotBox.classList.toggle('art', !shot);
@@ -112,7 +113,7 @@ async function drawCard(info, shot) {
   rrect(); x.lineWidth = 10; x.strokeStyle = INK; x.stroke(); x.lineWidth = 4; x.strokeStyle = '#f2bd3e'; x.stroke();
   txt((info.stageName || '成龙') + '！', W / 2, 936, `800 120px ${FT}`, sea ? '#c9fff6' : '#ffeaa0', INK, 7);
   // 三项数字
-  const cols = [['clock', '用时', mmss(info.timeSec)], [sea ? 'gulp_sea' : 'gulp', '吃了', String(info.eaten | 0)], ['book', '图鉴', (info.codexN | 0) + '/' + (info.codexMax || 12)]];
+  const cols = [['clock', '用时', mmss(info.timeSec)], [sea ? 'gulp_sea' : 'gulp', '吃了', String(info.eaten | 0)], ['book', '图鉴', (info.codexN | 0) + '/' + (info.codexMax || SPECIES_IDS.length)]];
   for (let i = 0; i < 3; i++) {
     const cx = 130 + i * 230;
     if (!drawPainted(x, cols[i][0], cx - 36, 1028, 72)) { const ic = await loadImg(svgURL(iconSVG(cols[i][0]))); if (ic) x.drawImage(ic, cx - 28, 1040, 56, 56); }

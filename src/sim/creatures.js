@@ -97,7 +97,24 @@ function makeSpot(S, x, z) {
 // 每种生物想保持几群（离玩家多远）
 function wants(S) {
   const h = S.hero, zn = zoneAt(h.x, h.z), fire = S.kind === 'fire';
+  const night = !!(S.env && S.env.night > .5), storm = !!(S.env && S.env.rain > .5);
   const w = [];
+  // 2026-10 新增的物种：蝙蝠只在夜里、雷鸟只在下雨时出；灯笼鱼夜里更多
+  if (fire) {
+    if (night) w.push(['bat', 2, 110, 300, 'air']);
+    w.push(['albatross', zn === 'open' ? 2 : 1, 130, 320, 'air']);
+    if (storm) w.push(['thunderbird', 1, 200, 360, 'air']);
+    w.push(['mackerel', 1, 60, 200, 'water']);
+    w.push(['puffer', 1, 60, 180, 'water']);
+    if (night) w.push(['lantern', 1, 50, 160, 'water']);
+  } else {
+    w.push(['mackerel', 2, 55, 130, 'water']);
+    w.push(['lantern', night ? 3 : 1, 45, 130, 'water']);
+    w.push(['puffer', 1, 50, 130, 'water']);
+    w.push(['eel', S.stage >= 1 ? 2 : 1, 50, 140, 'water']);
+    if (S.stage >= 1) w.push(['gsquid', 1, 80, 160, 'water']);
+    w.push(['albatross', 1, 120, 260, 'air']);
+  }
   if (fire) {
     w.push(['sparrow', zn === 'open' ? 3 : 5, 120, 340, 'air']);
     w.push(['cloudjelly', 2, 140, 340, 'air']);
@@ -156,7 +173,8 @@ export function manageSpawns(S, force = false) {
     if (have >= n) continue;
     const d = SPECIES[sp];
     if (sp === 'turtle' && zoneAt(h.x, h.z) === 'volcano' && r() < .5) continue;
-    const p = hab === 'air' ? placeAhead(S, dMin, dMax, d.alt[0], d.alt[1]) : placeAhead(S, dMin, dMax, d.depth[1], d.depth[0], 2.4, true);
+    const dep = d.nightUp && S.env && S.env.night > .5 ? [-3, -20] : d.depth;   // 灯笼鱼夜里浮到浅处（火龙扎水也抓得到）
+    const p = hab === 'air' ? placeAhead(S, dMin, dMax, d.alt[0], d.alt[1]) : placeAhead(S, dMin, dMax, dep[1], dep[0], 2.4, true);
     if (!p) continue;
     makeGroup(S, sp, p.x, p.y, p.z, r.int(d.group[0], d.group[1]));
   }
@@ -385,6 +403,46 @@ export function stepCreatures(S, dt) {
         if (rising && c.y > waveH(c.x, c.z, t) - .3) { c.st = 'air'; c.vy = 9; S.events.push({ type: 'splash', x: c.x, z: c.z, size: 1 }); }
         else keepWater(c, t, rising ? 3 : -2);
         c.flee = fleeing; c.flap = .6; c.phase += dt * 2.2;
+        break;
+      }
+      case 'flutter': {        // 蝙蝠：绕着锚点乱飞（快速的小抖动），龙靠近就散开
+        if (threat && g.scatter <= 0 && g.scd <= 0) { g.scatter = 1; g.scd = 3; g.sx = hx / (hd || 1); g.sz = hz / (hd || 1); }
+        const a = c.off.a + g.t * 1.3, rr = 3 + c.off.r * 4, j = Math.sin(t * 7 + c.off.a * 5) * 1.8, k = Math.cos(t * 5.3 + c.off.r * 9) * 1.5;
+        if (g.scatter > 0) { c.flee = true; steer(c, c.x + (g.sx || 0) * 20 + j * 3, c.y + c.off.h * 6, c.z + (g.sz || 0) * 20 + k * 3, d.speed * 1.2, 4, dt); }
+        else steer(c, g.x + Math.cos(a) * rr + j, g.y + c.off.h * 3 + k, g.z + Math.sin(a) * rr - j, d.speed * 1.3, 4, dt);
+        move(c, dt); keepAir(c, d.alt[0] - 8); face(c, dt, 1);
+        c.flap = 1; c.phase += dt * 18;
+        break;
+      }
+      case 'glide': {          // 信天翁：贴着海面长长地滑翔，偶尔扇两下；被追就往上拉、转开
+        const off = (c.huntSlot ?? c.off.a) * 1.0, side = Math.cos(off) * (4 + c.off.r * 6), back = Math.sin(off) * 5;
+        let tx = g.x + Math.cos(g.yaw) * side - Math.sin(g.yaw) * back, ty = g.y + c.off.h * 2, tz = g.z - Math.sin(g.yaw) * side - Math.cos(g.yaw) * back;
+        if (threat) { c.flee = true; tx += hx / (hd || 1) * 25; ty += 10; tz += hz / (hd || 1) * 25; }
+        steer(c, tx, ty, tz, d.speed * (threat ? 1.3 : 1.1), 1, dt);
+        move(c, dt); c.y = Math.max(c.y, waveH(c.x, c.z, t) + 2.5); keepAir(c, 4); face(c, dt, 1.2);
+        c.flap = threat || Math.sin(t * .5 + c.off.a * 3) > .8 ? .8 : .12; c.phase += dt * (c.flap > .5 ? 5 : 1);
+        break;
+      }
+      case 'puff': {           // 河豚：慢慢漂；龙靠近就鼓成一个球（变大、几乎不动）3 秒
+        if (threat) c.puffT = 3;
+        c.puffT = Math.max(0, (c.puffT || 0) - dt);
+        c.puff = lerp(c.puff || 0, c.puffT > 0 ? 1 : 0, damp(c.puffT > 0 ? 8 : 2, dt));
+        c.size *= 1 + .7 * c.puff;
+        const a = c.off.a + t * .2, rr = 2 + c.off.r * 4;
+        steer(c, g.x + Math.cos(a) * rr, g.y + c.off.h * 2, g.z + Math.sin(a) * rr, d.speed * (1 - .8 * c.puff), 1.2, dt);
+        move(c, dt); keepWater(c, t, -1.5); face(c, dt, .2);
+        c.flap = .6 * (1 - c.puff) + .1; c.phase += dt * (3 - 2 * c.puff);
+        break;
+      }
+      case 'lurk': {           // 海鳗：贴着海底慢慢扭；龙一靠近就猛地窜开 1.2 秒，再慢慢游回来
+        c.stT -= dt;
+        if (threat && c.st !== 'dart') { c.st = 'dart'; c.stT = 1.2; c.dx = hx / (hd || 1); c.dz = hz / (hd || 1); }
+        if (c.st === 'dart' && c.stT <= 0) c.st = 'idle';
+        const bed = seabedY(c.x, c.z) + 2.5;
+        if (c.st === 'dart') { c.flee = true; steer(c, c.x + c.dx * 30, bed + 1, c.z + c.dz * 30, d.speed * 1.4, 5, dt); }
+        else { const a = c.off.a + t * .15, rr = 4 + c.off.r * 6; steer(c, g.x + Math.cos(a) * rr, Math.max(bed, g.y), g.z + Math.sin(a) * rr, d.speed * .35, 1, dt); }
+        move(c, dt); keepWater(c, t, -3); face(c, dt, .2);
+        c.flap = c.st === 'dart' ? 1 : .5; c.phase += dt * (c.st === 'dart' ? 12 : 4);
         break;
       }
       case 'patrol': stepPredator(S, c, g, d, hx, hy, hz, hd, dt); break;

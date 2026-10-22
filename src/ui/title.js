@@ -71,7 +71,7 @@ export function createTitle(root, api) {
   let pick = 'fire';
   const bStart = button('playw', '开始', 'd-big', () => api.onPick && api.onPick(pick));
   const bCodex = button('book', '图鉴', 'd-btn d-tcodex', () => api.onCodex && api.onCodex());
-  bCodex.insertAdjacentHTML('beforeend', '<b class="d-cnt">0/12</b>');
+  bCodex.insertAdjacentHTML('beforeend', `<b class="d-cnt">0/${SPECIES_IDS.length}</b>`);
   const bSound = button('sound', '声音', 'd-sbtn d-sound', () => api.onToggleMute && api.onToggleMute());
   bot.append(bStart, bCodex);
   el.appendChild(bSound);

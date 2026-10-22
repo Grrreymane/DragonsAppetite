@@ -2,7 +2,7 @@
 import { makeRng, clamp, lerp } from './rng.js';
 import { waveH } from './world.js';
 import { SPECIES, SPECIES_IDS } from '../config/species.js';
-import { DRAGONS, STAGE_PTS, GOALS, GOAL_REWARD } from '../config/dragons.js';
+import { DRAGONS, STAGE_PTS, GOALS, GOAL_REWARD, GROW_K } from '../config/dragons.js';
 import { makeHero, stepFire, stepSea, heroMouth } from './hero.js';
 import { stepCreatures, spawnInitial, manageSpawns, rescueSpawn, makeGroup } from './creatures.js';
 import { updateLock, assistSteer, targetable } from './assist.js';
@@ -131,7 +131,7 @@ function eat(S, c, cross, extra) {
   if (c.gold) mult *= 3;
   S.combo.n = S.combo.t > 0 ? S.combo.n + 1 : 1; S.combo.t = 1.5;
   const comboK = 1 + .1 * Math.min(5, S.combo.n - 1);
-  const pts = Math.max(1, Math.round(TIER_PTS[d.tier] * k * mult * comboK));
+  const pts = Math.max(1, Math.round(TIER_PTS[d.tier] * k * mult * comboK * ((GROW_K[S.kind] || [])[S.stage] || 1)));
   S.pts += pts; S.stats.eaten++; if (cross) S.stats.cross++;
   const cx = S.codex[c.sp], first = !cx.n; cx.n++; if (c.gold) cx.gold++;
   const e = { type: 'eat', sp: c.sp, x: c.x, y: c.y, z: c.z, pts, combo: S.combo.n, gold: c.gold, cross, cooked, size: c.size, skill: !!c.skillHit, extra: !!extra };

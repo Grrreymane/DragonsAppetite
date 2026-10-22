@@ -33,7 +33,8 @@ function fwdOf(h) {
 // 玩家输入 + 辅助：辅助的权重 w 在玩家没拖或往同一边拖时最大
 function steerYaw(inp, c, as) {
   let yr = -inp.jx * c.turn;
-  if (as) yr = clamp(yr * (1 - as.w * (1 - Math.abs(inp.jx))) + as.yawRate * as.w, -c.turn * 1.5, c.turn * 1.5);
+  const lim = c.turn * (1.5 + (as && as.brake ? as.brake * .6 : 0));   // 减速收紧时允许转得更急
+  if (as) yr = clamp(yr * (1 - as.w * (1 - Math.abs(inp.jx))) + as.yawRate * as.w, -lim, lim);
   return yr;
 }
 function steerPitch(base, as) { return as ? base * (1 - as.wp) + as.pitch * as.wp : base; }
@@ -66,7 +67,8 @@ export function stepFire(S, inp, dt, as) {
     h.pitch = lerp(h.pitch, pt, damp(2.2, dt));
     h.bank = lerp(h.bank, -h.yawRate * .6, damp(2.8, dt));
     const diving = h.pitch < -.25, climbing = h.pitch > .12;
-    h.speed = lerp(h.speed, diving ? c.dive : climbing ? c.climb : c.level, damp(1.1, dt));
+    const brake = as && as.brake ? as.brake : 0;   // 猎物在转弯圈里：减速收紧
+    h.speed = lerp(h.speed, (diving ? c.dive : climbing ? c.climb : c.level) * (1 - .45 * brake), damp(brake > .1 ? 3 : 1.1, dt));
     const f = fwdOf(h);
     h.x += f.x * h.speed * dt; h.y += f.y * h.speed * dt; h.z += f.z * h.speed * dt;
     if (pushOutOfIslands(h, Math.max(3, h.len * .55), dt) > .5 && h.bumpT <= 0) { h.bumpT = 1; S.events.push({ type: 'bump', x: h.x, y: h.y, z: h.z }); h.speed *= .75; }
@@ -131,8 +133,9 @@ export function stepSea(S, inp, dt, as) {
     if (h.y < floor + 4 && pt < 0) pt = lerp(pt, .3, clamp((floor + 4 - h.y) / 4, 0, 1));
     h.pitch = lerp(h.pitch, pt, damp(2.4, dt));
     h.bank = lerp(h.bank, -h.yawRate * .45, damp(2.8, dt));
-    const want = h.dashT > 0 ? c.dash : c.cruise;
-    h.speed = lerp(h.speed, want, damp(h.dashT > 0 ? 6 : 1.4, dt));
+    const brake = as && as.brake && h.dashT <= 0 ? as.brake : 0;   // 猎物在转弯圈里：减速收紧
+    const want = (h.dashT > 0 ? c.dash : c.cruise) * (1 - .45 * brake);
+    h.speed = lerp(h.speed, want, damp(h.dashT > 0 ? 6 : brake > .1 ? 3 : 1.4, dt));
     const f = fwdOf(h);
     h.x += f.x * h.speed * dt; h.z += f.z * h.speed * dt;
     let vy = f.y * h.speed;

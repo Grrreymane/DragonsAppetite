@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { createSim, step, DT } from '../src/sim/sim.js';
 import { updateLock, assistSteer } from '../src/sim/assist.js';
 import { makeGroup } from '../src/sim/creatures.js';
-import { clamp, wrapAngle } from '../src/sim/rng.js';
+import { clamp, wrapAngle, makeRng } from '../src/sim/rng.js';
 import { runOne } from './sim.mjs';
 import { TIERS } from '../src/sim/bot.js';
 
@@ -14,6 +14,7 @@ function test(name, fn) { fn(); checks++; console.log(`ok ${checks} - ${name}`);
 function scene({ kind = 'fire', stage = 1, sp = 'sparrow', x = 18, y, z = 0, heroY } = {}) {
   const S = createSim({ kind, stage, seed: 31 });
   S.creatures = []; S.groups = []; S.spots = []; S.spawnT = Infinity;
+  S.rng = makeRng(31);   // 清场后重置随机数：结果不随开局刷了多少种生物而变
   S.hero.y = heroY ?? (kind === 'fire' ? 60 : -6);
   y ??= S.hero.y;
   makeGroup(S, sp, x, y, z, 1);
@@ -65,6 +66,8 @@ test('side acquisition does not pull prey through the dragon flank', () => {
 test('steering toward nearby fish breaks the repeated turning circle', () => {
   const { S, c } = scene({ sp: 'sardine', x: 18, y: -2.2, heroY: 5 });
   c.g.spot = 10000; c.g.home = { x: 18, y: -2.2, z: 0 };
+  // 鱼定住（只考转向能不能跳出绕圈）：不定住的话结果取决于鱼随机的游法，换个随机数序列就会变
+  c.daze = 1e9;
   let caught = false;
   for (let i = 0; i < 10 / DT; i++) {
     const h = S.hero, dx = c.x - h.x, dy = c.y - h.y, dz = c.z - h.z;

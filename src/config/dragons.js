@@ -1,7 +1,9 @@
 // 两条龙 × 三个阶段的数值（GDD §6.3 / §7.2 + v2：每个阶段解锁新能力、捕猎越来越容易，见 docs/V2_PLAN.md）。
 // 成年火龙的飞行数值 = 原型手感，不改。
 export const STAGE_NAMES = ['幼龙', '少年龙', '成龙'];
-export const STAGE_PTS = [0, 55, 280];          // 进入该阶段时的累计成长点
+export const STAGE_PTS = [0, 200, 1100];          // 进入该阶段时的累计成长点（2026-10-22 从 55 / 280 调高：用户嫌长得太快、游戏寿命短。机器人「中快」档约 3 分钟少年、9 分钟成年）
+// 吃东西的成长倍数（按龙、按阶段）：幼年火龙吃得比海龙慢一截（扑空多、猎物散），补一点，两条龙进化时间接近
+export const GROW_K = { fire: [1.7, 1.1, 1], sea: [1, 1, 1] };
 export const ADULT_GOAL_PTS = 280;
 
 // 能力表（界面用的名字 / 一句话 / 图标名）。图标名对应 ui/icons.js
@@ -62,14 +64,14 @@ export const DRAGONS = {
 // type：eat 吃某种 / cooked 烤熟或撞晕后吃 / cross 跨界吃 / combo 连吃 / skill 用第二技能（龙吼 / 漩涡）影响后吃到
 export const GOALS = {
   fire: [
-    [{ type: 'eat', sp: 'sparrow', n: 5 }, { type: 'cooked', n: 2 }, { type: 'eat', sp: 'gull', n: 3 }],
-    [{ type: 'cross', n: 3 }, { type: 'skill', n: 4 }, { type: 'eat', sp: 'lavafinch', n: 3 }],
+    [{ type: 'eat', sp: 'sparrow', n: 5 }, { type: 'cooked', n: 2 }, { type: 'eat', sp: 'gull', n: 3 }, { type: 'eat', sp: 'albatross', n: 1 }],
+    [{ type: 'cross', n: 3 }, { type: 'skill', n: 4 }, { type: 'eat', sp: 'lavafinch', n: 3 }, { type: 'eat', sp: 'mackerel', n: 4 }, { type: 'eat', sp: 'puffer', n: 2 }],
     [{ type: 'skill', n: 8 }, { type: 'eat', sp: 'roc', n: 1 }, { type: 'eat', sp: 'manta', n: 1 }],
   ],
   sea: [
-    [{ type: 'eat', sp: 'sardine', n: 6 }, { type: 'cooked', n: 1 }, { type: 'eat', sp: 'jelly', n: 3 }],
-    [{ type: 'cross', n: 2 }, { type: 'skill', n: 5 }, { type: 'eat', sp: 'squid', n: 2 }],
-    [{ type: 'skill', n: 10 }, { type: 'eat', sp: 'shark', n: 1 }, { type: 'eat', sp: 'manta', n: 1 }],
+    [{ type: 'eat', sp: 'sardine', n: 6 }, { type: 'cooked', n: 1 }, { type: 'eat', sp: 'jelly', n: 3 }, { type: 'eat', sp: 'mackerel', n: 4 }],
+    [{ type: 'cross', n: 2 }, { type: 'skill', n: 5 }, { type: 'eat', sp: 'squid', n: 2 }, { type: 'eat', sp: 'eel', n: 1 }, { type: 'eat', sp: 'albatross', n: 1 }],
+    [{ type: 'skill', n: 10 }, { type: 'eat', sp: 'shark', n: 1 }, { type: 'eat', sp: 'manta', n: 1 }, { type: 'eat', sp: 'gsquid', n: 1 }],
   ],
 };
 export const GOAL_REWARD = [3, 10, 0];
