@@ -200,8 +200,6 @@ if (uEye.w > 0.0) {
   totalEmissiveRadiance += vec3(0.95) * max(h1, h2 * 0.8) * hl * e;
   if (pred && crState < 0.5) totalEmissiveRadiance += vec3(0.45, 0.04, 0.0) * smoothstep(0.42, 0.6, ad) * e;
 }
-// 夜里：猎物自己亮一点（暗处也看得见要吃的东西）
-totalEmissiveRadiance += diffuseColor.rgb * uNightK * 0.35;
 `;
 
 // 本体材质：所有生物同一个着色器程序（参数走 uniform），省编译时间
@@ -218,6 +216,8 @@ export function bodyMat(GRAD, U, { emissive = 0x000000 } = {}) {
       .replace('#include <project_vertex>', '#include <project_vertex>\n vRim = (1.0 - smoothstep(14.0, 32.0, -mvPosition.z / max(length(instanceMatrix[0].xyz), 1e-3))) * step(0.995, dot(sN, normal));');
     sh.fragmentShader = FRAG_PARS + sh.fragmentShader
       .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n' + FRAG_FX)
+      // 夜里：照到猎物身上的光调亮、蓝调拉回来一点（暗处也看得见要吃的东西，明暗分层保留，不刷平的自发光）
+      .replace('#include <lights_fragment_end>', '#include <lights_fragment_end>\n{ vec3 nk = mix(vec3(1.0), vec3(1.5, 1.32, 1.08), uNightK); reflectedLight.directDiffuse *= nk; reflectedLight.indirectDiffuse *= nk; }')
       .replace('#include <fog_fragment>', FOG);
   };
   m.customProgramCacheKey = () => 'creature3';

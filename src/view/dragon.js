@@ -65,8 +65,13 @@ export function createDragonView({ scene }) {
             // 进化时的金色轮廓光（只亮边缘，不把整条龙刷白）
             float rimF = pow(1.0 - abs(dot(normalize(normal), normalize(vViewPosition))), 2.2);
             totalEmissiveRadiance += vec3(1.0, .72, .28) * uRim * (rimF * .9 + .04);
-            // 夜里：一圈淡蓝的月光轮廓（暗处也看得清龙的形状）
-            totalEmissiveRadiance += vec3(.42, .58, 1.0) * uNRim * rimF * .28 + tc * uNRim * .34; }`);   // 主角夜里自己亮着（玩家要一直看得清自己）
+            // 夜里：一条硬边的淡蓝月光轮廓线（卡通的画法，不是一大片柔光）
+            float rimN = 1.0 - abs(dot(normalize(normal), normalize(vViewPosition)));
+            totalEmissiveRadiance += vec3(.55, .7, 1.0) * uNRim * smoothstep(.66, .72, rimN) * .22 * tc; }`)
+          // 夜里主角要看得清（用户要求），但不能刷一层平的自发光（会把卡通明暗压平、像打了一层光滑的漆）：
+          // 把照到龙身上的光整体调亮，并把月光的蓝调拉回来一些——明暗分层还在，颜色接近白天
+          .replace('#include <lights_fragment_end>', `#include <lights_fragment_end>
+          { vec3 nk = mix(vec3(1.0), vec3(1.6, 1.38, 1.08), uNRim); reflectedLight.directDiffuse *= nk; reflectedLight.indirectDiffuse *= nk; }`);
       };
       toon.customProgramCacheKey = () => 'heroToon';
       o.material = toon; D.toonMats.push(toon);
