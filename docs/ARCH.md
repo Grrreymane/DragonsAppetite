@@ -189,6 +189,14 @@ ui 新接口：`api.onSkill()`（第二技能按钮按下）；`ui.showAbility(l
 - 图鉴集齐（这条龙能吃的种类都吃到过）：sim 发 `codexComplete`，主程序记 `save[龙].codexDone`，再弹一次结算（标题「图鉴大师」）。结算卡上的图鉴数按「这条龙能吃的」算。
 - 大地图 `ui/map.js`：HUD 左上「地图」按钮 / 暂停菜单「地图」→ `api.onMap()`；以主角为中心画一整份世界（海域底色、岛、地标〔没发现是「？？？」〕、正在进行的猎场 / 领头、主角箭头，屏幕上方 = +z）。截图：`tools/scenarios/ui_round_check.js`。
 
+## 海底（2026-10-22 丰富：用户嫌一片漆黑、无聊）
+
+- `sim/world.js`：`seabedInfo(x, z)` → `{ y, 区域权重, 裂谷底 0..1, 峡谷深 0..1 }`；区域之间的深度 30–60 米平滑过渡。翠岛海 ~-36 + 珊瑚礁鼓包；熔岩海 ~-48，蜿蜒裂谷（间隔约 480 米、宽 24 米、底 ~-85，成年海龙游得下去）；外海平台 ~-76，两组交叉的阶梯峡谷到 ~-108。`seabedY` / `seabedBase` 用法不变。
+- `view/seabed-deco.js`（由 `sea-bed.js` 驱动，跟着镜头 100 米内流式摆放）：翠岛海珊瑚礁（脑珊瑚、海葵、桌珊瑚、海星贝壳）；熔岩海玄武岩、发光岩缝、裂谷底熔岩光、黑曜石尖塔、热泉气泡柱；外海岩层峡谷壁、发光苔藓和沙粒、发光灯笼草、岩拱、岩柱、巨型海带林。低画质减半。
+- `view/sea.js`：水下雾色按镜头所在区域（翠岛海亮青、熔岩海浑绿青、外海宝蓝），夜里 / 天气的压暗对雾只算七成，近处清水 12 米；夜里值传给海底，发光物在雾后叠加。
+- 海龙在浅滩（海底离水面 < 4 米）当成墙：退回、往深的一边转（`sim/hero.js`；以前「离底 3 米」会把它抬到沙滩上卡住）。
+- 截图：`tools/scenarios/seabed_shots.js`（`bd=1` 打印各部分三角面）、`seabed_probe.js`；对比图 `docs/seabed_sheet.jpg`。
+
 ## 调试钩子
 
 `window.__dg = { S, step(n), input, setStage(stage), give(pts), teleport(x,y,z), render(), ready }`，`?debug` 显示 fps / 绘制调用 / 三角面，`?rec` 打开 preserveDrawingBuffer，`?seed=`、`?kind=fire|sea`、`?stage=0|1|2`、`?autostart`（跳过标题直接开局）。

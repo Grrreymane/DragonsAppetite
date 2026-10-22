@@ -138,6 +138,12 @@ export function stepSea(S, inp, dt, as) {
     h.speed = lerp(h.speed, want, damp(h.dashT > 0 ? 6 : brake > .1 ? 3 : 1.4, dt));
     const f = fwdOf(h);
     h.x += f.x * h.speed * dt; h.z += f.z * h.speed * dt;
+    // 浅滩（海底离水面不到 4 米，「离底 3 米」会把龙抬出水面卡在沙滩上）：当成墙——退回去，往深的一边转
+    if (seabedY(h.x, h.z) + 3 > sea0 - 1 && seabedY(h.px, h.pz) + 3 <= sea0 - 1) {
+      h.x = h.px; h.z = h.pz;
+      const side = a => seabedY(h.x + Math.sin(h.yaw + a) * 8, h.z + Math.cos(h.yaw + a) * 8);
+      h.yaw += (side(.9) < side(-.9) ? 1 : -1) * 2.4 * dt; h.speed *= .97;
+    }
     let vy = f.y * h.speed;
     // 贴水面巡游：靠近水面、上浮不够快时，锁在水面下 0~1.5
     const nearTop = h.y > sea0 - 2.2;

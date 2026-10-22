@@ -24,10 +24,51 @@ export function zoneAt(x, z) {
   return f > .38 ? 'volcano' : f < -.42 ? 'open' : 'green';
 }
 
-// 海底深度：翠岛海浅、火山海中、外海有深沟
-function zoneSeabed(x, z) {
-  const zn = zoneAt(x, z);
+// 海底深度：翠岛海浅（珊瑚礁小土包）、火山海中（一条条熔岩裂谷）、外海深（纵横的大峡谷）。
+// 区域交界按 zoneValue 平滑过渡（大陆架斜坡），不再是一刀切的悬崖。沟都按 PERIOD 循环。
+const KU = TAU / PERIOD;
+const ss = (a, b, v) => { const t = clamp((v - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
+// 一族弯弯曲曲的沟：a = 横穿沟的坐标，b = 顺着沟的坐标（米）；k 条 / 周期，m 控制拐弯。返回到最近一条沟中心线的距离（米，近似）
+function riftDist(a, b, k, m, p) {
+  const q = m * b * KU + p, w = 1.5 * Math.sin(q) + .6 * Math.sin(2 * q + 1.3);
+  const dw = (1.5 * Math.cos(q) + 1.2 * Math.cos(2 * q + 1.3)) * m * KU;
+  const ph = k * a * KU + w, d = ph - TAU * Math.round(ph / TAU);
+  return Math.abs(d) / Math.hypot(k * KU, dw);
+}
+// 海底信息（共用一个对象，别存）：y 高度；wg / wv / wo 三个区域的权重；lava 熔岩裂谷底（0..1）；canyon 外海峡谷（0..1，1 = 谷底）
+export const BED = { y: 0, wg: 1, wv: 0, wo: 0, lava: 0, canyon: 0 };
+export function seabedInfo(x, z) {
+  const f = zoneValue(x, z), sp = ss(300, 360, Math.hypot(wrapP(x), wrapP(z - 120)));   // 出生点附近固定是翠岛海
+  const wv = ss(.3, .46, f) * sp, wo = ss(-.34, -.5, f) * sp, wg = 1 - wv - wo;
   const n = Math.sin(x * .013 + 1.7) * Math.cos(z * .011 - .6) * .5 + Math.sin((x - z) * .021) * .25;
+  let y = 0, lava = 0, canyon = 0;
+  if (wg > 0) {   // 翠岛海：沙底 + 一个个礁石土包
+    const reef = Math.max(0, Math.sin(x * .047 + 2) * Math.sin(z * .041 + Math.sin(x * .013)) - .25);
+    y += wg * (-36 + n * 8 + reef * 7);
+  }
+  if (wv > 0) {   // 火山海：粗糙的黑石底 + 一条条窄的裂谷（谷底 ≈ -85，发熔岩光），谷边隆起一道唇
+    const d = riftDist(x, z, 5, 3, 1.1), W = 24 + 8 * Math.sin(z * .006 + x * .002);
+    const r = ss(W, W * .3, d), lip = ss(W * 2.2, W * 1.2, d) * ss(W * .8, W * 1.15, d);
+    lava = ss(.75, 1, r) * wv;
+    y += wv * (-48 + n * 10 + Math.abs(Math.sin(x * .09) * Math.sin(z * .083)) * 3 - r * 36 + lip * 5);
+  }
+  if (wo > 0) {   // 外海：深底上两族交叉的大峡谷（两级台阶的谷壁，谷底 ≈ -108：长大的海龙能潜进谷里），谷边是平顶台地
+    const W1 = 52 + 14 * n, W2 = 40 + 10 * n;
+    const d1 = riftDist(x, z, 6, 3, .4), d2 = riftDist(z, x, 4, 2, 2.6);
+    const t1 = .55 * ss(W1, W1 * .62, d1) + .45 * ss(W1 * .48, W1 * .2, d1);
+    const t2 = (.55 * ss(W2, W2 * .62, d2) + .45 * ss(W2 * .48, W2 * .2, d2)) * .85;
+    canyon = Math.max(t1, t2);
+    const mesa = ss(.1, .35, Math.sin(x * .011 + .5) * Math.sin(z * .009 + 1.9)) * 14;   // 高一截的台地
+    y += wo * (-76 + n * 8 + mesa * (1 - canyon) - canyon * 32);
+    canyon *= wo;
+  }
+  BED.y = y; BED.wg = wg; BED.wv = wv; BED.wo = wo; BED.lava = lava; BED.canyon = canyon;
+  return BED;
+}
+function zoneSeabed(x, z) { return seabedInfo(x, z).y; }
+// 旧的平海底（只给岛定水下拉伸倍数用）
+function plainSeabed(x, z) {
+  const zn = zoneAt(x, z), n = Math.sin(x * .013 + 1.7) * Math.cos(z * .011 - .6) * .5 + Math.sin((x - z) * .021) * .25;
   return zn === 'open' ? -82 + n * 12 : zn === 'volcano' ? -48 + n * 10 : -36 + n * 8;
 }
 export function seabedY(x, z) {
@@ -135,10 +176,11 @@ function fitShape(is) {
   is.r = r; is.sx = r; is.sy = r * g; is.h = sh.top * is.sy;
   is.prof = islandProfile(is.kind, is.r, is.h);
   // 水下拉伸：岩基最低点到当地海底以下 4 米（最多拉 2.2 倍）
-  let bed = 0;
-  for (let k = 0; k < 6; k++) { const a = k * 1.2566, d = k ? r * sh.foot : 0; bed = Math.min(bed, zoneSeabed(is.x + Math.cos(a) * d, is.z + Math.sin(a) * d)); }
+  // 拉伸倍数按旧的（没有礁包 / 裂谷的）海底算，岛的形状和以前一样；裂谷比岩基深的地方再垫海底坡（下面 bottom > bed - 1）
+  let bed = 0, bedK = 0;
+  for (let k = 0; k < 6; k++) { const a = k * 1.2566, d = k ? r * sh.foot : 0, x = is.x + Math.cos(a) * d, z = is.z + Math.sin(a) * d; bed = Math.min(bed, zoneSeabed(x, z)); bedK = Math.min(bedK, plainSeabed(x, z)); }
   const b0 = sh.bottom * is.sy;
-  is.k = clamp((bed - 4) / Math.min(-1, b0), 1, 2.2);
+  is.k = clamp((bedK - 4) / Math.min(-1, b0), 1, 2.2);
   const bottom = b0 * is.k;
   is.reach = sh.ext * is.sx * 1.02;
   if (bottom > bed - 1) { is.moundTop = bottom + 2.5; is.moundR = sh.foot * is.sx * .8; is.bedReach = is.moundR + (is.moundTop + 100) / MOUND_SLOPE; }

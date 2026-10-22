@@ -8,7 +8,7 @@
 //   觅食点：浅色的乱水 + 几条弯弯的翻腾白线 + 断开的、往外扩的波纹 + 几颗冒出来又消掉的水花。
 // 远处的雾按视线方向染冷暖（three 的雾代码块已被 sky.js 改过，和天空地平线接上）。
 import * as THREE from 'three';
-import { WAVE_GLSL, waveH } from '../sim/world.js';
+import { WAVE_GLSL, waveH, seabedInfo } from '../sim/world.js';
 import { SPECIES } from '../config/species.js';
 import { createSeabed } from './sea-bed.js';
 import { createShore } from './sea-shore.js';
@@ -20,7 +20,13 @@ const N = 48;                    // 每圈 48×48 格
 const RING = [3, 12, 48];        // 格距（GDD 写 3/12/50；外圈取 48，圈和圈的格线才能对齐，接缝不漏）
 const HALF = RING.map(s => s * N / 2);   // 72 / 288 / 1152
 const MAXSH = 16, MAXSPOT = 8;
-const UW_SHALLOW = new THREE.Color(0x0f5c6c), UW_DEEP = new THREE.Color(0x082c3e);
+// 水下雾色（浅 / 深）按镜头所在区域混：翠岛海亮青绿、火山海偏绿的浑青、外海宝蓝。深处也要是饱满的蓝，不是黑
+const UW_C = {
+  g: [new THREE.Color(0x1f97a2), new THREE.Color(0x136e86)],
+  v: [new THREE.Color(0x2a7a74), new THREE.Color(0x245a66)],
+  o: [new THREE.Color(0x1a80aa), new THREE.Color(0x11558f)],
+};
+const UW_SHALLOW = new THREE.Color(), UW_DEEP = new THREE.Color(), _uwM = new THREE.Color();
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const sstep = (a, b, v) => { const t = clamp((v - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
 const snap = (v, s) => Math.round(v / s) * s;
@@ -432,7 +438,14 @@ export function createSea(ctx) {
       api.depth = Math.max(0, surf - cam.y);
       U.uUnder.value = under ? 1 : 0; U.uDepth.value = api.depth;
       const dk = sstep(2, 80, api.depth);
-      uwC.copy(UW_SHALLOW).lerp(UW_DEEP, dk).multiply(U.uEnvU.value);
+      const I = seabedInfo(cam.x, cam.z);
+      for (let i = 0; i < 2; i++) {
+        const o = i ? UW_DEEP : UW_SHALLOW, g = UW_C.g[i], v = UW_C.v[i], w = UW_C.o[i];
+        o.setRGB(g.r * I.wg + v.r * I.wv + w.r * I.wo, g.g * I.wg + v.g * I.wv + w.g * I.wo, g.b * I.wg + v.b * I.wv + w.b * I.wo);
+      }
+      // 昼夜 / 天气的水下乘数往 1 提一点：夜里、阴天的深水也看得清海底（还是比白天暗）
+      const ue = U.uEnvU.value; _uwM.setRGB(ue.r + (1 - ue.r) * .3, ue.g + (1 - ue.g) * .3, ue.b + (1 - ue.b) * .3);
+      uwC.copy(UW_SHALLOW).lerp(UW_DEEP, dk).multiply(_uwM);
 
       let fog = scene.fog;
       if (fog && fog !== ownFog && 'near' in fog) {
@@ -445,7 +458,7 @@ export function createSea(ctx) {
         // 天空在镜头穿过水面的那一帧就切换了，雾也跟着一下子切（入水不会有几帧发白，出水远处的岛和云不会有几帧变成青色剪影）
         const kc = under ? 1 : 0, kr = kc;
         fog.color.copy(air.color).lerp(uwC, kc);
-        fog.near = air.near + (8 - dk * 2 - air.near) * kr;
+        fog.near = air.near + (12 - dk * 2 - air.near) * kr;
         fog.far = 1 / (1 / air.far + (1 / (120 - dk * 15) - 1 / air.far) * kr);   // 按「能见度」插值，入水头几帧就收拢
         last.color.copy(fog.color); last.near = fog.near; last.far = fog.far;
         if (fog === ownFog && !under) { scene.fog = null; ownFog = null; }
@@ -457,7 +470,7 @@ export function createSea(ctx) {
 
       if (shore && !under) { camera.getWorldDirection(_d); shore.update(cam, time, _d); }
       writeShadows(S, alpha, wt);
-      bed.update(S, cam, wt, k, under, uwC, dt);
+      bed.update(S, cam, wt, k, under, uwC, dt, U.uNight.value);
       shafts.update(cam, wt, under ? k * api.shaftK : 0, api.depth);
     },
     // 画质：0 低档（海面不画小星点和浪尖细线、海底的石头 / 海藻不画描边），1 以上正常

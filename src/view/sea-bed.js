@@ -1,12 +1,14 @@
 // 海底：镜头周围 240×240 米的地形（6×6 块、每块 40 米，环形缓冲：镜头走过一块只重建新进来的那一排；水下的雾 120 米就满了）
-// 颜色按区域：翠岛海沙地 + 海藻林、火山海黑石 + 微弱的暖色热泉、外海蓝灰深沟。焦散按 _lab/shade.js 的 patch() 做法。
+// 颜色按区域（按 seabedInfo 的区域权重平滑混）：翠岛海亮沙地 + 沙纹 + 礁区粉色碎珊瑚、火山海黑石 + 熔岩裂谷底发橙光 + 热泉、
+// 外海蓝灰台地 + 峡谷壁一层层的岩纹 + 一块块发青光的苔（夜里更亮）。装饰见 seabed-deco.js。焦散按 _lab/shade.js 的 patch() 做法。
 // 只有镜头在水下（或很低，提前建好）时才更新 / 显示。
 import * as THREE from 'three';
-import { seabedY, seabedBase, zoneAt, groundAt } from '../sim/world.js';
+import { seabedY, seabedBase, seabedInfo, zoneAt } from '../sim/world.js';
+import { createDeco, reefD } from './seabed-deco.js';
 import { GRAD as GRAD0, outlineMat as outline0, toonMat as toon0 } from './toon.js';
 
 const CH = 40, CELL = 5, NC = CH / CELL, NK = 6, VPC = (NC + 1) ** 2, NSLOT = NK * NK;
-const KELP_MAX = 170, ROCK_MAX = 120, VENT_MAX = 24, CORAL_MAX = 60;
+const KELP_MAX = 260, ROCK_MAX = 120, VENT_MAX = 24, CORAL_MAX = 90;
 const mod = (a, n) => ((a % n) + n) % n;
 const hash = (i, j, s) => {
   let h = Math.imul(i | 0, 374761393) ^ Math.imul(j | 0, 668265263) ^ Math.imul(s | 0, 1274126177);
@@ -14,11 +16,11 @@ const hash = (i, j, s) => {
 };
 const C = h => new THREE.Color(h);
 const PAL = {
-  green: [C(0xdccb9c), C(0xcdb98a)], greenGrass: C(0x93a86c),
-  volcano: [C(0x52474b), C(0x5f5357)], volcanoWarm: C(0x74442f),
-  open: [C(0x60788e), C(0x52687e)], rock: C(0x6c6a64),
+  green: [C(0xead7a2), C(0xdcc48e)], greenGrass: C(0x8fb56a), sandHi: C(0xf6e8c0), rubble: C(0xe8a894),
+  volcano: [C(0x2c2329), C(0x372d33)], volcanoAsh: C(0x5c5257), volcanoWarm: C(0x9a3c1a),
+  open: [C(0x34506e), C(0x2c4664)], openSand: C(0x4f6d8c), strata: [C(0x22385a), C(0x52708f), C(0x1a2c4a)], rock: C(0x6c6a64),
 };
-const ROCK_C = { green: C(0x8a8478), volcano: C(0x473d41), open: C(0x4c5868) };
+const ROCK_C = { green: C(0x8a8478), volcano: C(0x473d41), open: C(0x56687e) };
 
 // 远处（82–100 米）强制融进雾色：海底只建到镜头前 100 米左右；入水那 0.25 秒雾还没收拢时，也看不到这块海底的边
 const FAR_FADE = `#include <fog_fragment>
@@ -31,7 +33,7 @@ function farFade(mat, key) {
   mat.customProgramCacheKey = () => 'far:' + key;
   return mat;
 }
-const BED_PARS = `uniform float uT; uniform vec3 uTint; varying float vGlow; varying vec3 vWP;
+const BED_PARS = `uniform float uT, uNight; uniform vec3 uTint; varying float vGlow; varying vec2 vZW; varying vec3 vWP;
 float causF(vec2 p, float t){
   p *= 0.16;
   float a = sin(p.x * 1.7 + t * 0.9 + sin(p.y * 2.3 + t * 0.7) * 1.3);
@@ -40,13 +42,38 @@ float causF(vec2 p, float t){
 }
 `;
 const BED_MAIN = `
-  { float dd = clamp(-vWP.y / 70.0, 0.0, 1.0);
+  { float dd = clamp(-vWP.y / 100.0, 0.0, 1.0);
     float cs = smoothstep(0.36, 0.46, causF(vWP.xz, uT)) * 0.7 + smoothstep(0.5, 0.62, causF(vWP.xz * 1.9 + 7.0, uT * 1.3)) * 0.3;   // 卡通焦散：硬边光纹
     vec3 nW = normalize(cross(dFdx(vWP), dFdy(vWP)));
     cs *= smoothstep(0.45, 0.85, abs(nW.y));                        // 光从上面来：陡坡上没有焦散
+    cs *= clamp(dot(vColor.rgb, vec3(.3, .6, .1)) * 3.0, .2, 1.0);   // 黑石上焦散淡
     gl_FragColor.rgb += vec3(0.6, 0.85, 0.9) * cs * (1.0 - smoothstep(8.0, 75.0, -vWP.y)) * 0.26;   // 越深焦散越淡，深沟里没有
-    gl_FragColor.rgb = mix(gl_FragColor.rgb, uTint, 0.15 + dd * 0.35);
-    gl_FragColor.rgb += vec3(1.0, 0.42, 0.12) * vGlow * (0.42 + 0.14 * sin(uT * 1.5 + vWP.x * 0.2)); }
+    gl_FragColor.rgb = mix(gl_FragColor.rgb, uTint, 0.1 + dd * 0.22); }
+`;
+// 发光（雾之后加，雾只吃掉一部分，远处也看得见）：vGlow > 0 熔岩橙，< 0 生物荧光青（夜里更亮）
+const BED_GLOW = `
+#ifdef USE_FOG
+ float gK = (1.0 - fogFactor * .55) * (1.0 - smoothstep(82.0, 100.0, vFogDepth));
+#else
+ float gK = 1.0;
+#endif
+ gl_FragColor.rgb += (vGlow > 0.0 ? vec3(1.0, .42, .12) * vGlow * (.62 + .16 * sin(uT * 1.5 + vWP.x * .2))
+   : vec3(.12, .8, 1.0) * -vGlow * (.4 + .5 * uNight) * (.75 + .25 * sin(uT * 1.2 + vWP.z * .15))) * gK;
+ // 火山海：地上一道道发光的熔岩裂缝（逐像素算，细线）
+ if (vZW.x > .05) {
+   float cr = abs(sin(vWP.x * .07 + sin(vWP.z * .05) * 1.6) + sin(vWP.z * .083 + sin(vWP.x * .045) * 1.4));
+   float ck = (1.0 - smoothstep(.04, .11, cr)) * smoothstep(.3, .8, vZW.x) * (1.0 - smoothstep(30.0, 75.0, vFogDepth));
+   ck *= smoothstep(.7, .9, abs(normalize(cross(dFdx(vWP), dFdy(vWP))).y));   // 陡壁上不画（会被拉成长条）
+   gl_FragColor.rgb += vec3(1.0, .4, .1) * ck * (.5 + .2 * sin(uT * 1.3 + vWP.x * .1 + vWP.z * .07)) * gK;
+ }
+ // 外海：一粒粒荧光沙（2 米一格，两成的格子里有一粒），夜里亮
+ if (vZW.y > .05) {
+   vec2 cg = floor(vWP.xz * .5), fp = fract(vWP.xz * .5) - .5;
+   float hh = fract(sin(dot(cg, vec2(127.1, 311.7))) * 43758.5453);
+   float dk = (1.0 - smoothstep(.06, .16, length(fp - (vec2(fract(hh * 7.13), fract(hh * 13.7)) - .5) * .6))) * step(.8, hh);
+   dk *= vZW.y * (1.0 - smoothstep(20.0, 55.0, vFogDepth)) * (.35 + .65 * uNight) * (.6 + .4 * sin(uT * 2.0 + hh * 30.0));
+   gl_FragColor.rgb += mix(vec3(.2, .9, 1.0), vec3(.7, .5, 1.0), step(.9, hh)) * dk * gK;
+ }
 `;
 // 海藻摆动（本体和描边共用）：每棵按位置定朝向和相位，越往上摆得越大
 const KELP_V = `
@@ -184,11 +211,11 @@ export function createSeabed(ctx) {
   const toonMat0 = ctx.toonMat || toon0;
   const toonMat = ({ flatShading, ...o }) => { const m = toonMat0(o); if (flatShading) m.flatShading = true; m.gradientMap = GRAD; return m; };
   const group = new THREE.Group(); group.name = 'seabed'; group.visible = false;
-  const uT = { value: 0 }, uTint = { value: new THREE.Color(0x0e5a6e) };
+  const uT = { value: 0 }, uTint = { value: new THREE.Color(0x0e5a6e) }, uNight = { value: 0 };
 
   // ---- 地形：一个大几何体，64 个块槽，每槽 9×9 个点 ----
   const NV = NSLOT * VPC;
-  const posA = new THREE.BufferAttribute(new Float32Array(NV * 3), 3), colA = new THREE.BufferAttribute(new Float32Array(NV * 3), 3), glowA = new THREE.BufferAttribute(new Float32Array(NV), 1);
+  const posA = new THREE.BufferAttribute(new Float32Array(NV * 3), 3), colA = new THREE.BufferAttribute(new Float32Array(NV * 3), 3), glowA = new THREE.BufferAttribute(new Float32Array(NV * 3), 3);   // 发光、火山海权重、外海权重
   for (const a of [posA, colA, glowA]) a.setUsage(THREE.DynamicDrawUsage);
   const idx = new Uint16Array(NSLOT * NC * NC * 6);
   let q = 0;
@@ -200,11 +227,12 @@ export function createSeabed(ctx) {
   geo.setAttribute('position', posA); geo.setAttribute('color', colA); geo.setAttribute('aGlow', glowA); geo.setIndex(new THREE.BufferAttribute(idx, 1));
   const bedMat = toonMat({ vertexColors: true, flatShading: true });
   bedMat.onBeforeCompile = sh => {
-    sh.uniforms.uT = uT; sh.uniforms.uTint = uTint;
-    sh.vertexShader = 'attribute float aGlow; varying float vGlow; varying vec3 vWP;\n' + sh.vertexShader
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\n vGlow = aGlow;')
+    sh.uniforms.uT = uT; sh.uniforms.uTint = uTint; sh.uniforms.uNight = uNight;
+    sh.vertexShader = 'attribute vec3 aGlow; varying float vGlow; varying vec2 vZW; varying vec3 vWP;\n' + sh.vertexShader
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\n vGlow = aGlow.x; vZW = aGlow.yz;')
       .replace('#include <project_vertex>', '#include <project_vertex>\n vWP = (modelMatrix * vec4(transformed, 1.0)).xyz;');
-    sh.fragmentShader = BED_PARS + sh.fragmentShader.replace('#include <tonemapping_fragment>', BED_MAIN + '\n#include <tonemapping_fragment>');
+    sh.fragmentShader = BED_PARS + sh.fragmentShader.replace('#include <tonemapping_fragment>', BED_MAIN + '\n#include <tonemapping_fragment>')
+      .replace('#include <fog_fragment>', '#include <fog_fragment>\n' + BED_GLOW);   // farFade 再把第一个 fog_fragment 换掉
   };
   farFade(bedMat, 'seabed');
   const bed = new THREE.Mesh(geo, bedMat); bed.frustumCulled = false; bed.name = 'seabedTerrain'; group.add(bed);
@@ -236,6 +264,7 @@ export function createSeabed(ctx) {
   const [vent, ventH] = inst(cg, farFade(toonMat({ flatShading: true, color: 0x2a2226 }), 'vent'), hullNormals(cg, .5, .3), outlineMat(0x120a0a, .08, { scene: true, key: 'vent' }), VENT_MAX, 'vent');
     const capMat = new THREE.MeshBasicMaterial({ color: 0xff7a30, fog: true });
   const cap = new THREE.InstancedMesh(new THREE.SphereGeometry(1, 8, 5), capMat, VENT_MAX); cap.count = 0; cap.frustumCulled = false; group.add(cap);
+  const deco = createDeco(group, { toonMat, farFade, uT, uNight });
 
   // ---- 块的生成（确定性：同一块每次建出来都一样）----
   const slots = new Array(NSLOT).fill(null);
@@ -246,20 +275,34 @@ export function createSeabed(ctx) {
     if (ventCache.has(key)) return ventCache.get(key);
     if (ventCache.size > 4000) ventCache.clear();
     let v = null;
-    if (hash(ci, cj, 7) < .3) {
+    if (hash(ci, cj, 7) < .45) {
       const x = ci * CH + 8 + hash(ci, cj, 8) * 24, z = cj * CH + 8 + hash(ci, cj, 9) * 24;
-      if (zoneAt(x, z) === 'volcano') { const y = seabedY(x, z); if (y < -22) v = { x, y, z, h: 2.5 + hash(ci, cj, 10) * 3 }; }
+      if (zoneAt(x, z) === 'volcano' && Math.abs(seabedY(x + 3, z) - seabedY(x - 3, z)) + Math.abs(seabedY(x, z + 3) - seabedY(x, z - 3)) < 4) {   // 裂谷壁上不放
+        const y = seabedY(x, z); if (y < -22) v = { x, y, z, h: 3 + hash(ci, cj, 10) * 5 };
+      }
     }
     ventCache.set(key, v); return v;
   }
-  const _c = new THREE.Color();
+  const _c = new THREE.Color(), _cv = new THREE.Color(), _co = new THREE.Color();
+  const ZW = new Float32Array(VPC * 5);   // 每个点的区域权重 wg / wv / wo、熔岩、峡谷
   function buildChunk(slot, ci, cj) {
     const x0 = ci * CH, z0 = cj * CH, base = slot * VPC;
     // 岛的水下坡由 islands.js 自己画：这里在岛坡上把海底往下让 3 米，两层不打架（台阶藏在岛坡下面）
     for (let j = 0; j <= NC; j++) for (let i = 0; i <= NC; i++) {
-      const x = x0 + i * CELL, z = z0 + j * CELL;
-      H[j * (NC + 1) + i] = Math.min(seabedBase(x, z), -2.5);   // 岛的水下坡由 islands.js 画
+      const x = x0 + i * CELL, z = z0 + j * CELL, v = j * (NC + 1) + i, I = seabedInfo(x, z);
+      ZW[v * 5] = I.wg; ZW[v * 5 + 1] = I.wv; ZW[v * 5 + 2] = I.wo; ZW[v * 5 + 3] = I.lava; ZW[v * 5 + 4] = I.canyon;
+      H[v] = Math.min(seabedBase(x, z), -2.5);   // 岛的水下坡由 islands.js 画
     }
+    // 摆东西用的高度：和画出来的地形网格一致（陡的谷壁上 5 米一格的网格和真实高度差好几米，石头会浮起来）；岛的岩石上用真实高度
+    const bedAt = (x, z) => {
+      const yt = seabedY(x, z);
+      if (yt > seabedBase(x, z) + .3) return yt;
+      const fx = Math.min(NC - 1e-4, Math.max(0, (x - x0) / CELL)), fz = Math.min(NC - 1e-4, Math.max(0, (z - z0) / CELL));
+      const i = fx | 0, j = fz | 0, u = fx - i, w = fz - j, R = NC + 1;
+      const a = H[j * R + i], b = H[j * R + i + 1], c = H[(j + 1) * R + i], d = H[(j + 1) * R + i + 1];
+      return u + w <= 1 ? a + (b - a) * u + (c - a) * w : d + (c - d) * (1 - u) + (b - d) * (1 - w);
+    };
+    bedAt.steep = (x, z) => (Math.abs(bedAt(x + 2, z) - bedAt(x - 2, z)) + Math.abs(bedAt(x, z + 2) - bedAt(x, z - 2))) / 4;   // 坡度（米 / 米）
     const vents = [];
     for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) { const v = ventOf(ci + a, cj + b); if (v) vents.push(v); }
     const P = posA.array, Cc = colA.array, G = glowA.array;
@@ -268,58 +311,79 @@ export function createSeabed(ctx) {
       const hx = H[j * (NC + 1) + Math.min(i + 1, NC)] - H[j * (NC + 1) + Math.max(i - 1, 0)];
       const hz = H[Math.min(j + 1, NC) * (NC + 1) + i] - H[Math.max(j - 1, 0) * (NC + 1) + i];
       const slope = Math.hypot(hx, hz) / (CELL * 2);
-      const zn = zoneAt(x, z), pal = PAL[zn], r = hash(Math.round(x), Math.round(z), 3);
-      _c.copy(pal[0]).lerp(pal[1], r);
-      if (zn === 'green' && Math.sin(x * .05 + Math.sin(z * .04) * 2) * Math.sin(z * .06 + 1) > .45) _c.lerp(PAL.greenGrass, .55);
+      const wg = ZW[v * 5], wv = ZW[v * 5 + 1], wo = ZW[v * 5 + 2], lava = ZW[v * 5 + 3], cany = ZW[v * 5 + 4], r = hash(Math.round(x), Math.round(z), 3);
+      const st = Math.min(1, Math.max(0, (slope - .45) * 2));   // 陡坡
+      // 翠岛海：亮沙 + 沙纹 + 海草斑 + 礁区的粉色碎珊瑚，陡处露石头
+      _c.copy(PAL.green[0]).lerp(PAL.green[1], r);
+      if (Math.sin(x * .35 + Math.sin(z * .08) * 3) > .55) _c.lerp(PAL.sandHi, .45);
+      if (Math.sin(x * .05 + Math.sin(z * .04) * 2) * Math.sin(z * .06 + 1) > .45) _c.lerp(PAL.greenGrass, .55);
+      const rd = wg > .3 ? reefD(x, z) : 0; if (rd > .35) _c.lerp(PAL.rubble, (rd - .35) * .7);
+      if (st > 0) _c.lerp(PAL.rock, st);
+      // 火山海：黑石 + 灰白的火山灰斑，裂谷底和热泉边烧成暗红、发光
       let glow = 0;
-      for (const vt of vents) { const d = Math.hypot(vt.x - x, vt.z - z); if (d < 16) glow = Math.max(glow, (1 - d / 16) ** 2); }
-      if (glow > 0) _c.lerp(PAL.volcanoWarm, glow * .8);
-      if (slope > .55) _c.lerp(zn === 'green' ? PAL.rock : pal[1].clone().multiplyScalar(.8), Math.min(1, (slope - .55) * 2));
-      P[o] = x; P[o + 1] = y; P[o + 2] = z; Cc[o] = _c.r; Cc[o + 1] = _c.g; Cc[o + 2] = _c.b; G[base + v] = glow * .6;
+      _cv.copy(PAL.volcano[0]).lerp(PAL.volcano[1], r);
+      if (Math.sin(x * .07 + 1) * Math.sin(z * .06 + Math.sin(x * .02) * 2) > .5) _cv.lerp(PAL.volcanoAsh, .5);
+      for (const vt of vents) { const d = Math.hypot(vt.x - x, vt.z - z); if (d < 16) glow = Math.max(glow, (1 - d / 16) ** 2 * .6); }
+      glow = Math.max(glow, lava);
+      if (glow > 0) _cv.lerp(PAL.volcanoWarm, Math.min(1, glow * 1.2));
+      // 外海：蓝灰台地；峡谷壁按高度一层层的岩纹；峡谷里一块块荧光苔
+      _co.copy(PAL.open[0]).lerp(PAL.open[1], r);
+      if (Math.sin(x * .03 + Math.sin(z * .025) * 2.5) * Math.sin(z * .028 + 2) > .4) _co.lerp(PAL.openSand, .5);
+      if (cany > .05 || st > 0) { const b = ((y / 6) % 3 + 3) % 3 | 0; _co.lerp(PAL.strata[b], Math.min(1, Math.max(st, cany) * 1.4)).multiplyScalar(1 - cany * .3); }
+      if (wo > .5 && cany > .15) {
+        const bio = Math.sin(x * .19 + Math.sin(z * .13) * 2) * Math.sin(z * .21 + x * .05);
+        if (bio > .45) glow = -Math.min(1, (bio - .45) * 3) * .9 * wo;
+      }
+      _c.multiplyScalar(wg).add(_cv.multiplyScalar(wv)).add(_co.multiplyScalar(wo));
+      P[o] = x; P[o + 1] = y; P[o + 2] = z; Cc[o] = _c.r; Cc[o + 1] = _c.g; Cc[o + 2] = _c.b; G[(base + v) * 3] = glow * (glow > 0 ? wv : 1); G[(base + v) * 3 + 1] = wv; G[(base + v) * 3 + 2] = wo;
     }
     for (const a of [posA, colA]) a.addUpdateRange(base * 3, VPC * 3);
-    glowA.addUpdateRange(base, VPC);
+    glowA.addUpdateRange(base * 3, VPC * 3);
     // 石头
     const zc = zoneAt(x0 + CH / 2, z0 + CH / 2), rocks = [], kelps = [];
     const nr = zc === 'green' ? Math.floor(hash(ci, cj, 11) * 2.4) : 2 + Math.floor(hash(ci, cj, 11) * 3);
     for (let k = 0; k < nr; k++) {
-      const x = x0 + 3 + hash(ci, cj, 20 + k) * (CH - 6), z = z0 + 3 + hash(ci, cj, 40 + k) * (CH - 6), y = seabedY(x, z);
-      if (y > -4) continue;
+      const x = x0 + 3 + hash(ci, cj, 20 + k) * (CH - 6), z = z0 + 3 + hash(ci, cj, 40 + k) * (CH - 6), y = bedAt(x, z);
+      if (y > -4 || bedAt.steep(x, z) > .8) continue;   // 陡壁上不放石头（看着像浮在水里）
       const s = (.8 + hash(ci, cj, 60 + k) ** 2 * 3.2) * (zc === 'open' ? 1.6 : 1);
       rocks.push({ x, y: y - s * .25, z, s, sy: s * (.5 + hash(ci, cj, 70 + k) * .5), a: hash(ci, cj, 80 + k) * 6.28, b: hash(ci, cj, 90 + k) * 6.28, c: ROCK_C[zoneAt(x, z)] });
     }
-    // 海藻：翠岛海、水深 14 以上的地方，成片长（低频噪声定疏密）
+    // 海藻：翠岛海、水深 14 以上的地方，成片长（低频噪声定疏密）；外海台地上一片片的巨藻林（高 25~55 米，金褐色）
     const dens = .5 + .5 * Math.sin(x0 * .0123 + 1.1) * Math.sin(z0 * .0097 + .4);
-    const ncl = Math.floor(dens * 2.6 + hash(ci, cj, 12) * 1.2);
+    const forest = Math.max(0, Math.sin(x0 * .009 + 2) * Math.sin(z0 * .011 + .7) - .3) * 2.4;
+    const zo = zc === 'open';
+    const ncl = zo ? Math.floor(forest * 4 + hash(ci, cj, 12) * .8) : Math.floor(dens * 2.6 + hash(ci, cj, 12) * 1.2);
     for (let k = 0; k < ncl; k++) {
       const cx = x0 + 4 + hash(ci, cj, 100 + k) * (CH - 8), cz = z0 + 4 + hash(ci, cj, 120 + k) * (CH - 8);
-      if (zoneAt(cx, cz) !== 'green') continue;
-      const nb = 3 + Math.floor(hash(ci, cj, 140 + k) * 5);
+      const zk = zoneAt(cx, cz);
+      if (zk !== (zo ? 'open' : 'green')) continue;
+      const nb = (zo ? 4 : 3) + Math.floor(hash(ci, cj, 140 + k) * 5);
       for (let m = 0; m < nb; m++) {
-        const a = hash(ci, cj, 200 + k * 16 + m) * 6.28, d = hash(ci, cj, 300 + k * 16 + m) * 4.5;
-        const x = cx + Math.cos(a) * d, z = cz + Math.sin(a) * d, y = seabedY(x, z);
-        if (y > -14) continue;
-        const h = Math.min(7 + hash(ci, cj, 400 + k * 16 + m) * 14, -4 - y);
+        const a = hash(ci, cj, 200 + k * 16 + m) * 6.28, d = hash(ci, cj, 300 + k * 16 + m) * (zo ? 7 : 4.5);
+        const x = cx + Math.cos(a) * d, z = cz + Math.sin(a) * d, y = bedAt(x, z);
+        if (y > -14 || (zo && seabedInfo(x, z).canyon > .3)) continue;   // 峡谷里不长巨藻（留给发光植物）
+        const h = Math.min(zo ? 25 + hash(ci, cj, 400 + k * 16 + m) * 30 : 7 + hash(ci, cj, 400 + k * 16 + m) * 14, (zo ? -10 : -4) - y);
         if (h < 4) continue;
-        kelps.push({ x, y: y - .3, z, h, s: .8 + hash(ci, cj, 500 + k * 16 + m) * .7, t: hash(ci, cj, 600 + k * 16 + m) });
+        kelps.push({ x, y: y - .3, z, h, s: (.8 + hash(ci, cj, 500 + k * 16 + m) * .7) * (zo ? 1.15 : 1), t: hash(ci, cj, 600 + k * 16 + m), g: zo });
       }
     }
     // 珊瑚：翠岛海和火山海、水深 6~42 米的地方，一块里 0~2 丛
     const cors = [];
-    const nc = zc === 'open' ? 0 : Math.floor(hash(ci, cj, 13) * (zc === 'green' ? 3.2 : 1.8));
+    const nc = zc === 'open' ? 0 : Math.floor(hash(ci, cj, 13) * (zc === 'green' ? 2 + reefD(x0 + CH / 2, z0 + CH / 2) * 6 : 1.8));
     for (let k = 0; k < nc; k++) {
-      const x = x0 + 3 + hash(ci, cj, 700 + k) * (CH - 6), z = z0 + 3 + hash(ci, cj, 720 + k) * (CH - 6), y = seabedY(x, z), zn = zoneAt(x, z);
+      const x = x0 + 3 + hash(ci, cj, 700 + k) * (CH - 6), z = z0 + 3 + hash(ci, cj, 720 + k) * (CH - 6), y = bedAt(x, z), zn = zoneAt(x, z);
       if (y > -6 || y < -42 || zn === 'open') continue;
       const pal = CORAL_C[zn], sc = 1.5 + hash(ci, cj, 740 + k) * 1.6;
       cors.push({ x, y: y - .15, z, s: sc, a: hash(ci, cj, 760 + k) * 6.28, v: hash(ci, cj, 780 + k) < .55 ? 0 : 1, c: pal[Math.floor(hash(ci, cj, 800 + k) * pal.length)] });
     }
     const vt = ventOf(ci, cj);
-    slots[slot] = { ci, cj, rocks, kelps, corals: cors, vent: vt };
+    if (vt) vt.y = bedAt(vt.x, vt.z);
+    slots[slot] = { ci, cj, rocks, kelps, corals: cors, vent: vt, deco: deco.gen(ci, cj, x0, z0, CH, vt, bedAt) };
   }
 
   // ---- 实例：按离镜头的距离挑（海藻描边只画最近的一批，省三角面）----
   const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _e = new THREE.Euler(), _p = new THREE.Vector3(), _s = new THREE.Vector3();
-  const KC0 = C(0xffffff), KC1 = C(0xd8e8a0), _kc = new THREE.Color();
+  const KC0 = C(0xffffff), KC1 = C(0xd8e8a0), KG0 = C(0xe6d49a), KG1 = C(0xc8b080), _kc = new THREE.Color();
   const list = [];
   let instAt = null;
   function rebuildInst(cam) {
@@ -332,7 +396,7 @@ export function createSeabed(ctx) {
     for (const [, k] of list) {
       if (n >= KELP_MAX) break;
       _m.compose(_p.set(k.x, k.y, k.z), _q.identity(), _s.set(k.s, k.h, k.s)); kelp.setMatrixAt(n, _m);
-      kelp.setColorAt(n, _kc.copy(KC0).lerp(KC1, k.t)); n++;
+      kelp.setColorAt(n, k.g ? _kc.copy(KG0).lerp(KG1, k.t) : _kc.copy(KC0).lerp(KC1, k.t)); n++;
     }
     kelp.count = n; kelpH.count = Math.min(n, 40);   // 描边只给最近的 40 棵
     n = 0;
@@ -364,6 +428,7 @@ export function createSeabed(ctx) {
     vent.count = ventH.count = cap.count = n;
     for (const m of [kelp, rock, vent, cap]) m.instanceMatrix.needsUpdate = true;
     for (const m of [kelp, rock]) if (m.instanceColor) m.instanceColor.needsUpdate = true;
+    deco.fill(slots, cam);
   }
 
   let built = 0;
@@ -371,9 +436,10 @@ export function createSeabed(ctx) {
   return {
     group,
     get ready() { return built >= NSLOT; },
-    setQuality(q) { kelpH.visible = rockH.visible = ventH.visible = corals[0][1].visible = corals[1][1].visible = q >= 1; },
-    update(S, cam, wt, k, under, uwC, dt) {
-      uT.value = wt; uKT.value = wt; uTint.value.copy(uwC);
+    setQuality(q) { kelpH.visible = rockH.visible = ventH.visible = corals[0][1].visible = corals[1][1].visible = q >= 1; deco.setQuality(q); },
+    // night：0..1 夜里（荧光苔、发光植物更亮）
+    update(S, cam, wt, k, under, uwC, dt, night = 0) {
+      uT.value = wt; uKT.value = wt; uTint.value.copy(uwC); uNight.value = night;
       capMat.color.setRGB(1, .45 + .08 * Math.sin(wt * 1.5), .18);
       const vis = under || k > 0;
       group.visible = vis;
