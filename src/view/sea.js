@@ -108,7 +108,7 @@ const FRAG = `uniform float uT, uUnder, uDepth;
 uniform vec3 uCam, deepC, shallowC, deepV, shallowV, deepO, shallowO, farC, aquaC, aquaC2, foamC, sunD, sunC, shC;
 uniform vec3 skyUp, skyWarm, skyCool;
 uniform vec3 sunW, uwWin, uwTir, uwSun, uwShC;
-uniform vec3 uEnv, uEnvU; uniform float uNight;
+uniform vec3 uEnv, uEnvU; uniform float uNight, uRain;
 uniform vec4 uHole;
 uniform sampler2D uShore, uNoise; uniform vec4 uShoreR;
 uniform vec4 uShA[${MAXSH}], uShB[${MAXSH}]; uniform int uShN;
@@ -330,6 +330,17 @@ void main(){
     c += uwSun * (pow(sg, 8.0) * 0.45 + smoothstep(0.965, 0.98, sg) * 0.5) * (0.35 + 0.65 * win);
     c = mix(c, uwShC, shadowAt(p, true, nM.b));
     c = mix(c, foamC, sp.x * 0.55 * smoothstep(0.05, 0.25, R.y));       // 远处斜着看的白沫也压成线，淡掉
+    // 下雨：从水下看，水面被雨点打出一圈圈小涟漪（两层格子，每格一个点、各自错开扩散）
+    if (uRain > 0.01 && dist < 45.0) {
+      float ring = 0.0;
+      for (int k = 0; k < 2; k++) {
+        float s = k == 0 ? 2.6 : 3.7;
+        vec2 ci = floor(p / s + float(k) * 0.5), ce = (ci + 0.2 + 0.6 * vec2(hash12(ci + float(k) * 7.0), hash12(ci + 13.0))) * s - float(k) * 0.5 * s;
+        float ph = fract(uT * 0.85 + hash12(ci * 1.7 + float(k)));
+        ring = max(ring, lineM(abs(length(p - ce) - ph * 1.6), 0.09, gpx) * (1.0 - ph) * step(0.3, hash12(ci + 31.0 + float(k))));
+      }
+      c = mix(c, vec3(0.85, 0.95, 1.0), ring * 0.8 * uRain * (1.0 - smoothstep(18.0, 45.0, dist)) * smoothstep(0.15, 0.4, R.y));
+    }
     c *= uEnvU;
   }
   gl_FragColor = vec4(c, 1.0);
@@ -356,7 +367,7 @@ export function createSea(ctx) {
     aquaC: { value: C(0x2fb4bc) }, aquaC2: { value: C(0x6ad8cc) },      // 岛边浅水：两档
     foamC: { value: C(0xf6fcfc) }, sunD: { value: SUN }, sunC: { value: C(0xfff0d0) }, shC: { value: C(0x0a3348) },
     skyUp: { value: SKY.upper }, skyWarm: { value: SKY.warm }, skyCool: { value: SKY.cool },
-    uEnv: { value: new THREE.Color(1, 1, 1) }, uEnvU: { value: new THREE.Color(1, 1, 1) }, uNight: { value: 0 },
+    uEnv: { value: new THREE.Color(1, 1, 1) }, uEnvU: { value: new THREE.Color(1, 1, 1) }, uNight: { value: 0 }, uRain: { value: 0 },
     sunW: { value: sunW }, uwWin: { value: C(0x86dde8) }, uwTir: { value: C(0x2a8a9c) }, uwSun: { value: C(0xfffbe6) }, uwShC: { value: C(0x0b3a48) },
     uShore: { value: shore ? shore.tex : null }, uShoreR: { value: shore ? shore.region : new THREE.Vector4() }, uNoise: { value: seaNoise() },
     uShA: { value: shA }, uShB: { value: shB }, uShN: { value: 0 }, uSpot: { value: spots }, uSpotN: { value: 0 },

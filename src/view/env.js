@@ -203,7 +203,10 @@ export function createEnv(ctx, { sky, sea, look }) {
     if (sea && sea.U) {
       const g = 1 - over * .22;
       sea.U.uEnv.value.setRGB(k.sea[0] * g * (1 - v * .05), k.sea[1] * g * (1 - v * .1), k.sea[2] * g * (1 - v * .12));
-      sea.U.uEnvU.value.setRGB(k.uw[0] * (1 - over * .15), k.uw[1] * (1 - over * .15), k.uw[2] * (1 - over * .15));
+      // 水下：阴天暗一点、偏灰蓝；熔岩海偏暖偏浑；打雷时水里也亮一下
+      const ug = 1 - over * .3, fl = 1 + E.flash * 1.3;
+      sea.U.uEnvU.value.setRGB(k.uw[0] * ug * (1 - over * .08) * (1 + v * .06) * fl, k.uw[1] * ug * (1 - v * .1) * fl, k.uw[2] * ug * (1 + over * .04) * (1 - v * .22) * fl);
+      sea.U.uRain.value = E.rain;
       sea.U.uNight.value = night * (1 - mist * .4);
       sea.U.sunC.value.copy(k.sunEl > -2 ? SKY.sun : _g.setRGB(.55, .62, .85)).multiplyScalar((sunUp > .1 ? 1 : .32) * (1 - over * .9));
       sea.setSun && sea.setSun(sunUp > .5 ? sunDisc : moonDir);
@@ -226,7 +229,7 @@ export function createEnv(ctx, { sky, sea, look }) {
 
     // ---- 粒子 ----
     const under = sea ? (sea.underwater || 0) : 0;
-    fx.update(cam, dt, E.rain * (1 - under), Math.max(E.v * .9, 0) * (1 - under), night, sea ? sea.waveT : 0);
+    fx.update(cam, dt, E.rain, Math.max(E.v * .9, 0), night, sea ? sea.waveT : 0, under > .5);
 
     // 给别的模块读
     const env = ctx.env;
@@ -261,14 +264,14 @@ function createWeatherFx(scene) {
   const dot = (() => { const c = document.createElement('canvas'); c.width = c.height = 32; const g = c.getContext('2d'); const gr = g.createRadialGradient(16, 16, 0, 16, 16, 16); gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(.5, 'rgba(255,255,255,.6)'); gr.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = gr; g.fillRect(0, 0, 32, 32); return new THREE.CanvasTexture(c); })();
   const amat = new THREE.PointsMaterial({ size: .8, map: dot, vertexColors: true, transparent: true, opacity: 0, depthWrite: false, fog: false, sizeAttenuation: true });
   const ash = new THREE.Points(ag, amat); ash.frustumCulled = false; ash.renderOrder = 3; scene.add(ash);
-  let t = 0;
+  let t = 0, wasUnder = false;
   const wrapB = (v, c, b) => c + ((((v - c) % (2 * b)) + 3 * b) % (2 * b)) - b;
   return {
-    update(cam, dt, rainK, ashK, night, waveT) {
+    update(cam, dt, rainK, ashK, night, waveT, under) {   // under：水下时火山灰换成往上冒的热气泡
       t += dt;
       rain.visible = rainK > .01; ash.visible = ashK > .01;
       if (rain.visible) {
-        rmat.opacity = .42 * rainK * (1 - night * .45);
+        rmat.opacity = (under ? .28 : .42) * rainK * (1 - night * .45);
         const vx = 6, vy = -42, vz = 3, len = .045;   // 风吹得斜一点；线长 = 速度 × 0.045 秒
         for (let i = 0; i < NR; i++) {
           let x = rp[i * 3] + vx * dt, y = rp[i * 3 + 1] + vy * dt, z = rp[i * 3 + 2] + vz * dt;
@@ -276,21 +279,27 @@ function createWeatherFx(scene) {
           rp[i * 3] = x; rp[i * 3 + 1] = y; rp[i * 3 + 2] = z;
           const wx = wrapB(x, cam.x, BOX), wy = wrapB(y, cam.y, HB), wz = wrapB(z, cam.z, BOX);
           const o = i * 6, sea = waveH(wx, wz, waveT);
-          const yy = wy < sea ? -999 : wy;                                   // 水面以下不画
+          // 水上：水面以下不画；水下：只画扎进水面下 3 米以内的一小截（雨丝扎进水里）
+          const yy = under ? (wy < sea && wy > sea - 3 ? wy : -999) : wy < sea ? -999 : wy;
           rpos[o] = wx; rpos[o + 1] = yy; rpos[o + 2] = wz; rpos[o + 3] = wx - vx * len; rpos[o + 4] = yy - vy * len; rpos[o + 5] = wz - vz * len;
         }
         rg.attributes.position.needsUpdate = true;
       }
       if (ash.visible) {
-        amat.opacity = .85 * ashK;
+        amat.opacity = (under ? .6 : .85) * ashK;
+        if (under !== wasUnder) {   // 换颜色：水下是淡青的泡泡，水上是灰 + 火星
+          wasUnder = under;
+          for (let i = 0; i < NA; i++) { const ember = aseed[i] < .22; acol[i * 3] = under ? .75 : ember ? 1 : .62; acol[i * 3 + 1] = under ? .95 : ember ? .55 : .58; acol[i * 3 + 2] = under ? 1 : ember ? .2 : .56; }
+          ag.attributes.color.needsUpdate = true;
+        }
         for (let i = 0; i < NA; i++) {
           const s = aseed[i], ember = s < .22;
           ap[i * 3] += (Math.sin(t * .7 + s * 30) * 1.2 + 1.5) * dt;
-          ap[i * 3 + 1] += (ember ? 2.2 + s * 4 : -1.4 - s) * dt;
+          ap[i * 3 + 1] += (under ? 2 + s * 3 : ember ? 2.2 + s * 4 : -1.4 - s) * dt;
           ap[i * 3 + 2] += Math.cos(t * .6 + s * 20) * 1.2 * dt;
           const o = i * 3;
           apos[o] = wrapB(ap[o], cam.x, AB); apos[o + 1] = wrapB(ap[o + 1], cam.y, AB * .6); apos[o + 2] = wrapB(ap[o + 2], cam.z, AB);
-          if (ember) { const fl = .7 + .3 * Math.sin(t * 9 + s * 50); acol[o] = 1 * fl; acol[o + 1] = (.45 + night * .1) * fl; acol[o + 2] = .15 * fl; }
+          if (ember && !under) { const fl = .7 + .3 * Math.sin(t * 9 + s * 50); acol[o] = 1 * fl; acol[o + 1] = (.45 + night * .1) * fl; acol[o + 2] = .15 * fl; }
         }
         ag.attributes.position.needsUpdate = true; ag.attributes.color.needsUpdate = true;
       }
