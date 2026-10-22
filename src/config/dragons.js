@@ -1,7 +1,7 @@
 // 两条龙 × 三个阶段的数值（GDD §6.3 / §7.2 + v2：每个阶段解锁新能力、捕猎越来越容易，见 docs/V2_PLAN.md）。
 // 成年火龙的飞行数值 = 原型手感，不改。
 export const STAGE_NAMES = ['幼龙', '少年龙', '成龙'];
-export const STAGE_PTS = [0, 200, 1100];          // 进入该阶段时的累计成长点（2026-10-22 从 55 / 280 调高：用户嫌长得太快、游戏寿命短。机器人「中快」档约 3 分钟少年、9 分钟成年）
+export const STAGE_PTS = [0, 220, 1250];          // 进入该阶段时的累计成长点（2026-10-22 从 55 / 280 调高：用户嫌长得太快、游戏寿命短。机器人「中快」档约 3 分钟少年、9 分钟成年；小目标奖励 10 / 30 写在卡片上）
 // 吃东西的成长倍数（按龙、按阶段）：幼年火龙吃得比海龙慢一截（扑空多、猎物散），补一点，两条龙进化时间接近
 export const GROW_K = { fire: [1.7, 1.1, 1], sea: [1, 1, 1] };
 export const ADULT_GOAL_PTS = 280;
@@ -74,4 +74,4 @@ export const GOALS = {
     [{ type: 'skill', n: 10 }, { type: 'eat', sp: 'shark', n: 1 }, { type: 'eat', sp: 'manta', n: 1 }, { type: 'eat', sp: 'gsquid', n: 1 }],
   ],
 };
-export const GOAL_REWARD = [3, 10, 0];
+export const GOAL_REWARD = [10, 30, 0];   // 完成一个小目标的成长（卡片上写明）；成年阶段没有成长，全部做完 = 「大胃王」

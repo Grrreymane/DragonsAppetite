@@ -236,6 +236,8 @@ export function createEnv(ctx, { sky, sea, look }) {
     env.night = night; env.dusk = dusk; env.rain = E.rain; env.over = over; env.mist = mist; env.bow = E.bow;
     env.zone = E.zone; env.under = under; env.tod = E.f; env.v = E.v; env.o = E.o; env.flash = E.flash;
     env.sunEl = k.sunEl;
+    // 画面暗的程度（给主角 / 猎物补光用）：夜里 1，阴天约 0.7，海雾约 0.35，黄昏一点点
+    env.gloom = Math.min(1, Math.max(night, over * .7, mist * .35, dusk * .25));
   }
   const _v = new THREE.Vector3();
   return { E, update, setWeather, REGION };

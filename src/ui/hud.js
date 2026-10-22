@@ -2,7 +2,7 @@
 // 动作键、成龙的第二技能键（龙吼 / 漩涡）、菜单 / 声音
 // update 每帧调用：只在数值变了时写 DOM；箭头 / 标记只改 transform 和 opacity；不读布局（屏幕尺寸由 ui.js 缓存在 G 里）
 import { SPECIES, SPECIES_IDS } from '../config/species.js';
-import { STAGE_PTS, DRAGONS, ABILITIES } from '../config/dragons.js';
+import { STAGE_PTS, DRAGONS, ABILITIES, GOALS, GOAL_REWARD } from '../config/dragons.js';
 import { icon, painted } from './icons.js';
 import { h, button, setIcon, pop } from './dom.js';
 import { createHuntHUD } from './hunts.js';
@@ -252,7 +252,7 @@ export function createHUD(root, api, G, pic) {
       const key = g.type + '|' + (g.sp || '') + '|' + g.n + '|' + g.icon + '|' + kind + '|' + st;
       if (key !== C.gkey || C.gRetry > 0 && (C.gRetry -= dt) <= 0) {
         const fresh = key !== C.gkey; C.gkey = key; pic.miss = false;
-        gPic.innerHTML = goalPic(g, kind, st); gCap.textContent = goalCap(g, kind); gCap.hidden = !gCap.textContent; C.gRetry = pic.miss ? .4 : 0;
+        gPic.innerHTML = goalPic(g, kind, st); gCap.textContent = goalCap(g, kind, S); gCap.hidden = !gCap.textContent; C.gRetry = pic.miss ? .4 : 0;
         gN.textContent = '/' + g.n; C.ghave = -1;
         const gr = g.type === 'grow'; if (gr !== C.gGrow) { C.gGrow = gr; goal.classList.toggle('grow', gr); }
         // 换目标时从右边滑进来；新能力卡在的时候卡片本来就滑走了（d-abon），不放（卡片走了以后 CSS 过渡会把它滑回来）
@@ -261,7 +261,10 @@ export function createHUD(root, api, G, pic) {
       }
       if (g.have !== C.ghave) { if (C.ghave >= 0 && g.have > C.ghave) pop(gHave, 1.5, 260); C.ghave = g.have; gHave.textContent = Math.min(g.have, g.n); }
       const done = !!g.done;
-      if (done !== C.gdone) { C.gdone = done; goal.classList.toggle('done', done); if (done) { pop(gChk, 1.8, 420); pop(goal, 1.12, 360); } }
+      if (done !== C.gdone) {
+        C.gdone = done; goal.classList.toggle('done', done);
+        if (done) { pop(gChk, 1.8, 420); pop(goal, 1.12, 360); const r = !g.extra && GOAL_REWARD[st]; if (r) { gCap.textContent = `成长 +${r}`; gCap.hidden = false; pop(gCap, 1.4, 360); } }
+      }
     }
 
     // 猎场入口：在画面内显示小徽记，画面外贴边指向；新能力卡出现时让出视线。
@@ -430,9 +433,14 @@ export function createHUD(root, api, G, pic) {
   }
 
   // 不是「吃某种生物」的小目标，图标看不懂：卡片下面加一行短字（用户问「这个是啥意思」）
-  function goalCap(g, kind) {
+  // 再加上做完有什么：幼 / 少年「成长 +N」，成龙「大胃王 i/n」（做完成龙的几个小目标 = 大胃王结算）（用户问「吃满有啥用」）
+  function goalCap(g, kind, S) {
     const fire = kind !== 'sea';
-    return ({ skill: fire ? '龙吼后吃' : '漩涡里吃', cooked: fire ? '烤熟再吃' : '撞晕再吃', cross: fire ? '扎水抓鱼' : '跃出抓鸟', combo: '连着吃' })[g.type] || '';
+    const what = ({ skill: fire ? '龙吼后吃' : '漩涡里吃', cooked: fire ? '烤熟再吃' : '撞晕再吃', cross: fire ? '扎水抓鱼' : '跃出抓鸟', combo: '连着吃' })[g.type] || '';
+    if (g.extra || g.type === 'grow' || !S) return what;
+    const st = S.stage | 0, list = GOALS[S.kind] && GOALS[S.kind][st];
+    const prize = st < 2 ? `成长 +${GOAL_REWARD[st]}` : list ? `大胃王 ${Math.min(list.length, (S.goalIdx | 0) + 1)}/${list.length}` : '';
+    return what ? `${what} · ${prize}` : prize;
   }
   function goalPic(g, kind, st) {
     if (g.type === 'grow') return `<span class="d-ggrow">${icon(`head_${kind === 'sea' ? 'sea' : 'fire'}${Math.min(2, (st || 0) + 1)}`)}<i>${icon('grow')}</i></span>`;

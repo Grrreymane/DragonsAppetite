@@ -38,7 +38,7 @@ wrap.prepend(renderer.domElement);
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(62, .5, .3, 3000);
 // env：昼夜 / 天气 / 区域的当前状态（view/env.js 每帧写），给远景生物等模块读
-const ctx = { THREE, scene, camera, renderer, GRAD, outlineMat, toonMat, env: { night: 0, dusk: 0, rain: 0, zone: 'green', under: 0 } };
+const ctx = { THREE, scene, camera, renderer, GRAD, outlineMat, toonMat, env: { night: 0, dusk: 0, rain: 0, zone: 'green', under: 0, gloom: 0 } };
 const sky = createSky(ctx); ctx.sky = sky.sky;
 applyLook(Q.get('look') || 'a', { renderer, sky });   // 用户选了 A 明亮卡通
 if (Q.get('outline')) setOutlineMode(Q.get('outline'));
@@ -283,7 +283,7 @@ function handleEvents(evs) {
         persist();
         break;
       case 'huntEnd':
-        if (e.caught > 0 && !evo && !ui.abilityLeft && !evs.some(event => event.type === 'evolve')) ui.toast(`${e.record ? '新纪录 ' : '吃到 '}${e.caught} 只${e.bonus ? `\n成长 +${e.bonus}` : ''}`);
+        if (e.caught > 0 && !evo && !ui.abilityLeft && !evs.some(event => event.type === 'evolve')) ui.toast(`${e.record ? '新纪录 ' : '吃到 '}${e.caught} 只${e.bonus ? `\n成长 +${e.bonus}` : ''}`, true);   // 小一号：次要的汇总
         persist();
         break;
       case 'goal': saveT = 0; break;
@@ -385,7 +385,7 @@ function advance(dtReal) {
     if (flashT > 0) { flashT -= dtReal; }
     const blink = h.invuln > 0 ? (Math.sin(T * Math.PI * 6) > 0 ? .12 : 0) : 0;
     if (!evo) dragon.flash.value = blink;
-    if (dragon.nrim) dragon.nrim.value = ctx.env.night * (1 - ctx.env.under * .5);
+    if (dragon.nrim) dragon.nrim.value = ctx.env.gloom * (1 - ctx.env.under * .5);   // 夜里、阴天、海雾：主角都要看得清
     dragon.update(h, S, dtReal * (state === 'play' ? 1 : 0), T);
     cam.update(h, S, dtReal, waveT);
     // 速度感：空气里的线从镜头旁掠过；火龙快的时候翼尖拉出白色尾迹
@@ -460,7 +460,7 @@ function advance(dtReal) {
   sea.update(S || { creatures: [], spots: [], hero: { x: 0, y: 60, z: 0, len: 10 }, t: T, kind: 'fire' }, alpha, dtReal, T, camera);
   const under = sea.underwater || 0;
   creatures.setUnderwater && creatures.setUnderwater(under);
-  creatures.setNight && creatures.setNight(ctx.env.night);
+  creatures.setNight && creatures.setNight(ctx.env.gloom);
   isl.update(camera, T, dtReal, waveT);
   landmarks.update(camera, T);
   clouds.update(camera, T, dtReal, isl.smokePoints());

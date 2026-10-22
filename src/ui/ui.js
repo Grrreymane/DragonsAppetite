@@ -167,8 +167,9 @@ export function createUI(root, api = {}) {
     toastOn = false; toastEnd = performance.now(); clearTimeout(toastSafe);
     clearTimeout(quietT); quietT = setTimeout(() => { nextAbility(); sync(); }, 60);   // 后面有卡片就出卡片，没有就把提示放出来
   };
-  const toast = text => {
+  const toast = (text, small) => {   // small：小一号（猎场结束的汇总这类次要的字）
     toastEl.textContent = text || '';
+    toastEl.classList.toggle('small', !!small);
     toastEl.classList.toggle('sea', kind === 'sea');
     toastOn = true; toastEst = performance.now() + 1600;
     if (toastEl.animate) {

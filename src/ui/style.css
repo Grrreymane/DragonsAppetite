@@ -609,3 +609,7 @@
 .dui .d-hunt.lead .d-hunt-icon .ic{ color:#ff9a5a; }
 .dui .d-hunt.lead.sea{ border-color:rgba(100,240,255,.9); }
 .dui .d-hunt.lead.sea .d-hunt-icon .ic{ color:#7ff4ff; }
+
+/* 小一号的大字（猎场结束的汇总） */
+.dui .d-toast.small{ font-size:24px; top:34%; }
+.dui .d-toast.small::first-line{ font-size:32px; }
