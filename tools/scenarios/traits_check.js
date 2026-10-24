@@ -1,0 +1,23 @@
+// 特性面板 + 精通目标卡（带界面截图）：成龙、学会两个特性、小目标做完 → 精通目标
+const wait = c => new Promise(r => { const k = () => c() ? r() : setTimeout(k, 100); k(); });
+await wait(() => window.__dg && window.__dg.ready);
+window.__pause = true;
+const D = window.__dg, S = D.S, { GOALS } = await import('/src/config/dragons.js');
+const press = el => { const r = el.getBoundingClientRect(), o = { bubbles: true, pointerId: 7, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2 }; el.dispatchEvent(new PointerEvent('pointerdown', o)); el.dispatchEvent(new PointerEvent('pointerup', o)); };
+const run = async n => { for (let i = 0; i < n; i++) { D.input.jx = 0; D.input.jy = 0; D.frame(1 / 30); await new Promise(r => setTimeout(r, 25)); } };
+D.save.tut.drag = 1; S.hunt = null; S.huntNext = 1e9; S.leaderNext = 1e9;
+await D.setStage(2);
+const first = S.kind === 'fire' ? ['ember', 'echo'] : ['eddy', 'surge'];
+for (const id of first) S.traits[id] = 1; S.equip = [...first];
+S.best = { combo: 14, skill: 6, cross: 2 };
+S.goalIdx = GOALS[S.kind][2].length; S.postN = 0; S.goal = null; S.goalDoneT = .01;
+await run(20);
+await __shot('a_master_card');
+press(document.querySelector('.d-goal')); await run(4);
+await __shot('b_master_tip');
+press(document.querySelector('.d-menu')); await new Promise(r => setTimeout(r, 400));
+await __shot('c_pause');
+const tb = [...document.querySelectorAll('.d-pause .d-btn')].find(b => b.textContent.includes('特性')); press(tb);
+await new Promise(r => setTimeout(r, 400));
+await __shot('d_traits');
+await __done();

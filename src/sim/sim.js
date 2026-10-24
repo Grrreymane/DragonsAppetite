@@ -8,13 +8,14 @@ import { stepCreatures, spawnInitial, manageSpawns, rescueSpawn, makeGroup } fro
 import { updateLock, assistSteer, targetable } from './assist.js';
 import { seabedY, groundAt } from './world.js';
 import { initHunts, stepHunts, recordHuntEat, stepHuntRival, recordRivalEat } from './hunts.js';
-import { stepLandmarks, pushOutOfLandmarks } from './landmarks.js';
-import { initLeaders, stepLeaders, leaderCaught, heatWave, eddyCheck } from './leaders.js';
+import { stepLandmarks, pushOutOfLandmarks, pushN } from './landmarks.js';
+import { initLeaders, stepLeaders, leaderCaught, heatWave, eddyCheck, roarAt, onRoar, traitsOnEat, skimK } from './leaders.js';
+import { initMastery, trackEat, masteryGoal, masteryProgress, MASTER_TTL } from './mastery.js';
 
 export const DT = 1 / 60;
 const TIER_PTS = [0, 1, 4, 10];
 
-export function createSim({ kind = 'fire', seed = 1, stage = 0, pts, goalIdx = 0, codex = {}, discoveries = {}, landmarks = {}, traits = {}, x = 0, z = 0, yaw = 0 } = {}) {
+export function createSim({ kind = 'fire', seed = 1, stage = 0, pts, goalIdx = 0, codex = {}, discoveries = {}, landmarks = {}, traits = {}, equip = null, best = null, x = 0, z = 0, yaw = 0 } = {}) {
   const cfg = DRAGONS[kind].stages[stage];
   const S = {
     t: 0, kind, stage, cfg, seed, rng: makeRng(seed),
@@ -35,7 +36,8 @@ export function createSim({ kind = 'fire', seed = 1, stage = 0, pts, goalIdx = 0
   S.bite = c => bite(S, c);
   spawnInitial(S);
   initHunts(S, discoveries);
-  initLeaders(S, traits);
+  initLeaders(S, traits, equip);
+  initMastery(S, best);
   return S;
 }
 
@@ -69,6 +71,8 @@ function setGoal(S) {
     if (S.cfg.canCross) home.push('surface');
     const can = SPECIES_IDS.filter(id => SPECIES[id].who.includes(S.kind) && SPECIES[id].tier <= S.cfg.eatTier && home.includes(SPECIES[id].hab));
     const miss = can.find(id => !S.codex[id].n);
+    // 成龙：精通目标（破纪录）和图鉴推荐轮着来；图鉴集齐了就一直是精通目标
+    if (S.stage === 2 && (!miss || (S.postN = (S.postN || 0) + 1) % 2 === 1)) { S.goal = masteryGoal(S); return; }
     S.goal = miss ? { type: 'eat', sp: miss, n: 1, have: 0, done: false, icon: miss, extra: true }
       : { type: 'grow', n: 1, have: 0, done: false, icon: 'grow', extra: true };
   }
@@ -81,10 +85,12 @@ function goalProgress(S, e) {
   else if (g.type === 'cross' && e.cross) inc = 1;
   else if (g.type === 'skill' && e.skill) inc = 1;
   else if (g.type === 'combo') { g.have = Math.max(g.have, e.combo); if (g.have >= g.n) inc = 0, g.have = g.n; }
+  else if (g.type === 'master') { masteryProgress(S, g); inc = 0; }
   g.have = Math.min(g.n, g.have + inc);
   if (g.have >= g.n) {
     g.done = true; S.goalDoneT = 1.2;
-    S.events.push({ type: 'goal', idx: S.goalIdx, extra: !!g.extra });
+    S.events.push({ type: 'goal', idx: S.goalIdx, extra: !!g.extra, master: g.type === 'master' ? g.m : null, val: g.n });
+    if (g.type === 'master') S.masteryN++;
     if (!g.extra) { S.pts += GOAL_REWARD[S.stage]; S.goalIdx++; }
     // 成龙的三个小目标都做完 = 这条龙「通关」（弹结算卡，之后继续自由玩、补图鉴）
     if (!g.extra && S.stage === 2 && S.goalIdx >= GOALS[S.kind][2].length) S.events.push({ type: 'complete' });
@@ -145,6 +151,8 @@ function eat(S, c, cross, extra) {
   if (cooked) heatWave(S, c);           // 特性：余烬热浪
   if (c.special) leaderCaught(S, c);    // 吃到领头
   if (c.rivalOf) recordRivalEat(S, c);  // 吃掉来抢食的天敌
+  traitsOnEat(S, c, cross);             // 特性：掠水 / 跃浪吸附、疾潮
+  trackEat(S, e);                       // 精通纪录：连吃、跨界连吃、一次技能吃几只
   S.noEat = 0;
   c.dying = 1; c.size = 0; c.g.members--;
   const i = S.creatures.indexOf(c); if (i >= 0) { S.creatures[i] = S.creatures[S.creatures.length - 1]; S.creatures.pop(); }
@@ -174,10 +182,11 @@ function interact(S, dt) {
     const canEat = c.edible || (c.cooked >= 1 && c.edibleCooked);
     // 烤熟的（喷火烤熟 / 热浪 / 雷劈）：吃的判定大一圈、吸附范围大一倍多（2026-10-22 用户觉得喷火鸡肋：先烤一片，飞过去一口气吸光）
     const roasted = c.roast > 0;
-    const eatR = (mR * 1.35 + c.size * .7) * (roasted ? 1.4 : 1);   // v2.1：用户觉得还是难吃到，判定再放大
+    const skim = skimK(S);   // 掠水 / 跃浪吸附：抓到跨界猎物后 3 秒内吸力变大
+    const eatR = (mR * 1.35 + c.size * .7) * (roasted ? 1.4 : 1) * (1 + .3 * skim);   // v2.1：用户觉得还是难吃到，判定再放大
     if (canEat && targetable(S, c)) {
       const ahead = (dx * f.x + dy * f.y + dz * f.z) / (d || 1);
-      const magR = eatR * (h.medium === 'air' && !fire ? 3.4 : 3.1) * (roasted ? 1.6 : 1);
+      const magR = eatR * (h.medium === 'air' && !fire ? 3.4 : 3.1) * (roasted ? 1.6 : 1) * (1 + .6 * skim);
       // 嚼一下：两口之间要停一会儿（幼 0.35 / 少 0.2 / 成 0.1 秒），不然一口气吸光整个鱼群
       if (d < eatR && h.chewT <= 0) { eat(S, c, crossNow); h.chewT = [.35, .2, .1][S.stage]; continue; }
       // 扑咬（v2）：锁定的猎物进了扑咬距离、在前方 50° 以内 → 头往前一探，0.15 秒内吸进嘴里
@@ -185,7 +194,7 @@ function interact(S, dt) {
       if (c.id === h.lock && d < lungeR && ahead > .5) {
         if (!c.lunged) { c.lunged = 1; S.events.push({ type: 'lunge', id: c.id }); }
         const k = Math.min(1, dt / .15); c.x -= dx * k; c.y -= dy * k; c.z -= dz * k;
-      } else if (d < magR && ahead > (roasted ? .25 : .6)) {   // 吸附：0.12 秒内吸进嘴里（烤熟的在侧前方也吸）
+      } else if (d < magR && ahead > (roasted || skim ? .25 : .6)) {   // 吸附：0.12 秒内吸进嘴里（烤熟的在侧前方也吸）
         const k = Math.min(1, dt / .12); c.x -= dx * k; c.y -= dy * k; c.z -= dz * k;
       }
       // 擦肩统计（只算玩家正瞄着的那只）：锁定的猎物进了扑咬距离算一次「靠近」，没吃到又离开（> 2 倍）算一次「擦肩」
@@ -330,7 +339,16 @@ export function step(S, inp) {
   h.lockUnder = tgt ? tgt.y < waveH(tgt.x, tgt.z, S.t) - .3 : false;
   const as = assistSteer(S, inp, tgt);
   if (S.kind === 'fire') stepFire(S, inp, dt, as); else stepSea(S, inp, dt, as);
-  if (pushOutOfLandmarks(h, Math.max(2, h.len * .4)) > .5 && h.bumpT <= 0) { h.bumpT = 1; S.events.push({ type: 'bump', x: h.x, y: h.y, z: h.z }); }
+  const lmHit = pushOutOfLandmarks(h, Math.max(2, h.len * .4));
+  if (lmHit > .05) {
+    // 撞上地标（拱门腿、骸骨、浮空岛）：航向往切线方向偏，顺着滑开（不然正面顶着，每帧被推回原地）
+    const fx = Math.sin(h.yaw), fz = Math.cos(h.yaw), nh = Math.hypot(pushN.x, pushN.z);
+    if (nh > .2) {
+      const nx = pushN.x / nh, nz = pushN.z / nh, into = fx * nx + fz * nz;
+      if (into < 0) { const tx = fx - nx * into, tz = fz - nz * into; h.yaw += Math.atan2(Math.sin(Math.atan2(tx, tz) - h.yaw), Math.cos(Math.atan2(tx, tz) - h.yaw)) * Math.min(1, dt * 8); }
+    }
+    if (lmHit > .5 && h.bumpT <= 0) { h.bumpT = 1; S.events.push({ type: 'bump', x: h.x, y: h.y, z: h.z }); }
+  }
   stepLandmarks(S, dt);
   eddyCheck(S);
   stepSkill(S, inp, dt);
@@ -349,6 +367,7 @@ export function step(S, inp) {
   S.combo.t = Math.max(0, S.combo.t - dt); if (S.combo.t <= 0) S.combo.n = 0;
   S.noEat = (S.noEat || 0) + dt; S.stats.maxNoEat = Math.max(S.stats.maxNoEat, S.noEat);
   if (S.goalDoneT > 0) { S.goalDoneT -= dt; if (S.goalDoneT <= 0) setGoal(S); }
+  else if (S.goal && S.goal.type === 'master' && !S.goal.done && S.t - S.goal.t0 > MASTER_TTL) setGoal(S);   // 精通目标太久没做到：换一种
   checkEvolve(S);
   if (S.evolving > 0) S.evolving -= dt;
   updateSize(S);
@@ -406,12 +425,9 @@ function stepSkill(S, inp, dt) {
   k.cd = sk.cd; k.t = sk.t; S.stats.skills++;
   S.events.push({ type: 'skill', id: sk.id, x: h.x, y: h.y, z: h.z, r: sk.r });
   if (sk.id === 'roar') {
-    // 龙吼：范围内的猎物全被吼晕（多吃一档），天敌逃跑
-    for (const c of S.creatures) {
-      if (Math.hypot(c.x - h.x, c.y - h.y, c.z - h.z) > sk.r) continue;
-      c.skillHit = 1; c.daze = sk.t; if (c.edibleCooked) c.cooked = 1;
-      if (SPECIES[c.sp].predator && !c.edible) { c.st = 'retreat'; c.stT = 8; }
-    }
+    // 龙吼：范围内的猎物全被吼晕（多吃一档），天敌逃跑；带着「回声龙吼」1.1 秒后再吼一次
+    roarAt(S, h.x, h.y, h.z, sk.r, sk.t);
+    onRoar(S, sk);
   }
 }
 export { SPECIES };

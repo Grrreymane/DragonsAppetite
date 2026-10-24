@@ -12,9 +12,11 @@ function toLocal(L, c, px, py, pz) {
 }
 function toWorldDir(L, x, y, z) { const cs = Math.cos(L.yaw), sn = Math.sin(L.yaw); return [x * cs + z * sn, y, -x * sn + z * cs]; }
 
+// 最近一次推出去的方向（世界坐标，单位向量）：主程序拿来让龙顺着滑开
+export const pushN = { x: 0, y: 0, z: 0 };
 // 把球（p，半径 rad）推出地标的胶囊；返回推了多少
 export function pushOutOfLandmarks(p, rad) {
-  let hit = 0;
+  let hit = 0; pushN.x = pushN.y = pushN.z = 0;
   for (const L of LANDMARKS) {
     const caps = LANDMARK_CAPS[L.id]; if (!caps) continue;
     const c = landmarkPos(L, p.x, p.z);
@@ -26,7 +28,8 @@ export function pushOutOfLandmarks(p, rad) {
       const qx = lx - (ax + bx * t), qy = ly - (ay + by * t), qz = lz - (az + bz * t), d = Math.hypot(qx, qy, qz);
       if (d >= r) continue;
       const pen = (r - d) * L.scale, n = d > 1e-4 ? toWorldDir(L, qx / d, qy / d, qz / d) : [0, 1, 0];
-      p.x += n[0] * pen; p.y += n[1] * pen; p.z += n[2] * pen; hit = Math.max(hit, pen);
+      p.x += n[0] * pen; p.y += n[1] * pen; p.z += n[2] * pen;
+      if (pen > hit) { hit = pen; pushN.x = n[0]; pushN.y = n[1]; pushN.z = n[2]; }
     }
   }
   return hit;

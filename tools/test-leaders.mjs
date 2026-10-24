@@ -2,7 +2,8 @@
 import assert from 'node:assert/strict';
 import { createSim, step } from '../src/sim/sim.js';
 import { makeBot, TIERS } from '../src/sim/bot.js';
-import { TRAITS, LEADER_PTS, heatWave } from '../src/sim/leaders.js';
+import { TRAITS, TRAIT_LIST, EQUIP_MAX, LEADER_PTS, heatWave, traitOn } from '../src/sim/leaders.js';
+import { masteryGoal, MASTERY } from '../src/sim/mastery.js';
 import { createHunt, RIVAL_PTS } from '../src/sim/hunts.js';
 
 let checks = 0;
@@ -23,11 +24,12 @@ function play(S, sec, chase = true, onStep) {
 for (const kind of ['fire', 'sea']) {
   const trait = kind === 'fire' ? 'ember' : 'eddy';
   test(`${kind}: the first leader appears, can be caught, and teaches ${trait} once`, () => {
-    const S = createSim({ kind, seed: 3 }); let cues = 0, traits = 0, caught = 0, overlap = 0;
-    play(S, 240, true, S => { for (const e of S.events) { if (e.type === 'leaderCue') cues++; if (e.type === 'trait') traits++; if (e.type === 'leaderEnd' && e.caught) caught++; } if (S.leader && S.hunt) overlap++; });
+    const S = createSim({ kind, seed: 3 }); let cues = 0, caught = 0, overlap = 0; const taught = {};
+    play(S, 240, true, S => { for (const e of S.events) { if (e.type === 'leaderCue') cues++; if (e.type === 'trait') taught[e.id] = (taught[e.id] || 0) + 1; if (e.type === 'leaderEnd' && e.caught) caught++; } if (S.leader && S.hunt) overlap++; });
     assert.ok(cues >= 1, 'a leader cue appeared');
     assert.ok(caught >= 1, 'chasing bot caught a leader');
-    assert.equal(traits, 1, 'the trait event fires only on the first catch');
+    assert.equal(taught[trait], 1, 'the first trait is taught exactly once');
+    for (const id in taught) assert.equal(taught[id], 1, `trait ${id} taught once`);
     assert.equal(S.traits[trait], 1);
     assert.equal(overlap, 0, 'leader and hunt never run at the same time');
   });
@@ -71,5 +73,37 @@ test('a rival steals hunt prey, and eating it pays RIVAL_PTS exactly once', () =
   }
   assert.ok(stolen >= 1, 'rival stole at least one');
   assert.ok(n <= 1 && paid === n * RIVAL_PTS, `paid ${paid} over ${n} events`);
+});
+// 特性 v2：每条龙 3 个、最多带 2 个；后两个少年起才出领头
+test('baby leaders only teach the stage-0 trait; teen leaders teach the others', () => {
+  for (const kind of ['fire', 'sea']) {
+    const S = createSim({ kind, seed: 4 }); const seen = new Set();
+    play(S, 200, true, S => { if (S.leader) seen.add(S.leader.trait); if (S.stage > 0) S.stage = 0; });
+    for (const id of seen) assert.equal(TRAITS[id].stage, 0, `${kind} baby saw ${id}`);
+    const T = createSim({ kind, seed: 4, stage: 1, traits: { [TRAIT_LIST[kind][0]]: 1 } }); let first = null;
+    play(T, 150, true, S => { if (S.leader && !first) first = S.leader.trait; });
+    assert.equal(first, TRAIT_LIST[kind][1], `${kind} teen gets the next trait first`);
+  }
+});
+test('at most two traits are equipped; a third is learned but not worn', () => {
+  const all = Object.fromEntries(TRAIT_LIST.fire.map(id => [id, 1]));
+  const S = createSim({ kind: 'fire', seed: 4, stage: 2, traits: all });
+  assert.equal(S.equip.length, EQUIP_MAX);
+  assert.ok(!traitOn(S, TRAIT_LIST.fire[2]));
+  const R = createSim({ kind: 'fire', seed: 4, stage: 2, traits: all, equip: ['skimF', 'echo', 'ember'] });
+  assert.deepEqual(R.equip, ['skimF', 'echo']);
+});
+test('echo roar fires a second, smaller roar once', () => {
+  const S = createSim({ kind: 'fire', seed: 4, stage: 2, traits: { echo: 1 }, equip: ['echo'] }); step(S, { jx: 0, jy: 0 });
+  let roars = [];
+  for (let i = 0; i < 60 * 3; i++) { step(S, { jx: 0, jy: 0, skillTap: i === 1 }); for (const e of S.events) if (e.type === 'skill') roars.push(e); }
+  assert.equal(roars.length, 2); assert.ok(roars[1].echo && roars[1].r < roars[0].r);
+});
+// 成年精通：目标 = 纪录 + 步长，三种轮流
+test('mastery goals rotate and always ask to beat the record', () => {
+  const S = createSim({ kind: 'sea', seed: 4, stage: 2, best: { combo: 12, skill: 1, cross: 'x' } });
+  const a = masteryGoal(S), b = masteryGoal(S), c = masteryGoal(S);
+  assert.deepEqual([a.m, b.m, c.m], ['combo', 'skill', 'cross']);
+  assert.equal(a.n, 12 + MASTERY.combo.step); assert.equal(b.n, MASTERY.skill.base); assert.equal(c.n, MASTERY.cross.base);
 });
 console.log(`Leader / trait regression: ${checks} checks passed.`);

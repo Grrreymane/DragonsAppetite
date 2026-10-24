@@ -149,6 +149,9 @@ const ui = mkUI(document.getElementById('ui'), {
     if (state === 'play') { state = 'pause'; input.reset(); ui.showMap(S, save, () => { if (state === 'pause') { state = 'play'; last = performance.now(); } }); }
     else ui.showMap(S, save);
   },
+  // 特性面板（暂停菜单）：带上 / 取下
+  onTraits: () => { if (S && ui.showTraits) ui.showTraits(S); },
+  onEquip: (id, on) => { if (!S) return; S.equip = S.equip.filter(x => x !== id); if (on) S.equip.push(id); persist(); },
   // 点掉首次提示：这条以后不再出
   onHintDismiss: name => { const k = { drag: 'drag', plunge: 'plunge', breach: 'breach', fire: 'fire', dash: 'dash' }[name]; if (k && save.tut) { save.tut[k] = 1; writeSave(save); } hintState.cur = null; },
   onToggleMute: () => { save.mute = !save.mute; audio.setMute(save.mute); ui.setMute(save.mute); writeSave(save); },
@@ -180,7 +183,7 @@ async function startGame(k) {
   kind = k; save.pick = k; writeSave(save);
   const sv = save[k];
   const seed = +(Q.get('seed') || 1) + (sv.playSec | 0);
-  S = createSim({ kind: k, seed, stage: sv.stage | 0, pts: sv.pts | 0, goalIdx: sv.goal | 0, codex: save.codex, discoveries: save.discoveries, landmarks: sv.landmarks, traits: sv.traits });
+  S = createSim({ kind: k, seed, stage: sv.stage | 0, pts: sv.pts | 0, goalIdx: sv.goal | 0, codex: save.codex, discoveries: save.discoveries, landmarks: sv.landmarks, traits: sv.traits, equip: sv.equip, best: sv.best });
   eatenBase = sv.eaten | 0;
   S.env = ctx.env;   // 昼夜 / 天气（只读：夜里、下雨时领头来得勤一点）
   if (Q.has('stage')) setStage(S, +Q.get('stage'));
@@ -211,6 +214,8 @@ function persist() {
   save.discoveries = S.discoveries;
   sv.landmarks = Object.assign(sv.landmarks || {}, S.landmarks);
   sv.traits = Object.assign(sv.traits || {}, S.traits);
+  sv.equip = [...(S.equip || [])];
+  sv.best = Object.assign({}, S.best);
   writeSave(save);
   const n = SPECIES_IDS.filter(id => save.codex[id] && save.codex[id].n).length;
   reportProgress(`${DRAGONS[S.kind].zh}·${STAGE_NAMES[S.stage]} · 吃了 ${totalEaten()} 只 · 图鉴 ${n}/${SPECIES_IDS.length}`);
@@ -298,7 +303,17 @@ function handleEvents(evs) {
         if (e.caught > 0 && !evo && !ui.abilityLeft && !evs.some(event => event.type === 'evolve')) ui.toast(`${e.record ? '新纪录 ' : '吃到 '}${e.caught} 只${e.bonus ? `\n成长 +${e.bonus}` : ''}`, true);   // 小一号：次要的汇总
         persist();
         break;
-      case 'goal': saveT = 0; break;
+      case 'goal':
+        saveT = 0;
+        if (e.master) {   // 精通：破纪录
+          const fire = S.kind === 'fire', nm = e.master === 'combo' ? '连吃' : e.master === 'skill' ? (fire ? '一次龙吼' : '一次漩涡') : (fire ? '连续扎水' : '连续跃出');
+          P.burst('gold', S.hero.x, S.hero.y, S.hero.z, 24, 8, 1, .6);
+          if (!evo) ui.toast(`新纪录！\n${nm} ${e.val}`, true);
+          persist();
+        }
+        break;
+      case 'skim': P.burst(S.kind === 'sea' ? 'bubble' : 'spark', e.x, e.y, e.z, 16, 6, .6, .3, { grow: .6 }); break;
+      case 'surge': P.burst('bubble', e.x, e.y, e.z, 10, 6, .5, .2, { rise: 2, grow: .6, alpha: .8 }); break;
       case 'complete': if (!save[S.kind].adultShown) resultTimer = 1.6; break;
       case 'codex': break;
       case 'codexComplete':   // 这条龙能吃的全吃到了：庆祝 + 再弹一次结算（「图鉴大师」）

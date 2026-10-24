@@ -3,7 +3,7 @@ const KEY = 'dragon_v1';
 const blank = () => ({
   v: 1, pick: 'fire', mute: false, left: false,
   tut: { drag: 0, plunge: 0, breach: 0, fire: 0, dash: 0 },
-  fire: { stage: 0, pts: 0, eaten: 0, goal: 0, adultShown: 0, playSec: 0, landmarks: {}, traits: {} },   // landmarks：这条龙发现过的地标（各给一次成长）；traits：学会的特性（永久，自动装上）
+  fire: { stage: 0, pts: 0, eaten: 0, goal: 0, adultShown: 0, playSec: 0, landmarks: {}, traits: {} },   // landmarks：这条龙发现过的地标（各给一次成长）；traits：学会的特性（永久）；equip：带着的特性（最多 2 个，暂停菜单换）；best：精通纪录
   sea: { stage: 0, pts: 0, eaten: 0, goal: 0, adultShown: 0, playSec: 0, landmarks: {}, traits: {} },
   codex: {}, discoveries: {},
 });

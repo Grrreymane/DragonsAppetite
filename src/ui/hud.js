@@ -271,6 +271,7 @@ export function createHUD(root, api, G, pic) {
         gPic.innerHTML = goalPic(g, kind, st); gCap.hidden = true; gTip.hidden = true; C.gRetry = pic.miss ? .4 : 0;
         gN.textContent = '/' + g.n; C.ghave = -1;
         const gr = g.type === 'grow'; if (gr !== C.gGrow) { C.gGrow = gr; goal.classList.toggle('grow', gr); }
+        goal.classList.toggle('master', g.type === 'master');   // 精通目标：金边 + 小皇冠
         // 换目标时从右边滑进来；新能力卡在的时候卡片本来就滑走了（d-abon），不放（卡片走了以后 CSS 过渡会把它滑回来）
         if (fresh && C.gShown && goal.animate && !root.classList.contains('d-abon')) goal.animate([{ transform: 'translateX(40px)', opacity: 0 }, { transform: 'none', opacity: 1 }], { duration: 300, easing: 'ease-out' });
         C.gShown = true;
@@ -279,7 +280,8 @@ export function createHUD(root, api, G, pic) {
       const done = !!g.done;
       if (done !== C.gdone) {
         C.gdone = done; goal.classList.toggle('done', done);
-        if (done) { pop(gChk, 1.8, 420); pop(goal, 1.12, 360); const r = !g.extra && GOAL_REWARD[st]; if (r) { gCap.textContent = `+${r}`; gCap.hidden = false; pop(gCap, 1.4, 360); clearTimeout(C.capT); C.capT = setTimeout(() => { gCap.hidden = true; }, 1600); } }   // 做完：卡片下面闪一下「+N」
+        if (done) { pop(gChk, 1.8, 420); pop(goal, 1.12, 360); const r = !g.extra && GOAL_REWARD[st]; if (g.type === 'master') { gCap.textContent = '新纪录！'; gCap.hidden = false; pop(gCap, 1.4, 360); clearTimeout(C.capT); C.capT = setTimeout(() => { gCap.hidden = true; }, 1800); }
+          else if (r) { gCap.textContent = `+${r}`; gCap.hidden = false; pop(gCap, 1.4, 360); clearTimeout(C.capT); C.capT = setTimeout(() => { gCap.hidden = true; }, 1600); } }   // 做完：卡片下面闪一下「+N」
       }
     }
 
@@ -462,6 +464,12 @@ export function createHUD(root, api, G, pic) {
     else if (g.type === 'skill') { what = fire ? `龙吼后吃 ${n} 只` : `漩涡里吃 ${n} 只`; how = fire ? '按龙吼，吼晕的猎物吃掉才算' : '按漩涡，卷进来的鱼吃掉才算'; }
     else if (g.type === 'combo') { what = `连着吃 ${n} 只`; how = '一口接一口，别停太久'; }
     else if (g.type === 'grow') { what = '长大'; how = '成长条满了就会进化'; }
+    else if (g.type === 'master') {
+      const sk = fire ? '龙吼' : '漩涡';
+      what = g.m === 'combo' ? `连吃 ${n} 只` : g.m === 'skill' ? `一次${sk}吃 ${n} 只` : `连续${fire ? '扎水' : '跃出'}抓 ${n} 只`;
+      how = (g.m === 'combo' ? '一口接一口，别停太久' : g.m === 'skill' ? `放完${sk}马上吃，3 秒内都算` : `抓到后马上再${fire ? '扎' : '跃'}，4 秒内都算`) + ` · 纪录 ${g.rec || 0}`;
+      return `<b>${what}</b><span>${how}</span><em>精通挑战 · 破纪录！</em>`;
+    }
     const st = S.stage | 0, list = GOALS[S.kind] && GOALS[S.kind][st];
     const prize = g.extra || g.type === 'grow' ? '' : st < 2 ? `做完：成长 +${GOAL_REWARD[st]}` : list ? `成年目标 ${Math.min(list.length, (S.goalIdx | 0) + 1)}/${list.length} · 全做完 = 大胃王` : '';
     return `<b>${what}</b><span>${how}</span>${prize ? `<em>${prize}</em>` : ''}`;
@@ -473,7 +481,9 @@ export function createHUD(root, api, G, pic) {
     if (ic === 'cooked') return kind === 'fire' ? icon('fire') : `<span class="d-gstun">${icon('dash')}<i>${icon('star', 'stun')}</i></span>`;   // 海龙：撞晕（冲刺 + 星星）
     if (ic === 'cross') return icon(kind === 'fire' ? 'plunge' : 'breach');
     if (ic === 'skill') return icon(kind === 'fire' ? 'roar' : 'vortex');
-    if (ic === 'combo') return '<b class="d-x">×</b>';
+    if (ic === 'combo' || ic === 'master_combo') return '<b class="d-x">×</b>';
+    if (ic === 'master_skill') return icon(kind === 'fire' ? 'roar' : 'vortex');
+    if (ic === 'master_cross') return icon(kind === 'fire' ? 'plunge' : 'breach');
     if (ic === 'depth') return icon('down');
     if (ABILITIES[ic]) return icon(abIcon(ic, kind));
     return icon('star');

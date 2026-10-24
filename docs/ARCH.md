@@ -197,6 +197,14 @@ ui 新接口：`api.onSkill()`（第二技能按钮按下）；`ui.showAbility(l
 - 海龙在浅滩（海底离水面 < 4 米）当成墙：退回、往深的一边转（`sim/hero.js`；以前「离底 3 米」会把它抬到沙滩上卡住）。
 - 截图：`tools/scenarios/seabed_shots.js`（`bd=1` 打印各部分三角面）、`seabed_probe.js`；对比图 `docs/seabed_sheet.jpg`。
 
+## 特性 v2 与精通（2026-10-24）
+
+- `sim/leaders.js`：`TRAITS`（每条龙 3 个：`stage` = 几阶段起出领头）、`TRAIT_LIST[kind]`、`EQUIP_MAX = 2`、`traitOn(S, id)`（学会且带着）。`S.equip` 存带着的（`createSim({ equip })`，存档 `save[龙].equip`）。`roarAt()` 是龙吼效果（技能和回声共用），`onRoar` / `stepEcho` 做回声，`traitsOnEat` 做掠水 / 跃浪吸附（`S.skimT`）和疾潮（`h.surgeAdd`）。新事件：`skim`、`surge`；回声是 `skill {id:'roar', echo:true}`；`trait` 多了 `equipped`。
+- `sim/mastery.js`：`initMastery(S, best)`、`trackEat`（在 `goalProgress` 之前调）、`masteryGoal`（`{type:'master', m, n, rec, t0}`）、`masteryProgress`、`MASTER_TTL = 90`。`goal` 事件多了 `master`、`val`。
+- 界面：`ui/traits.js`（暂停菜单「特性」→ `api.onTraits` / `api.onEquip(id, on)`）；小目标卡 `.master` 金边，点开写纪录；图鉴「发现」里每条龙一行纪录。
+- 地标碰撞：`landmarks.js` 导出 `pushN`（最近一次推出方向），sim 用它把航向往切线方向偏，顺着滑开（之前会正面顶在拱门腿上）。
+- 截图：`tools/scenarios/traits_check.js`。
+
 ## 调试钩子
 
 `window.__dg = { S, step(n), input, setStage(stage), give(pts), teleport(x,y,z), render(), ready }`，`?debug` 显示 fps / 绘制调用 / 三角面，`?rec` 打开 preserveDrawingBuffer，`?seed=`、`?kind=fire|sea`、`?stage=0|1|2`、`?autostart`（跳过标题直接开局）。

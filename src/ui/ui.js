@@ -1,6 +1,7 @@
 // 界面总入口（DOM）：createUI(root, api) → 各界面的开关 + 每帧 update。接口见 docs/ARCH.md「ui 接口」「v2 新增」
 // root = #ui（在 #wrap 里，和画布一样大）。样式在 ui/style.css（index.html 引入）
 import { createMap } from './map.js';
+import { createTraits } from './traits.js';
 import { SPECIES } from '../config/species.js';
 import { ABILITIES } from '../config/dragons.js';
 import { icon, onSheet, SHEET } from './icons.js';
@@ -95,6 +96,7 @@ export function createUI(root, api = {}) {
   const title = createTitle(root, api);
   const codex = createCodex(root, api, pic);
   const map = createMap(root, api);
+  const traits = createTraits(root, api);
   const result = createResult(root, api);
   const loading = createLoading(root);
   let kind = 'fire', mute = false, left = false;
@@ -286,6 +288,7 @@ export function createUI(root, api = {}) {
     hidePause() { menu.hide(); },
     showCodex(save, onClose) { codex.show(save, onClose); },
     showMap(S, save, onClose) { map.show(S, save, onClose); },
+    showTraits(S, onClose) { traits.show(S, onClose); },
     hideCodex() { codex.hide(); },
     showResult,
     hideResult() { result.hide(); if (resOpen) { resOpen = false; setTimeout(nextAbility, 350); } },

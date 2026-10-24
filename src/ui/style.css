@@ -699,3 +699,24 @@
 .dui .d-maplegend b{ color:#e0a020; margin-left:8px; font-size:13px; }
 /* 连吃挪到地图按钮下面 */
 .dui .d-combo{ top:calc(var(--st) + 136px * var(--s)); }
+
+/* 精通目标：小目标卡金边 */
+.dui .d-goal.master{ box-shadow:inset 0 0 0 2.5px #f0b43a, inset 0 0 0 4.5px rgba(255,240,180,.6), 0 3px 0 var(--ink), 0 5px 8px rgba(0,0,0,.2); }
+/* 特性面板 */
+.dui .d-traits{ z-index:17; display:flex; align-items:center; justify-content:center; }
+.dui .d-trbox{ position:relative; width:calc(100% - 32px); max-width:380px; padding:30px 14px 14px; display:flex; flex-direction:column; gap:10px; }
+.dui .d-trtip{ text-align:center; font:500 12px/1.4 var(--fP); color:var(--txt2); }
+.dui .d-trlist{ display:flex; flex-direction:column; gap:8px; }
+.dui .d-tr{ display:flex; align-items:center; gap:10px; padding:8px 10px; border-radius:14px; border:2px solid rgba(42,26,20,.25); background:rgba(255,255,255,.35); }
+.dui .d-tr.got{ cursor:pointer; border-color:var(--ink); background:rgba(255,255,255,.6); }
+.dui .d-tr.on{ border-color:#d8941c; background:#fff3cf; box-shadow:0 0 0 2px rgba(240,180,58,.45); }
+.dui .d-tric{ flex:none; width:40px; height:40px; border-radius:12px; display:flex; align-items:center; justify-content:center; background:#f4e0c0; }
+.dui .d-tric .ic{ font-size:28px; }
+.dui .d-tr:not(.got) .d-tric{ opacity:.55; }
+.dui .d-trtx{ flex:1; min-width:0; display:flex; flex-direction:column; gap:2px; }
+.dui .d-trtx b{ font:800 15px/1.2 var(--fT); color:var(--txt); }
+.dui .d-trtx span{ font:500 12px/1.35 var(--fP); color:var(--txt2); }
+.dui .d-trsw{ flex:none; font:800 12px/1 var(--fT); font-style:normal; padding:6px 9px; border-radius:10px; background:#e8dcc8; color:var(--txt2); }
+.dui .d-tr.on .d-trsw{ background:#f0b43a; color:#fff; text-shadow:0 1px 0 rgba(0,0,0,.25); }
+.dui .d-trbot{ display:flex; justify-content:center; }
+.dui .d-trbot .d-btn{ min-width:140px; }

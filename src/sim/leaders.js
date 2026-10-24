@@ -1,25 +1,48 @@
 // 金色领头追逐（GDD §19.3 A 的首版切片）+ 永久特性（§19.4）。纯逻辑。
 // 流程：远处一道光柱（线索）→ 靠近 55 米开始追 → 领头「冲一阵、累一阵」地逃（累的时候慢，是追上的窗口），带着一小群跟班
 //      → 吃到领头：第一次学会这条龙的特性（永久），每次都 +LEADER_PTS 成长；45 秒没追上 / 离太远就跑掉，过一会儿再来。
-// 特性（自动装上，不用进菜单）：
-//   ember 余烬热浪（火龙）：吃烤熟的猎物时，周围的猎物一起烤熟（热浪烤熟的再吃不会再起热浪）
-//   eddy  残留漩涡（海龙）：冲刺结束的地方留下一个小漩涡（2.6 秒），把附近的鱼卷进去转晕
+// 特性（2026-10-24 扩到每条龙 3 个，最多带 2 个：学会时有空位就自动带上，暂停菜单「特性」里换）：
+//   火龙 ember 余烬热浪：吃烤熟的猎物时，周围的猎物一起烤熟（热浪烤熟的再吃不会再起热浪）
+//        echo  回声龙吼（少年起）：龙吼 1.1 秒后在龙身边再吼一次，范围小一圈（回声不再起回声）
+//        skimF 掠水吸附（少年起）：扎水抓到鱼后 3 秒内，嘴边的吸力和判定变大（连着扎、连着抓）
+//   海龙 eddy  残留漩涡：冲刺结束的地方留下一个小漩涡（2.6 秒），把附近的鱼卷进去转晕
+//        surge 疾潮（少年起）：冲刺中每吃一口，冲刺多 0.4 秒（每次冲刺最多多 1.2 秒）、冷却少 1 秒
+//        skimS 跃浪吸附（少年起）：跃出抓到鸟后 3 秒内，嘴边的吸力和判定变大
+// 领头：按顺序出这条龙还没学会、现在用得上的特性的领头；都学会了就随机出（只给成长）
 // 同一时间只有一个大事件：猎场进行中不出领头，领头在场时不开猎场（hunts.js 里也判断 S.leader）。
 import { makeRng, clamp, lerp, damp } from './rng.js';
 import { groundAt, seabedY, waveH } from './world.js';
 import { makeGroup } from './creatures.js';
+import { SPECIES } from '../config/species.js';
 
 export const LEADER_PTS = 10;
 export const TRAITS = {
-  ember: { kind: 'fire', zh: '余烬热浪', desc: '吃烤熟的，周围的也一起烤熟', icon: 'fire', leader: '余烬雀', sp: 'sparrow', n: 6 },
-  eddy: { kind: 'sea', zh: '残留漩涡', desc: '冲刺结束留下一个小漩涡', icon: 'vortex', leader: '涡心鱼', sp: 'sardine', n: 10 },
+  ember: { kind: 'fire', stage: 0, zh: '余烬热浪', desc: '吃烤熟的，周围的也一起烤熟', icon: 'fire', leader: '余烬雀', sp: 'sparrow', n: 6 },
+  echo: { kind: 'fire', stage: 1, zh: '回声龙吼', desc: '龙吼过一会儿再吼一次', icon: 'roar', leader: '鸣风信天翁', sp: 'albatross', n: 3 },
+  skimF: { kind: 'fire', stage: 1, zh: '掠水吸附', desc: '扎水抓到鱼后，3 秒内吸力变大', icon: 'plunge', leader: '银翼海鸥', sp: 'gull', n: 6 },
+  eddy: { kind: 'sea', stage: 0, zh: '残留漩涡', desc: '冲刺结束留下一个小漩涡', icon: 'vortex', leader: '涡心鱼', sp: 'sardine', n: 10 },
+  surge: { kind: 'sea', stage: 1, zh: '疾潮', desc: '冲刺时每吃一口，冲得更久', icon: 'dash', leader: '疾潮鲭', sp: 'mackerel', n: 10 },
+  skimS: { kind: 'sea', stage: 1, zh: '跃浪吸附', desc: '跃出抓到鸟后，3 秒内吸力变大', icon: 'breach', leader: '跃浪飞鱼', sp: 'flyfish', n: 6 },
 };
-const TRAIT_OF = { fire: 'ember', sea: 'eddy' };
+export const TRAIT_LIST = { fire: ['ember', 'echo', 'skimF'], sea: ['eddy', 'surge', 'skimS'] };
+export const EQUIP_MAX = 2;
+// 这个特性现在生效吗（学会了、而且带着）
+export const traitOn = (S, id) => !!(S.traits && S.traits[id] && S.equip && S.equip.includes(id));
+// 这次出哪个特性的领头：还没学会、阶段够的排前面；都学会了就随机
+function pickTrait(S) {
+  const list = TRAIT_LIST[S.kind].filter(id => TRAITS[id].stage <= S.stage);
+  const miss = list.find(id => !S.traits[id]);
+  if (miss) return miss;
+  return list[Math.floor(S.leaderRng() * list.length)] || TRAIT_LIST[S.kind][0];
+}
 const FIRST_AT = 55, CUE_MAX = 45, CHASE_MAX = 45, START_R = 55, LOSE_R = 260;
 
-export function initLeaders(S, traits = {}) {
+export function initLeaders(S, traits = {}, equip = null) {
   S.traits = {};
-  for (const k in traits || {}) if (traits[k] && TRAITS[k]) S.traits[k] = 1;
+  for (const k in traits || {}) if (traits[k] && TRAITS[k] && TRAITS[k].kind === S.kind) S.traits[k] = 1;
+  // 带着的特性：存档里有就用（只留学会了的、最多 2 个），旧存档没有就把学会的前 2 个带上
+  S.equip = (Array.isArray(equip) ? equip : TRAIT_LIST[S.kind]).filter(id => S.traits[id]).slice(0, EQUIP_MAX);
+  S.echo = null; S.skimT = 0;
   S.leader = null;
   S.leaderNext = FIRST_AT;
   S.leaderRng = makeRng((S.seed | 0) ^ 0x4c454144);
@@ -47,7 +70,7 @@ function placeCue(S) {
 }
 
 function startCue(S) {
-  const trait = TRAIT_OF[S.kind], T = TRAITS[trait], p = placeCue(S);
+  const trait = pickTrait(S), T = TRAITS[trait], p = placeCue(S);
   if (!p) return null;
   const world = S.rng;
   let g;
@@ -81,7 +104,9 @@ export function leaderCaught(S, c) {
   S.traits[trait] = 1;
   S.pts += LEADER_PTS;
   S.events.push({ type: 'leaderEnd', caught: true, trait, first, pts: LEADER_PTS, x: c.x, y: c.y, z: c.z });
-  if (first) S.events.push({ type: 'trait', id: trait, zh: T.zh, desc: T.desc, icon: T.icon });
+  let equipped = S.equip.includes(trait);
+  if (first && S.equip.length < EQUIP_MAX) { S.equip.push(trait); equipped = true; }
+  if (first) S.events.push({ type: 'trait', id: trait, zh: T.zh, desc: T.desc + (equipped ? '' : '（暂停菜单里换上）'), icon: T.icon, equipped });
   if (L && L.cid === c.id) endLeader(S, true);
 }
 
@@ -89,6 +114,8 @@ export function stepLeaders(S, dt) {
   if (!S.leaderRng) initLeaders(S, S.traits);
   const h = S.hero, fire = S.kind === 'fire';
   stepEddy(S, dt);
+  stepEcho(S, dt);
+  if (S.skimT > 0) S.skimT -= dt;
   let L = S.leader;
   if (!L) {
     if (S.t < S.leaderNext || S.hunt || S.stats.eaten < 2) return;
@@ -156,7 +183,7 @@ function face(c, dt) {
 // ---------- 特性：余烬热浪 ----------
 // 吃掉烤熟的猎物 c（还没从列表里删）时调：周围最多 6 只一起烤熟（标 heat，不再起热浪）
 export function heatWave(S, c) {
-  if (!S.traits || !S.traits.ember || S.kind !== 'fire' || !(c.cooked >= 1) || c.heat) return;
+  if (!traitOn(S, 'ember') || S.kind !== 'fire' || !(c.cooked >= 1) || c.heat) return;
   const R = 10 + S.hero.len * .5; let n = 0;
   for (const o of S.creatures) {
     if (o === c || o.dying || o.roast > 0 || !(o.edible || o.edibleCooked) || o.special) continue;
@@ -172,7 +199,8 @@ export function heatWave(S, c) {
 export function eddyCheck(S) {
   const h = S.hero;
   const was = h.prevDash || 0; h.prevDash = h.dashT || 0;
-  if (!S.traits || !S.traits.eddy || S.kind !== 'sea' || !(was > 0) || h.dashT > 0 || h.medium !== 'water') return;
+  if (!(was > 0) && h.dashT > 0) h.surgeAdd = 0;   // 新的一次冲刺：疾潮的加时重新算
+  if (!traitOn(S, 'eddy') || S.kind !== 'sea' || !(was > 0) || h.dashT > 0 || h.medium !== 'water') return;
   S.eddy = { x: h.x, y: h.y, z: h.z, t: 2.6, r: 9 + h.len * .4 };
   S.events.push({ type: 'eddy', x: h.x, y: h.y, z: h.z, r: S.eddy.r });
 }
@@ -188,3 +216,33 @@ function stepEddy(S, dt) {
     c.x -= dx * k - sx * 7 * dt; c.y -= dy * k; c.z -= dz * k - sz * 7 * dt;
   }
 }
+
+// ---------- 龙吼的效果（技能和回声共用）----------
+export function roarAt(S, x, y, z, r, t) {
+  for (const c of S.creatures) {
+    if (Math.hypot(c.x - x, c.y - y, c.z - z) > r) continue;
+    c.skillHit = 1; c.daze = Math.max(c.daze || 0, t); if (c.edibleCooked) c.cooked = 1;
+    if (SPECIES[c.sp].predator && !c.edible) { c.st = 'retreat'; c.stT = 8; }
+  }
+}
+// ---------- 特性：回声龙吼 ----------
+export function onRoar(S, sk) { if (traitOn(S, 'echo') && S.kind === 'fire') S.echo = { t: 1.1, r: sk.r * .65, d: sk.t }; }
+function stepEcho(S, dt) {
+  const E = S.echo; if (!E) return;
+  E.t -= dt; if (E.t > 0) return;
+  S.echo = null;
+  const h = S.hero;
+  roarAt(S, h.x, h.y, h.z, E.r, E.d);
+  S.events.push({ type: 'skill', id: 'roar', echo: true, x: h.x, y: h.y, z: h.z, r: E.r });
+}
+// ---------- 特性：掠水 / 跃浪吸附、疾潮（sim.js 的 eat 里调）----------
+export function traitsOnEat(S, c, cross) {
+  const h = S.hero;
+  if (cross && traitOn(S, S.kind === 'fire' ? 'skimF' : 'skimS')) { if (!(S.skimT > 0)) S.events.push({ type: 'skim', x: h.x, y: h.y, z: h.z }); S.skimT = 3; }
+  if (traitOn(S, 'surge') && S.kind === 'sea' && h.dashT > 0 && h.medium === 'water' && (h.surgeAdd || 0) < 1.2) {
+    h.dashT += .4; h.surgeAdd = (h.surgeAdd || 0) + .4; h.dashCd = Math.max(0, h.dashCd - 1);
+    S.events.push({ type: 'surge', x: h.x, y: h.y, z: h.z });
+  }
+}
+// 掠水 / 跃浪吸附生效时：吃的判定、吸附范围的倍数
+export const skimK = S => S.skimT > 0 ? 1 : 0;

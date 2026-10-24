@@ -49,6 +49,11 @@ export function createCodex(root, api, pic) {
     }).join('') + LANDMARKS.map(L => {   // 地标：哪条龙发现过都算
       const found = !!((save.fire && save.fire.landmarks || {})[L.id] || (save.sea && save.sea.landmarks || {})[L.id]);
       return `<div class="d-explore-entry lm${found ? ' found' : ''}"><span class="d-explore-stamp">${icon(found ? 'star' : 'lock')}</span><div><b>${found ? L.zh : '？？？'}</b><span>${found ? '已发现' : '在' + L.hint}</span></div>${found ? icon('check', 'd-explore-check') : ''}</div>`;
+    }).join('') + ['fire', 'sea'].map(k => {   // 精通纪录（每条龙一行）
+      const b = (save[k] && save[k].best) || {}, any = (b.combo | 0) + (b.skill | 0) + (b.cross | 0) > 0;
+      if (!any) return '';
+      const fire = k === 'fire';
+      return `<div class="d-explore-entry rec found"><span class="d-explore-stamp">${icon('star')}</span><div><b>${fire ? '火龙' : '海龙'}的纪录</b><span>连吃 ${b.combo | 0} · 一次${fire ? '龙吼' : '漩涡'} ${b.skill | 0} · 连续${fire ? '扎水' : '跃出'} ${b.cross | 0}</span></div></div>`;
     }).join('');
     // 生物小图还没准备好（creatures 模块还没渲染）→ 1 秒后再试一次
     clearTimeout(retry); if (pic.miss) retry = setTimeout(() => { if (!el.hidden) fill(save); }, 1000);
